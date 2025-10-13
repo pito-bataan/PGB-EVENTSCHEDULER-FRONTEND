@@ -1,0 +1,77 @@
+/* Custom Swiper Styles for Location Cards */
+.location-swiper {
+  padding-bottom: 40px !important;
+}
+
+.location-swiper .swiper-wrapper {
+  transition-timing-function: cubic-bezier(0.25, 0.46, 0.45, 0.94) !important;
+}
+
+.location-swiper .swiper-slide {
+  height: auto;
+  display: flex;
+}
+
+.location-swiper .swiper-slide > div {
+  width: 100%;
+}
+
+/* Navigation buttons */
+.location-swiper .swiper-button-next,
+.location-swiper .swiper-button-prev {
+  color: #000000 !important;
+  background: none !important;
+  border-radius: 0 !important;
+  width: 30px !important;
+  height: 30px !important;
+  margin-top: -45px !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+
+.location-swiper .swiper-button-next:after,
+.location-swiper .swiper-button-prev:after {
+  font-size: 16px !important;
+  font-weight: bold;
+}
+
+.location-swiper .swiper-button-next:hover,
+.location-swiper .swiper-button-prev:hover {
+  color: #666666 !important;
+  transform: scale(1.1);
+  transition: all 0.2s ease;
+}
+
+/* Pagination dots */
+.location-swiper .swiper-pagination {
+  bottom: 10px !important;
+}
+
+.location-swiper .swiper-pagination-bullet {
+  background: #d1d5db !important;
+  opacity: 1 !important;
+  width: 8px !important;
+  height: 8px !important;
+}
+
+.location-swiper .swiper-pagination-bullet-active {
+  background: #3b82f6 !important;
+  transform: scale(1.2);
+}
+
+/* Smooth transitions */
+.location-swiper .swiper-slide-active {
+  transform: scale(1);
+}
+
+.location-swiper .swiper-slide {
+  transition: transform 0.3s ease;
+}
+
+/* Responsive adjustments */
+@media (max-width: 640px) {
+  .location-swiper .swiper-button-next,
+  .location-swiper .swiper-button-prev {
+    display: none !important;
+  }
+}
