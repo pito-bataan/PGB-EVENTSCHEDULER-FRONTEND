@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { 
@@ -135,8 +135,10 @@ const MyRequirementsPage: React.FC = () => {
 
   // Handle add requirement
   const handleAddRequirement = () => {
+    console.log('Add requirement button clicked');
     setIsAddModalOpen(true);
     resetForm();
+    console.log('isAddModalOpen set to:', true);
   };
 
   // Handle edit requirement
@@ -156,12 +158,21 @@ const MyRequirementsPage: React.FC = () => {
   // Handle save requirement
   const handleSaveRequirement = async () => {
     try {
-      if (!department) return;
+      console.log('Attempting to save requirement with data:', formData);
+      console.log('Current department:', department);
+
+      if (!department) {
+        console.error('No department found');
+        toast.error('Department information is missing');
+        return;
+      }
 
       const token = localStorage.getItem('authToken');
       if (!token) {
         console.error('No authentication token found');
-        alert('Please log in again to continue.');
+        toast.error('Authentication required', {
+          description: 'Please log in again to continue.'
+        });
         return;
       }
 
@@ -194,7 +205,11 @@ const MyRequirementsPage: React.FC = () => {
         });
       } else {
         // Add new requirement using department name
-        const response = await fetch(`/api/departments/name/${encodeURIComponent(department.name)}/requirements`, {
+        const apiUrl = `/api/departments/name/${encodeURIComponent(department.name)}/requirements`;
+        console.log('Making API call to:', apiUrl);
+        console.log('With request body:', formData);
+        
+        const response = await fetch(apiUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -202,6 +217,12 @@ const MyRequirementsPage: React.FC = () => {
           },
           body: JSON.stringify(formData)
         });
+        
+        console.log('API Response status:', response.status);
+        if (!response.ok) {
+          const errorData = await response.json();
+          console.error('API Error details:', errorData);
+        }
 
         if (!response.ok) {
           const errorData = await response.json();
@@ -398,27 +419,35 @@ const MyRequirementsPage: React.FC = () => {
                   </Badge>
                 </motion.div>
                 
+                <motion.div
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.3 }}
+                >
+                  <Button 
+                    onClick={() => {
+                      console.log('Add button clicked directly');
+                      setIsAddModalOpen(true);
+                      resetForm();
+                    }}
+                    className="gap-2 px-6 py-2"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add Requirement
+                  </Button>
+                </motion.div>
+
                 <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
-                  <DialogTrigger asChild>
-                    <motion.div
-                      initial={{ opacity: 0, x: 20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: 0.3 }}
-                    >
-                      <Button 
-                        onClick={handleAddRequirement} 
-                        className="gap-2 px-6 py-2"
-                      >
-                        <Plus className="w-4 h-4" />
-                        Add Requirement
-                      </Button>
-                    </motion.div>
-                  </DialogTrigger>
                   <DialogContent className="max-w-2xl">
                   <DialogHeader>
                     <DialogTitle>
                       {editingRequirement ? 'Edit Requirement' : 'Add New Requirement'}
                     </DialogTitle>
+                    <DialogDescription>
+                      {editingRequirement 
+                        ? 'Update the details of your existing requirement.' 
+                        : 'Add a new requirement for your department.'}
+                    </DialogDescription>
                   </DialogHeader>
                   
                   <div className="space-y-6">
