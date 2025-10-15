@@ -3,7 +3,6 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import EventCountBadge from '@/components/ui/event-count-badge';
-import { useEventCount } from '@/hooks/useEventCount';
 import { useUnreadMessages } from '@/hooks/useUnreadMessages';
 import { 
   Calendar, 
@@ -48,12 +47,8 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
           email: parsedUser.email || user?.email || "user@bataan.gov.ph",
           department: parsedUser.department || parsedUser.departmentName || user?.department || "Department"
         });
-        console.log('🔧 Sidebar User Data:', {
-          parsedUser,
-          finalDepartment: parsedUser.department || parsedUser.departmentName || user?.department || "Department"
-        });
       } catch (error) {
-        console.error('Error parsing user data:', error);
+        // Error parsing user data - using fallback values
       }
     }
   }, [user]);
@@ -66,34 +61,45 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Use event count hook for My Calendar badge
-  const { getTotalEventCount } = useEventCount({
-    userDepartment: currentUser.department,
-    includeAllStatuses: false
-  });
+  // Event count state for My Calendar badge
+  const [eventCount, setEventCount] = useState(0);
+  
+  // Fetch event count for My Calendar badge
+  useEffect(() => {
+    const fetchEventCount = async () => {
+      try {
+        const token = localStorage.getItem('authToken');
+        if (!token) return;
+        
+        const response = await axios.get(`${API_BASE_URL}/events`, {
+          headers: getAuthHeaders()
+        });
+        
+        if (response.data.success) {
+          const events = response.data.data || [];
+          // Filter events for current user's department
+          const departmentEvents = events.filter((event: any) => 
+            event.taggedDepartments?.includes(currentUser.department) ||
+            event.requestorDepartment === currentUser.department
+          );
+          setEventCount(departmentEvents.length);
+        }
+      } catch (error) {
+        // Keep default count if fetch fails
+        setEventCount(0);
+      }
+    };
+    
+    if (currentUser.department && currentUser.department !== "Department") {
+      fetchEventCount();
+    }
+  }, [currentUser.department]);
 
   // Re-enable global unread messages hook for real-time badge updates
   const validUserId = currentUser.id !== "unknown" ? currentUser.id : undefined;
   const { totalUnreadCount: totalUnreadMessages, isLoading: unreadLoading } = useUnreadMessages(validUserId);
   
-  // Debug the hook results
-  console.log('🔧 UsersSidebar - Unread Messages Hook Results:', {
-    currentUserId: currentUser.id,
-    validUserId,
-    totalUnreadMessages,
-    unreadLoading,
-    currentUserDepartment: currentUser.department
-  });
 
-  // Track badge count changes in real-time
-  useEffect(() => {
-    console.log('🔔 SIDEBAR BADGE COUNT CHANGED:', {
-      newCount: totalUnreadMessages,
-      isLoading: unreadLoading,
-      timestamp: new Date().toLocaleTimeString(),
-      userId: currentUser.id
-    });
-  }, [totalUnreadMessages, unreadLoading, currentUser.id]);
 
 
   // API Configuration
@@ -118,7 +124,6 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
           setPermissions(response.data.data.permissions);
         }
       } catch (error) {
-        console.error('Error fetching department permissions:', error);
         // Keep default permissions if fetch fails
       }
     };
@@ -164,12 +169,10 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
   const navigationItems = getNavigationItems();
 
   const handleNavigation = (href: string) => {
-    console.log('🔧 Sidebar navigation clicked:', href);
     try {
       navigate(href);
-      console.log('✅ Navigation successful to:', href);
     } catch (error) {
-      console.error('❌ Navigation failed:', error);
+      // Navigation failed - handle silently
     }
   };
 
@@ -219,39 +222,15 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
           const isActive = location.pathname === item.href;
           const isMyCalendar = item.label === 'My Calendar';
           const isMessages = item.label === 'Messages';
-          const totalEventCount = isMyCalendar ? getTotalEventCount() : 0;
+          const totalEventCount = isMyCalendar ? eventCount : 0;
           
-          // Debug logging for sidebar badge
-          if (isMyCalendar) {
-            console.log('🔧 Sidebar Debug:', {
-              isMyCalendar,
-              totalEventCount,
-              currentUserDepartment: currentUser.department,
-              isCollapsed,
-              shouldShowBadge: totalEventCount > 0 && !isCollapsed
-            });
-          }
 
-          // Debug logging for messages badge
-          if (isMessages) {
-            console.log('🔧 Messages Badge Debug (Real-time Check):', {
-              isMessages,
-              totalUnreadMessages,
-              unreadLoading,
-              isCollapsed,
-              shouldShowBadge: totalUnreadMessages > 0 && !isCollapsed && !unreadLoading,
-              timestamp: new Date().toLocaleTimeString()
-            });
-          }
           
           return (
             <div key={item.label} className="relative">
               <Button
                 variant="ghost"
-                onClick={() => {
-                  console.log('🖱️ Button clicked for:', item.label, 'href:', item.href);
-                  handleNavigation(item.href);
-                }}
+                onClick={() => handleNavigation(item.href)}
                 className={`w-full h-10 transition-all duration-200 ${
                   isActive 
                     ? 'bg-blue-100 text-blue-700 border-r-2 border-blue-600'

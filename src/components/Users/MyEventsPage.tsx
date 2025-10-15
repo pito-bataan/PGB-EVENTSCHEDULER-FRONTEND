@@ -45,7 +45,9 @@ import {
   Download,
   Paperclip,
   Edit,
-  AlertTriangle
+  AlertTriangle,
+  HelpCircle,
+  Loader2
 } from 'lucide-react';
 
 interface Event {
@@ -130,6 +132,7 @@ const MyEventsPage: React.FC = () => {
   const [showFilesModal, setShowFilesModal] = useState(false);
   const [selectedEventDepartments, setSelectedEventDepartments] = useState<Event | null>(null);
   const [showDepartmentsModal, setShowDepartmentsModal] = useState(false);
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>('all');
   const [selectedEditEvent, setSelectedEditEvent] = useState<Event | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editFormData, setEditFormData] = useState({
@@ -545,6 +548,37 @@ const MyEventsPage: React.FC = () => {
     return fileName;
   };
 
+  // Get requirement status icon (similar to Tagged Department page)
+  const getRequirementStatusIcon = (status: string) => {
+    switch (status?.toLowerCase()) {
+      case 'confirmed': return <CheckCircle className="w-4 h-4 text-green-500" />;
+      case 'pending': return <Clock className="w-4 h-4 text-yellow-500" />;
+      case 'declined': return <XCircle className="w-4 h-4 text-red-500" />;
+      case 'partially_fulfill': return <HelpCircle className="w-4 h-4 text-blue-500" />;
+      case 'in_preparation': return <Loader2 className="w-4 h-4 text-purple-500" />;
+      default: return <AlertCircle className="w-4 h-4 text-gray-500" />;
+    }
+  };
+
+  // Get requirement status badge
+  const getRequirementStatusBadge = (status: string) => {
+    const statusLower = status?.toLowerCase() || 'pending';
+    switch (statusLower) {
+      case 'confirmed':
+        return { className: 'bg-green-100 text-green-800 border-green-200', label: 'Confirmed' };
+      case 'pending':
+        return { className: 'bg-yellow-100 text-yellow-800 border-yellow-200', label: 'Pending' };
+      case 'declined':
+        return { className: 'bg-red-100 text-red-800 border-red-200', label: 'Declined' };
+      case 'partially_fulfill':
+        return { className: 'bg-blue-100 text-blue-800 border-blue-200', label: 'Partially Fulfilled' };
+      case 'in_preparation':
+        return { className: 'bg-purple-100 text-purple-800 border-purple-200', label: 'In Preparation' };
+      default:
+        return { className: 'bg-gray-100 text-gray-800 border-gray-200', label: 'Pending' };
+    }
+  };
+
   // View event details
   const handleViewEvent = (event: Event) => {
     setSelectedEvent(event);
@@ -582,6 +616,7 @@ const MyEventsPage: React.FC = () => {
   // Handle departments modal
   const handleShowDepartments = (event: Event) => {
     setSelectedEventDepartments(event);
+    setSelectedStatusFilter('all'); // Reset filter when opening modal
     setShowDepartmentsModal(true);
   };
 
@@ -1154,185 +1189,311 @@ const MyEventsPage: React.FC = () => {
 
       {/* Tagged Departments Modal */}
       <Dialog open={showDepartmentsModal} onOpenChange={setShowDepartmentsModal}>
-        <DialogContent className="!max-w-5xl !w-[85vw] max-h-[80vh] overflow-y-auto p-8" style={{ width: '85vw', maxWidth: '1024px' }}>
-          <DialogHeader className="pb-4">
-            <DialogTitle className="text-xl font-medium text-gray-900">
-              Tagged Departments
-            </DialogTitle>
-            <DialogDescription className="text-sm text-gray-600">
-              Departments involved in this event and their requirements
-            </DialogDescription>
-          </DialogHeader>
-          
-          {selectedEventDepartments && (
-            <div className="space-y-6">
-              {/* Tagged Departments List */}
-              <div>
-                <h4 className="text-base font-medium text-gray-800 mb-4 flex items-center gap-2">
+        <DialogContent className="!max-w-6xl !w-[90vw] !h-[85vh] overflow-hidden p-0">
+          <div className="flex flex-col h-full max-h-[85vh]">
+            {/* Modern Header */}
+            <div className="px-6 py-4 border-b bg-gradient-to-r from-blue-50 to-indigo-50">
+              <DialogTitle className="text-2xl font-bold text-gray-900 flex items-center gap-3">
+                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
                   <Building2 className="w-5 h-5 text-blue-600" />
-                  Tagged Departments ({selectedEventDepartments.taggedDepartments.length})
-                </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {selectedEventDepartments.taggedDepartments.map((dept, index) => (
-                    <div key={index} className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                      <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                        <Building2 className="w-4 h-4 text-blue-600" />
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-sm font-medium text-gray-900">{dept}</p>
-                        <p className="text-xs text-blue-600">Department</p>
-                      </div>
-                    </div>
-                  ))}
                 </div>
-              </div>
-
-              {/* Department Requirements */}
-              {selectedEventDepartments.departmentRequirements && Object.keys(selectedEventDepartments.departmentRequirements).length > 0 && (
-                <div>
-                  <h4 className="text-base font-medium text-gray-800 mb-4 flex items-center gap-2">
-                    <FileText className="w-5 h-5 text-orange-600" />
-                    Department Requirements
-                  </h4>
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {Object.entries(selectedEventDepartments.departmentRequirements).map(([dept, requirements]: [string, any], index) => {
-                      // Parse the requirements if it's a string containing JSON-like data
-                      let parsedRequirements = requirements;
+                Tagged Departments & Requirements
+              </DialogTitle>
+              <DialogDescription className="text-gray-600 mt-2">
+                Real-time status and coordination details for all involved departments
+              </DialogDescription>
+            </div>
+            
+            {/* Scrollable Content */}
+            <div className="flex-1 overflow-y-auto min-h-0">
+              {selectedEventDepartments && (
+                <div className="p-6 space-y-8">
+                  {/* Quick Status Overview */}
+                  <div className="bg-white rounded-xl border shadow-sm p-6">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                      <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center">
+                        <CheckCircle className="w-4 h-4 text-green-600" />
+                      </div>
+                      Requirements Overview
+                    </h3>
+                    {(() => {
+                      const allRequirements = Object.values(selectedEventDepartments.departmentRequirements || {}).flat();
+                      const statusCounts = {
+                        confirmed: 0,
+                        pending: 0,
+                        declined: 0,
+                        partially_fulfill: 0,
+                        in_preparation: 0
+                      };
                       
-                      if (typeof requirements === 'string') {
-                        // Check if it contains numbered JSON objects
-                        const lines = requirements.split('\n').filter(line => line.trim());
-                        if (lines.length > 0 && lines[0].match(/^\d+:/)) {
-                          parsedRequirements = lines.map(line => {
-                            const match = line.match(/^\d+:(.+)$/);
-                            if (match) {
-                              try {
-                                return JSON.parse(match[1]);
-                              } catch {
-                                return { name: line };
-                              }
-                            }
-                            return { name: line };
-                          });
+                      allRequirements.forEach((req: any) => {
+                        const status = req.status?.toLowerCase() || 'pending';
+                        if (statusCounts.hasOwnProperty(status)) {
+                          statusCounts[status as keyof typeof statusCounts]++;
                         }
-                      }
-                      
+                      });
+
                       return (
-                        <div key={index} className="p-4 bg-orange-50 rounded-lg border border-orange-200">
-                          <div className="flex items-center gap-2 mb-3">
-                            <Building2 className="w-4 h-4 text-orange-600" />
-                            <h5 className="font-medium text-gray-900">{dept}</h5>
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {Array.isArray(parsedRequirements) ? (
-                              parsedRequirements.map((req: any, reqIndex: number) => (
-                                <div key={reqIndex} className="p-3 bg-white rounded-md border border-orange-100">
-                                  <div className="flex items-start justify-between">
-                                    <div className="flex-1">
-                                      <h6 className="text-sm font-medium text-gray-900 mb-1">
-                                        {req.name || `Requirement ${reqIndex + 1}`}
-                                      </h6>
-                                      {req.type === 'physical' && req.quantity ? (
-                                        <p className="text-xs text-gray-600 mb-2">
-                                          <span className="font-medium">Quantity:</span> {req.quantity}
-                                        </p>
-                                      ) : req.notes ? (
-                                        <p className="text-xs text-gray-600 mb-2">
-                                          <span className="font-medium">Notes:</span> {req.notes}
-                                        </p>
-                                      ) : (
-                                        <p className="text-xs text-gray-500 mb-2">No additional details</p>
-                                      )}
-                                    </div>
-                                    <div className="ml-3">
-                                      {req.selected !== undefined && (
-                                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                                          req.selected 
-                                            ? 'bg-green-100 text-green-800' 
-                                            : 'bg-gray-100 text-gray-800'
-                                        }`}>
-                                          {req.selected ? 'Required' : 'Optional'}
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-                              ))
-                            ) : typeof parsedRequirements === 'object' && parsedRequirements !== null ? (
-                              Object.entries(parsedRequirements).map(([key, value]: [string, any], reqIndex) => (
-                                <div key={reqIndex} className="text-sm">
-                                  <span className="font-medium text-gray-700 capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}:</span>
-                                  <span className="ml-2 text-gray-600">
-                                    {typeof value === 'boolean' ? (value ? 'Yes' : 'No') : String(value)}
-                                  </span>
-                                </div>
-                              ))
-                            ) : (
-                              <p className="text-sm text-gray-600">{String(parsedRequirements)}</p>
-                            )}
-                          </div>
+                        <div className="grid grid-cols-6 gap-3">
+                          <button
+                            onClick={() => setSelectedStatusFilter('all')}
+                            className={`text-center p-4 rounded-lg border transition-all hover:shadow-md ${
+                              selectedStatusFilter === 'all' 
+                                ? 'bg-gray-100 border-gray-400 ring-2 ring-gray-300' 
+                                : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+                            }`}
+                          >
+                            <div className="text-2xl font-bold text-gray-600">{statusCounts.confirmed + statusCounts.pending + statusCounts.declined + statusCounts.partially_fulfill + statusCounts.in_preparation}</div>
+                            <div className="text-sm text-gray-700 font-medium">All</div>
+                          </button>
+                          <button
+                            onClick={() => setSelectedStatusFilter('confirmed')}
+                            className={`text-center p-4 rounded-lg border transition-all hover:shadow-md ${
+                              selectedStatusFilter === 'confirmed' 
+                                ? 'bg-green-100 border-green-400 ring-2 ring-green-300' 
+                                : 'bg-green-50 border-green-200 hover:bg-green-100'
+                            }`}
+                          >
+                            <div className="text-2xl font-bold text-green-600">{statusCounts.confirmed}</div>
+                            <div className="text-sm text-green-700 font-medium">Confirmed</div>
+                          </button>
+                          <button
+                            onClick={() => setSelectedStatusFilter('pending')}
+                            className={`text-center p-4 rounded-lg border transition-all hover:shadow-md ${
+                              selectedStatusFilter === 'pending' 
+                                ? 'bg-yellow-100 border-yellow-400 ring-2 ring-yellow-300' 
+                                : 'bg-yellow-50 border-yellow-200 hover:bg-yellow-100'
+                            }`}
+                          >
+                            <div className="text-2xl font-bold text-yellow-600">{statusCounts.pending}</div>
+                            <div className="text-sm text-yellow-700 font-medium">Pending</div>
+                          </button>
+                          <button
+                            onClick={() => setSelectedStatusFilter('in_preparation')}
+                            className={`text-center p-4 rounded-lg border transition-all hover:shadow-md ${
+                              selectedStatusFilter === 'in_preparation' 
+                                ? 'bg-purple-100 border-purple-400 ring-2 ring-purple-300' 
+                                : 'bg-purple-50 border-purple-200 hover:bg-purple-100'
+                            }`}
+                          >
+                            <div className="text-2xl font-bold text-purple-600">{statusCounts.in_preparation}</div>
+                            <div className="text-sm text-purple-700 font-medium">In Progress</div>
+                          </button>
+                          <button
+                            onClick={() => setSelectedStatusFilter('partially_fulfill')}
+                            className={`text-center p-4 rounded-lg border transition-all hover:shadow-md ${
+                              selectedStatusFilter === 'partially_fulfill' 
+                                ? 'bg-blue-100 border-blue-400 ring-2 ring-blue-300' 
+                                : 'bg-blue-50 border-blue-200 hover:bg-blue-100'
+                            }`}
+                          >
+                            <div className="text-2xl font-bold text-blue-600">{statusCounts.partially_fulfill}</div>
+                            <div className="text-sm text-blue-700 font-medium">Partial</div>
+                          </button>
+                          <button
+                            onClick={() => setSelectedStatusFilter('declined')}
+                            className={`text-center p-4 rounded-lg border transition-all hover:shadow-md ${
+                              selectedStatusFilter === 'declined' 
+                                ? 'bg-red-100 border-red-400 ring-2 ring-red-300' 
+                                : 'bg-red-50 border-red-200 hover:bg-red-100'
+                            }`}
+                          >
+                            <div className="text-2xl font-bold text-red-600">{statusCounts.declined}</div>
+                            <div className="text-sm text-red-700 font-medium">Declined</div>
+                          </button>
                         </div>
                       );
-                    })}
+                    })()}
                   </div>
-                </div>
-              )}
 
-              {/* Notes Section */}
-              <div>
-                <h4 className="text-base font-medium text-gray-800 mb-4 flex items-center gap-2">
-                  <FileText className="w-5 h-5 text-green-600" />
-                  Notes & Additional Information
-                </h4>
-                <div className="p-4 bg-green-50 rounded-lg border border-green-200">
-                  <div className="space-y-3">
-                    <div className="flex items-start gap-3">
-                      <div className="w-2 h-2 bg-green-500 rounded-full mt-2"></div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">Event Coordination</p>
-                        <p className="text-sm text-gray-600">All tagged departments will be notified and are expected to coordinate for this event.</p>
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <div className="w-2 h-2 bg-green-500 rounded-full mt-2"></div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">Requirements Status</p>
-                        <p className="text-sm text-gray-600">Department requirements are based on the event details and participant count.</p>
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <div className="w-2 h-2 bg-green-500 rounded-full mt-2"></div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">Contact Information</p>
-                        <p className="text-sm text-gray-600">For questions, contact the event requestor at {selectedEventDepartments.contactEmail}</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+                  {/* Department Requirements by Department */}
+                  {selectedEventDepartments.departmentRequirements && Object.keys(selectedEventDepartments.departmentRequirements).length > 0 && (
+                    <div className="space-y-6">
+                      {Object.entries(selectedEventDepartments.departmentRequirements).map(([dept, requirements]: [string, any], index) => {
+                        // Parse requirements
+                        let parsedRequirements = requirements;
+                        if (typeof requirements === 'string') {
+                          const lines = requirements.split('\n').filter(line => line.trim());
+                          if (lines.length > 0 && lines[0].match(/^\d+:/)) {
+                            parsedRequirements = lines.map(line => {
+                              const match = line.match(/^\d+:(.+)$/);
+                              if (match) {
+                                try {
+                                  return JSON.parse(match[1]);
+                                } catch {
+                                  return { name: line };
+                                }
+                              }
+                              return { name: line };
+                            });
+                          }
+                        }
 
-              {/* No Departments Message */}
-              {selectedEventDepartments.taggedDepartments.length === 0 && (
-                <div className="text-center py-8">
-                  <Building2 className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">No Departments Tagged</h3>
-                  <p className="text-gray-500">This event doesn't have any departments tagged yet.</p>
+                        return (
+                          <div key={index} className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                            {/* Department Header */}
+                            <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 border-b">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                                    <Building2 className="w-5 h-5 text-blue-600" />
+                                  </div>
+                                  <div>
+                                    <h4 className="text-lg font-semibold text-gray-900">{dept}</h4>
+                                    <p className="text-sm text-gray-600">
+                                      {Array.isArray(parsedRequirements) ? parsedRequirements.length : 0} Requirements
+                                    </p>
+                                  </div>
+                                </div>
+                                <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                                  Department
+                                </Badge>
+                              </div>
+                            </div>
+
+                            {/* Requirements Grid */}
+                            <div className="p-6">
+                              {Array.isArray(parsedRequirements) ? (
+                                (() => {
+                                  const filteredRequirements = parsedRequirements.filter((req: any) => {
+                                    if (selectedStatusFilter === 'all') return true;
+                                    const reqStatus = req.status?.toLowerCase() || 'pending';
+                                    return reqStatus === selectedStatusFilter;
+                                  });
+
+                                  return filteredRequirements.length > 0 ? (
+                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                      {filteredRequirements.map((req: any, reqIndex: number) => {
+                                    const statusBadge = getRequirementStatusBadge(req.status);
+                                    return (
+                                      <div key={reqIndex} className="bg-gray-50 rounded-lg border p-4 hover:shadow-md transition-all">
+                                        {/* Requirement Header */}
+                                        <div className="flex items-start justify-between mb-3">
+                                          <div className="flex-1">
+                                            <h5 className="font-medium text-gray-900 mb-1">
+                                              {req.name || `Requirement ${reqIndex + 1}`}
+                                            </h5>
+                                            {req.type && (
+                                              <Badge variant="outline" className="text-xs mb-2">
+                                                {req.type}
+                                              </Badge>
+                                            )}
+                                          </div>
+                                          <div className="flex items-center gap-2 ml-3">
+                                            {getRequirementStatusIcon(req.status)}
+                                            <Badge className={`text-xs ${statusBadge.className}`}>
+                                              {statusBadge.label}
+                                            </Badge>
+                                          </div>
+                                        </div>
+
+                                        {/* Requirement Details */}
+                                        <div className="space-y-3">
+                                          {/* Quantity/Notes */}
+                                          {req.type === 'physical' && req.quantity ? (
+                                            <div className="text-sm text-gray-600 bg-white rounded p-2">
+                                              <span className="font-medium">Requested:</span> {req.quantity}
+                                              {req.totalQuantity && <span className="text-gray-500"> of {req.totalQuantity} available</span>}
+                                            </div>
+                                          ) : req.notes ? (
+                                            <div className="text-sm text-gray-600 bg-white rounded p-2">
+                                              <span className="font-medium">Notes:</span> {req.notes}
+                                            </div>
+                                          ) : null}
+
+                                          {/* Department Notes */}
+                                          {req.departmentNotes && (
+                                            <div className="bg-blue-50 border border-blue-200 rounded p-3">
+                                              <div className="text-xs font-medium text-blue-800 mb-1 flex items-center gap-1">
+                                                <FileText className="w-3 h-3" />
+                                                Department Notes:
+                                              </div>
+                                              <div className="text-sm text-blue-700">{req.departmentNotes}</div>
+                                            </div>
+                                          )}
+
+                                          {/* Availability & Updates */}
+                                          <div className="flex items-center justify-between text-xs text-gray-500">
+                                            {req.isAvailable !== undefined && (
+                                              <div className="flex items-center gap-1">
+                                                {req.isAvailable ? (
+                                                  <>
+                                                    <CheckCircle className="w-3 h-3 text-green-500" />
+                                                    <span className="text-green-600">Available</span>
+                                                  </>
+                                                ) : (
+                                                  <>
+                                                    <XCircle className="w-3 h-3 text-red-500" />
+                                                    <span className="text-red-600">Not Available</span>
+                                                  </>
+                                                )}
+                                              </div>
+                                            )}
+                                            {req.lastUpdated && (
+                                              <div className="flex items-center gap-1">
+                                                <Clock className="w-3 h-3" />
+                                                <span>Updated: {new Date(req.lastUpdated).toLocaleDateString()}</span>
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                    </div>
+                                  ) : (
+                                    <div className="text-center py-8 text-gray-500">
+                                      <FileText className="w-8 h-8 mx-auto mb-2 text-gray-400" />
+                                      <p>No requirements found for "{selectedStatusFilter === 'all' ? 'all statuses' : selectedStatusFilter}" status</p>
+                                      <button 
+                                        onClick={() => setSelectedStatusFilter('all')}
+                                        className="mt-2 text-blue-600 hover:text-blue-800 text-sm underline"
+                                      >
+                                        Show all requirements
+                                      </button>
+                                    </div>
+                                  );
+                                })()
+                              ) : (
+                                <div className="text-center py-8 text-gray-500">
+                                  <FileText className="w-8 h-8 mx-auto mb-2 text-gray-400" />
+                                  <p>No detailed requirements available</p>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* No Departments Message */}
+                  {selectedEventDepartments.taggedDepartments.length === 0 && (
+                    <div className="text-center py-12">
+                      <Building2 className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                      <h3 className="text-xl font-medium text-gray-900 mb-2">No Departments Tagged</h3>
+                      <p className="text-gray-500">This event doesn't have any departments tagged yet.</p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
-          )}
-          
-          <div className="flex justify-center pt-4 mt-6">
-            <Button 
-              onClick={() => setShowDepartmentsModal(false)}
-              variant="outline"
-              className="px-6 py-2"
-            >
-              Close
-            </Button>
+
+            {/* Footer */}
+            <div className="border-t bg-gray-50 px-6 py-4">
+              <div className="flex justify-end">
+                <Button 
+                  onClick={() => setShowDepartmentsModal(false)}
+                  className="px-6"
+                >
+                  Close
+                </Button>
+              </div>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
+
 
       {/* Files Modal */}
       <Dialog open={showFilesModal} onOpenChange={setShowFilesModal}>

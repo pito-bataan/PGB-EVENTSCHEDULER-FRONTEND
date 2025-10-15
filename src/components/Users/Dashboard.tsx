@@ -1,8 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Badge } from '@/components/ui/badge';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -52,10 +59,12 @@ interface Notification {
   icon: React.ComponentType<{ className?: string }>;
   iconColor: string;
   eventId?: string;
+  eventDate?: string;
+  requirementId?: string;
+  departmentNotes?: string;
 }
 
 const Dashboard: React.FC = () => {
-  console.log('🏠 Dashboard component loaded/re-rendered');
   
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [upcomingEvents, setUpcomingEvents] = useState<Event[]>([]);
@@ -64,13 +73,19 @@ const Dashboard: React.FC = () => {
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [readNotifications, setReadNotifications] = useState<Set<string>>(new Set());
   const [totalSystemEvents, setTotalSystemEvents] = useState(0);
+  const [statusNotifications, setStatusNotifications] = useState<Notification[]>([]);
+  const [requirementsOverview, setRequirementsOverview] = useState<any[]>([]);
+  const [selectedEventFilter, setSelectedEventFilter] = useState<string>('all');
   
   // Get current user data
   const currentUser = JSON.parse(localStorage.getItem('userData') || '{}');
   const userId = currentUser._id || currentUser.id || 'unknown';
   
+  // Debug: Log current user info
+  console.log('🔍 Dashboard - Current User:', { userId, currentUser });
+  
   // Initialize Socket.IO for real-time read status updates only (popups handled by GlobalNotificationSystem)
-  const { onNotificationRead, offNotificationRead } = useSocket(userId);
+  const { onNotificationRead, offNotificationRead, onStatusUpdate, offStatusUpdate } = useSocket(userId);
 
   // Helper function to format time
   const formatTime = (time: string) => {
@@ -93,13 +108,6 @@ const Dashboard: React.FC = () => {
     const diffTime = event.getTime() - today.getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     
-    console.log(`📅 Date calculation:`, {
-      today: today.toISOString().split('T')[0],
-      eventDate: eventDate,
-      eventParsed: event.toISOString().split('T')[0],
-      diffTime,
-      diffDays
-    });
     
     return diffDays;
   };
@@ -123,12 +131,6 @@ const Dashboard: React.FC = () => {
     const departmentInfo = isUserEvent ? "" : ` (${event.requestorDepartment || 'Unknown Dept'})`;
     
     
-    console.log(`📝 Event title truncation:`, {
-      originalTitle: event.eventTitle,
-      originalLength: event.eventTitle.length,
-      truncatedTitle: truncatedTitle,
-      wasTruncated: event.eventTitle.length > 40
-    });
     
     if (daysUntil === 1) {
       return `${eventPrefix} "${truncatedTitle}"${departmentInfo} is tomorrow at ${formattedTime}`;
@@ -146,24 +148,14 @@ const Dashboard: React.FC = () => {
     const userDepartment = currentUser.department || currentUser.departmentName || '';
     const userName = currentUser.name || '';
     
-    console.log(`🔔 Filtering notifications for user: ${userName}, department: ${userDepartment}`);
-    console.log(`📊 Processing ${events.length} events for notifications`);
-    console.log(`🔍 Current user data from localStorage:`, currentUser);
     
     return events
       .filter(event => {
         const daysUntil = getDaysUntilEvent(event.startDate);
         const isUpcoming = daysUntil >= 0 && daysUntil <= 7;
         
-        console.log(`📅 Event "${event.eventTitle}" analysis:`, {
-          startDate: event.startDate,
-          daysUntil,
-          isUpcoming,
-          status: event.status
-        });
         
         if (!isUpcoming) {
-          console.log(`⏭️ Skipping "${event.eventTitle}" - not upcoming (${daysUntil} days)`);
           return false;
         }
         
@@ -173,14 +165,6 @@ const Dashboard: React.FC = () => {
         // 3. If user name is empty, show all events for their department
         const isUserEvent = userName && event.requestor === userName;
         
-        console.log(`🔍 User matching debug for "${event.eventTitle}":`, {
-          eventRequestor: event.requestor,
-          currentUserName: userName,
-          currentUserId: userId,
-          eventCreatedBy: event.createdBy,
-          isUserEvent: isUserEvent,
-          isUserEventById: event.createdBy === userId
-        });
         const isTaggedForUserDepartment = userDepartment && event.taggedDepartments?.includes(userDepartment);
         const isFromSameDepartment = userDepartment && event.requestorDepartment === userDepartment;
         
@@ -190,18 +174,6 @@ const Dashboard: React.FC = () => {
         // If no user name, show events from same department or tagged department
         const shouldShow = isUserEvent || isUserEventById || isTaggedForUserDepartment || (!userName && isFromSameDepartment);
         
-        console.log(`🔍 Event "${event.eventTitle}" filtering:`, {
-          requestor: event.requestor,
-          requestorDepartment: event.requestorDepartment,
-          taggedDepartments: event.taggedDepartments,
-          currentUserName: userName,
-          currentUserDepartment: userDepartment,
-          isUserEvent,
-          isTaggedForUserDepartment,
-          isFromSameDepartment,
-          shouldShow,
-          daysUntil
-        });
         
         return shouldShow;
       })
@@ -222,43 +194,177 @@ const Dashboard: React.FC = () => {
         
         if (isUserEvent || isUserEventById) {
           category = "upcoming";
-          title = "Your Upcoming Event";
         } else if (isTaggedForUserDepartment) {
           category = "tagged";
-          title = "New Event Notification";  // This matches your screenshot
-        } else if (isFromSameDepartment || !userName) {
-          // If from same department or no user name, treat as upcoming
-          category = "upcoming";
-          title = "Upcoming Event";
+          title = "Tagged Event";
         }
-        
-        console.log(`📂 Event "${event.eventTitle}" categorization:`, {
-          isUserEvent,
-          isTaggedForUserDepartment,
-          isFromSameDepartment,
-          category,
-          title,
-          taggedDepartments: event.taggedDepartments,
-          requestorDepartment: event.requestorDepartment,
-          userDepartment
-        });
+
+        const contentFingerprint = createUpcomingEventFingerprint(event);
+        const notificationId = `upcoming-${event._id}-${userId}-${contentFingerprint}`;
         
         return {
-          id: `upcoming-${event._id}-${userId}`,
+          id: notificationId,
+          baseId: `upcoming-${event._id}-${userId}`,
           title: title,
-          message: generateNotificationMessage(event, isUserEvent || isUserEventById, isTaggedForUserDepartment),
+          message: `Event "${event.eventTitle}" (${event.requestorDepartment}) is coming in ${getDaysUntilEvent(event.startDate)} days at ${formatTime(event.startTime)}`,
           type: "upcoming",
           category: category,
-          time: getDaysUntilEvent(event.startDate) === 1 ? "Tomorrow" : 
-                getDaysUntilEvent(event.startDate) === 2 ? "In 2 days" :
+          time: getDaysUntilEvent(event.startDate) === 1 ? 
+                "Tomorrow" : 
                 `In ${getDaysUntilEvent(event.startDate)} days`,
           read: false,
           icon: AlertCircle,
           iconColor: getDaysUntilEvent(event.startDate) === 1 ? "text-red-600" : "text-orange-600",
           eventId: event._id,
-          eventDate: event.startDate
+          eventDate: event.startDate,
+          contentFingerprint: contentFingerprint
         };
       });
+  };
+
+  // Create content fingerprint for upcoming events
+  const createUpcomingEventFingerprint = (event: Event) => {
+    const contentString = `${event.eventTitle}-${event.startDate}-${event.startTime}-${event.status}-${event.location}`;
+    return btoa(contentString);
+  };
+
+  // Create content fingerprint for change detection
+  const createNotificationFingerprint = (req: any) => {
+    // Create a hash of the notification content that changes when content changes
+    const contentString = `${req.name}-${req.status}-${req.department}-${req.departmentNotes}-${req.lastUpdated}`;
+    return btoa(contentString); // Simple base64 encoding as fingerprint
+  };
+
+  // Generate status notifications from requirements data (like upcoming notifications)
+  const generateStatusNotificationsFromData = (requirements: any[]) => {
+    console.log('🔍 Generating status notifications from requirements:', requirements);
+    const statusNotifications: Notification[] = [];
+    
+    requirements.forEach((req, index) => {
+      console.log(`🔍 Processing requirement ${index}:`, { name: req.name, status: req.status, department: req.department });
+      
+      // Only create notifications for non-pending status
+      if (req.status && req.status !== 'pending') {
+        console.log(`✅ Creating notification for ${req.name} with status ${req.status}`);
+        
+        // Create content fingerprint for change detection
+        const contentFingerprint = createNotificationFingerprint(req);
+        const notificationId = `status-${req.eventId}-${req.id}-${contentFingerprint}`;
+        
+        const notification = {
+          id: notificationId,
+          baseId: `status-${req.eventId}-${req.id}`, // Base ID without fingerprint
+          title: "Status Updated",
+          message: `${req.name} status: "${req.status}" by ${req.department}`,
+          type: "status",
+          category: "status",
+          time: req.lastUpdated ? new Date(req.lastUpdated).toLocaleString() : 'Recently',
+          read: false, // Always start as unread, will be checked against NotificationRead
+          icon: AlertCircle,
+          iconColor: getStatusColor(req.status),
+          eventId: req.eventId,
+          requirementId: req.id,
+          departmentNotes: req.departmentNotes || '',
+          contentFingerprint: contentFingerprint
+        };
+        statusNotifications.push(notification);
+      } else {
+        console.log(`❌ Skipping ${req.name} - status: ${req.status}`);
+      }
+    });
+    
+    console.log('📝 Generated status notifications:', statusNotifications);
+    setStatusNotifications(statusNotifications);
+    return statusNotifications;
+  };
+
+  // Fetch requirements overview for all user events
+  const fetchRequirementsOverview = async () => {
+    try {
+      console.log('🔍 Fetching requirements overview for user:', userId);
+      const token = localStorage.getItem('authToken');
+      const headers = {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      };
+
+      // Fetch user's events to get requirements status
+      const response = await axios.get(`${API_BASE_URL}/events/my`, { headers });
+      
+      if (response.data.success) {
+        const userEvents = response.data.data || [];
+        console.log('📋 User events for requirements:', userEvents);
+        
+        // Extract all requirements from all events
+        const allRequirements: any[] = [];
+        
+        userEvents.forEach((event: any) => {
+          if (event.departmentRequirements) {
+            Object.entries(event.departmentRequirements).forEach(([department, requirements]) => {
+              (requirements as any[]).forEach((req: any) => {
+                allRequirements.push({
+                  id: req.id,
+                  name: req.name,
+                  status: req.status || 'pending',
+                  department: department,
+                  eventTitle: event.eventTitle,
+                  eventId: event._id,
+                  departmentNotes: req.departmentNotes || '',
+                  lastUpdated: req.lastUpdated,
+                  quantity: req.quantity,
+                  totalQuantity: req.totalQuantity
+                });
+              });
+            });
+          }
+        });
+        
+        console.log('📋 All requirements overview:', allRequirements);
+        setRequirementsOverview(allRequirements);
+        
+        // Debug: Check if requirements are being set
+        console.log('📋 Requirements overview state updated:', allRequirements.length);
+        
+        // Return the requirements so they can be used immediately
+        return allRequirements;
+      }
+    } catch (error: any) {
+      console.error('Error fetching requirements overview:', error);
+    }
+  };
+
+  // Get unique events from requirements
+  const getUniqueEvents = () => {
+    const uniqueEvents = new Map();
+    requirementsOverview.forEach(req => {
+      if (!uniqueEvents.has(req.eventId)) {
+        uniqueEvents.set(req.eventId, {
+          id: req.eventId,
+          title: req.eventTitle
+        });
+      }
+    });
+    return Array.from(uniqueEvents.values());
+  };
+
+  // Filter requirements by selected event
+  const getFilteredRequirements = () => {
+    if (selectedEventFilter === 'all') {
+      return requirementsOverview;
+    }
+    return requirementsOverview.filter(req => req.eventId === selectedEventFilter);
+  };
+
+  // Helper function to get status color
+  const getStatusColor = (status: string) => {
+    switch (status?.toLowerCase()) {
+      case 'confirmed': return 'text-green-600';
+      case 'pending': return 'text-yellow-600';
+      case 'declined': return 'text-red-600';
+      case 'partially_fulfill': return 'text-blue-600';
+      case 'in_preparation': return 'text-purple-600';
+      default: return 'text-gray-600';
+    }
   };
 
   // Fetch events and generate notifications
@@ -308,25 +414,25 @@ const Dashboard: React.FC = () => {
           });
           
           // Generate notifications from all upcoming events (including tagged ones)
-          const eventNotifications = generateUpcomingEventNotifications(allUpcoming);
-          setNotifications(eventNotifications);
+          const generatedNotifications = generateUpcomingEventNotifications(allUpcoming);
           
-          console.log(`📊 User Events: ${userEvents.length}, System Events: ${allEvents.length}`);
-          console.log(`📅 Found ${upcoming.length} user's upcoming events`);
-          console.log(`🔔 Generated ${eventNotifications.length} notifications from ${allUpcoming.length} upcoming events`);
-          console.log(`🎯 Current date: ${new Date().toISOString().split('T')[0]}`);
-          console.log(`🎯 Looking for events on: 2025-10-11 (tomorrow)`);
+          // Fetch requirements overview first (needed for status generation)
+          const fetchedRequirements = await fetchRequirementsOverview() || [];
           
-          // Debug: Show all upcoming events with their dates
-          allUpcoming.forEach((event: Event) => {
-            console.log(`📅 Upcoming event: "${event.eventTitle}" on ${event.startDate} (${getDaysUntilEvent(event.startDate)} days)`);
-          });
+          // Generate status notifications from requirements data using fetched data
+          const statusNotifications = generateStatusNotificationsFromData(fetchedRequirements);
+          
+          // Combine all notifications
+          const allNotifications = [...generatedNotifications, ...statusNotifications];
+          console.log('🔍 Combined all notifications:', allNotifications);
+          
+          // Set final notifications array
+          setNotifications(allNotifications);
+          console.log('🔍 Final notifications array set:', allNotifications);
         }
       }
     } catch (error) {
       console.error('Error fetching events:', error);
-      setNotifications([]);
-      setUpcomingEvents([]);
     } finally {
       setLoading(false);
     }
@@ -342,15 +448,12 @@ const Dashboard: React.FC = () => {
       
       if (response.data.success) {
         setReadNotifications(new Set(response.data.data));
-        console.log(`📖 Loaded ${response.data.data.length} read notifications from database`);
       }
     } catch (error) {
-      console.error('Error loading read notifications:', error);
       // Fallback to localStorage for backward compatibility
       const savedReadNotifications = localStorage.getItem(`readNotifications_${userId}`);
       if (savedReadNotifications) {
         setReadNotifications(new Set(JSON.parse(savedReadNotifications)));
-        console.log('📖 Loaded read notifications from localStorage fallback');
       }
     }
   };
@@ -361,7 +464,6 @@ const Dashboard: React.FC = () => {
       // Find the notification to get its details
       const notification = notifications.find(n => n.id === notificationId);
       if (!notification) {
-        console.error('Notification not found:', notificationId);
         return;
       }
 
@@ -382,7 +484,6 @@ const Dashboard: React.FC = () => {
       });
 
       if (response.data.success) {
-        console.log(`✅ Marked notification as read in database: ${notificationId}`);
         
         // Dispatch global event for immediate UI updates
         window.dispatchEvent(new CustomEvent('notificationUpdate', { 
@@ -393,14 +494,12 @@ const Dashboard: React.FC = () => {
         const rollbackSet = new Set(readNotifications);
         rollbackSet.delete(notificationId);
         setReadNotifications(rollbackSet);
-        console.error('Failed to mark notification as read:', response.data.message);
       }
     } catch (error) {
       // Rollback on error
       const rollbackSet = new Set(readNotifications);
       rollbackSet.delete(notificationId);
       setReadNotifications(rollbackSet);
-      console.error('Error marking notification as read:', error);
     }
   };
 
@@ -421,12 +520,10 @@ const Dashboard: React.FC = () => {
   // Listen for global notification events from GlobalNotificationSystem
   useEffect(() => {
     const handleGlobalNotificationUpdate = (event: any) => {
-      console.log('📢 Dashboard received global notification update:', event.detail);
       if (event.detail.type === 'new') {
         // Refresh notifications when new notification arrives
         setTimeout(() => {
           fetchEventsAndNotifications().then(() => {
-            console.log('✅ Dashboard refreshed from global notification');
             loadReadNotifications();
           });
         }, 500);
@@ -440,21 +537,16 @@ const Dashboard: React.FC = () => {
     };
   }, []);
 
-  console.log('🔧 About to set up notification listeners useEffect...');
   
   // Real-time notification read status listener (new notifications handled by GlobalNotificationSystem)
   useEffect(() => {
-    console.log('🔔 Setting up notification read status listener for userId:', userId);
-    
     // Check if functions are available
     if (!onNotificationRead) {
-      console.error('❌ onNotificationRead function not available!');
       return;
     }
 
     // Listen for notification read events (from other devices/sessions)
     const handleNotificationRead = (data: any) => {
-      console.log('👀 Received notification read event:', data);
       if (data.userId === userId) {
         // Update read status if it's for current user
         setReadNotifications(prev => {
@@ -470,85 +562,119 @@ const Dashboard: React.FC = () => {
       }
     };
 
-    // Set up listener
-    console.log('🔧 Setting up onNotificationRead listener...');
+    // Set up the listener
     onNotificationRead(handleNotificationRead);
-    console.log('✅ Notification read listener setup complete');
 
-    // Cleanup listener on unmount
+    // Cleanup
     return () => {
-      console.log('🔕 Cleaning up notification read listener');
       offNotificationRead();
     };
-  }, [userId]);
+  }, [onNotificationRead, offNotificationRead]);
 
+  // Real-time status update listener
+  useEffect(() => {
+    if (!onStatusUpdate) {
+      return;
+    }
+
+    const handleStatusUpdate = (data: any) => {
+      // Check if this status update is for the current user's event
+      if (data.requestorId === userId) {
+        // Create new status notification
+        const newNotification = {
+          id: `status-${data._id || Date.now()}`,
+          title: "Requirement Status Updated",
+          message: `${data.requirementName} status changed to "${data.newStatus}" by ${data.departmentName}`,
+          type: "status",
+          category: "status",
+          time: new Date().toLocaleString(),
+          read: false,
+          icon: AlertCircle,
+          iconColor: getStatusColor(data.newStatus),
+          eventId: data.eventId,
+          requirementId: data.requirementId,
+          departmentNotes: data.departmentNotes
+        };
+
+        // Add to notifications
+        setNotifications(prev => [newNotification, ...prev]);
+        setStatusNotifications(prev => [newNotification, ...prev]);
+      }
+    };
+
+    onStatusUpdate(handleStatusUpdate);
+
+    return () => {
+      offStatusUpdate();
+    };
+  }, [onStatusUpdate, offStatusUpdate, userId]);
 
   return (
-    <div className="space-y-6">
-      {/* Header with Notification */}
-      <div className="flex justify-between items-start">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-gray-600 mt-2">Welcome to the Event Scheduler Dashboard</p>
-        </div>
-        
-        {/* Notification Dropdown */}
-        <DropdownMenu open={notificationOpen} onOpenChange={setNotificationOpen}>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="icon" className="relative">
-              <Bell className="h-5 w-5" />
-              {getUnreadCount(notifications) > 0 && (
-                <span className="absolute -top-1 -right-1 h-3 w-3 bg-red-500 rounded-full"></span>
-              )}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent className="w-96 p-0" align="end">
-            <div className="p-3 border-b">
-              <div className="flex items-center justify-between">
-                <h3 className="font-medium text-sm">Notifications</h3>
-                <Button variant="ghost" size="sm" onClick={() => setNotificationOpen(false)} className="h-6 w-6 p-0">
-                  <X className="h-3 w-3" />
-                </Button>
-              </div>
+  <div className="space-y-6">
+    {/* Header with Notification */}
+    <div className="flex justify-between items-start">
+      <div>
+        <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
+        <p className="text-gray-600 mt-2">Welcome to the Event Scheduler Dashboard</p>
+      </div>
+      
+      {/* Notification Dropdown */}
+      <DropdownMenu open={notificationOpen} onOpenChange={setNotificationOpen}>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" size="icon" className="relative">
+            <Bell className="h-5 w-5" />
+            {getUnreadCount(notifications) > 0 && (
+              <span className="absolute -top-1 -right-1 h-3 w-3 bg-red-500 rounded-full"></span>
+            )}
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent className="w-96 p-0" align="end">
+          <div className="p-3 border-b">
+            <div className="flex items-center justify-between">
+              <h3 className="font-medium text-sm">Notifications</h3>
+              <Button variant="ghost" size="sm" onClick={() => setNotificationOpen(false)} className="h-6 w-6 p-0">
+                <X className="h-3 w-3" />
+              </Button>
             </div>
-            
-            <Tabs defaultValue="all" className="w-full">
-              <div className="px-3 pt-2">
-                <TabsList className="grid w-full grid-cols-4 h-9 gap-1">
-                  <TabsTrigger value="all" className="text-xs relative px-2">
-                    All
-                    {getUnreadCount(notifications) > 0 && (
-                      <Badge variant="destructive" className="ml-1 h-3 min-w-3 text-[10px] px-1">
-                        {getUnreadCount(notifications)}
-                      </Badge>
-                    )}
-                  </TabsTrigger>
-                  <TabsTrigger value="upcoming" className="text-xs relative px-2">
-                    Upcoming
-                    {getUnreadCount(notifications.filter(n => n.category === 'upcoming')) > 0 && (
-                      <Badge variant="destructive" className="ml-1 h-3 min-w-3 text-[10px] px-1">
-                        {getUnreadCount(notifications.filter(n => n.category === 'upcoming'))}
-                      </Badge>
-                    )}
-                  </TabsTrigger>
-                  <TabsTrigger value="tagged" className="text-xs relative px-2">
-                    Tagged
-                    {getUnreadCount(notifications.filter(n => n.category === 'tagged')) > 0 && (
-                      <Badge variant="destructive" className="ml-1 h-3 min-w-3 text-[10px] px-1">
-                        {getUnreadCount(notifications.filter(n => n.category === 'tagged'))}
-                      </Badge>
-                    )}
-                  </TabsTrigger>
-                  <TabsTrigger value="status" className="text-xs relative px-2">
-                    Status
-                    {getUnreadCount(notifications.filter(n => n.category === 'status')) > 0 && (
-                      <Badge variant="destructive" className="ml-1 h-3 min-w-3 text-[10px] px-1">
-                        {getUnreadCount(notifications.filter(n => n.category === 'status'))}
-                      </Badge>
-                    )}
-                  </TabsTrigger>
-                </TabsList>
-              </div>
+          </div>
+          
+          <Tabs defaultValue="all" className="w-full">
+            <div className="px-3 pt-2">
+              <TabsList className="grid w-full grid-cols-4 h-9 gap-1">
+                <TabsTrigger value="all" className="text-xs relative px-2">
+                  All
+                  {getUnreadCount(notifications) > 0 && (
+                    <Badge variant="destructive" className="ml-1 h-3 min-w-3 text-[10px] px-1">
+                      {getUnreadCount(notifications)}
+                    </Badge>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="upcoming" className="text-xs relative px-2">
+                  Upcoming
+                  {getUnreadCount(notifications.filter(n => n.category === 'upcoming')) > 0 && (
+                    <Badge variant="destructive" className="ml-1 h-3 min-w-3 text-[10px] px-1">
+                      {getUnreadCount(notifications.filter(n => n.category === 'upcoming'))}
+                    </Badge>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="tagged" className="text-xs relative px-2">
+                  Tagged
+                  {getUnreadCount(notifications.filter(n => n.category === 'tagged')) > 0 && (
+                    <Badge variant="destructive" className="ml-1 h-3 min-w-3 text-[10px] px-1">
+                      {getUnreadCount(notifications.filter(n => n.category === 'tagged'))}
+                    </Badge>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="status" className="text-xs relative px-2">
+                  Status
+                  {getUnreadCount(notifications.filter(n => n.category === 'status')) > 0 && (
+                    <Badge variant="destructive" className="ml-1 h-3 min-w-3 text-[10px] px-1">
+                      {getUnreadCount(notifications.filter(n => n.category === 'status'))}
+                    </Badge>
+                  )}
+                </TabsTrigger>
+              </TabsList>
+            </div>
               
               <div className="max-h-72 overflow-y-auto">
                 <TabsContent value="all" className="mt-0">
@@ -683,7 +809,11 @@ const Dashboard: React.FC = () => {
                 
                 <TabsContent value="status" className="mt-0">
                   <div className="space-y-1">
-                    {notifications.filter(n => n.category === 'status').map((notification) => {
+                    {(() => {
+                      const statusNotifications = notifications.filter(n => n.category === 'status');
+                      console.log('🔍 Status notifications in tab:', statusNotifications);
+                      return statusNotifications;
+                    })().map((notification) => {
                       const IconComponent = notification.icon;
                       const isRead = readNotifications.has(notification.id);
                       return (
@@ -843,6 +973,135 @@ const Dashboard: React.FC = () => {
                   </div>
                 </div>
               ))
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Requirements Status Overview Section */}
+      <Card>
+        <CardHeader>
+          <div className="flex justify-between items-center">
+            <CardTitle>Requirements Status Overview</CardTitle>
+            <div className="flex items-center gap-3">
+              {/* Event Filter Dropdown */}
+              <Select value={selectedEventFilter} onValueChange={setSelectedEventFilter}>
+                <SelectTrigger className="w-64">
+                  <SelectValue placeholder="Select an event" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">
+                    All Events ({requirementsOverview.length})
+                  </SelectItem>
+                  {getUniqueEvents().map((event) => (
+                    <SelectItem key={event.id} value={event.id}>
+                      {event.title} ({requirementsOverview.filter(req => req.eventId === event.id).length})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              
+              <Badge variant="outline" className="gap-1">
+                <AlertCircle className="h-3 w-3" />
+                {getFilteredRequirements().length} Showing
+              </Badge>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {loading ? (
+              <div className="text-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                <p className="text-sm text-gray-500 mt-2">Loading requirements...</p>
+              </div>
+            ) : getFilteredRequirements().length === 0 ? (
+              <div className="text-center py-8">
+                <AlertCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">
+                  {selectedEventFilter === 'all' ? 'No Requirements' : 'No Requirements for Selected Event'}
+                </h3>
+                <p className="text-gray-500">
+                  {selectedEventFilter === 'all' 
+                    ? "You don't have any requirements in your events." 
+                    : "This event doesn't have any requirements."}
+                </p>
+              </div>
+            ) : (
+              <div className="max-h-[600px] overflow-y-auto pr-2 space-y-4">
+                {getFilteredRequirements().map((req) => (
+                  <div key={`${req.eventId}-${req.id}`} className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-md transition-all duration-200">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-start gap-4 flex-1">
+                        {/* Status Indicator */}
+                        <div className="flex-shrink-0 mt-1">
+                          <div className={`w-4 h-4 rounded-full flex items-center justify-center ${
+                            req.status === 'confirmed' ? 'bg-green-100' :
+                            req.status === 'pending' ? 'bg-yellow-100' :
+                            req.status === 'declined' ? 'bg-red-100' :
+                            req.status === 'partially_fulfill' ? 'bg-blue-100' :
+                            req.status === 'in_preparation' ? 'bg-purple-100' :
+                            'bg-gray-100'
+                          }`}>
+                            <div className={`w-2 h-2 rounded-full ${
+                              req.status === 'confirmed' ? 'bg-green-500' :
+                              req.status === 'pending' ? 'bg-yellow-500' :
+                              req.status === 'declined' ? 'bg-red-500' :
+                              req.status === 'partially_fulfill' ? 'bg-blue-500' :
+                              req.status === 'in_preparation' ? 'bg-purple-500' :
+                              'bg-gray-500'
+                            }`}></div>
+                          </div>
+                        </div>
+                        
+                        {/* Content */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-3 mb-2">
+                            <h3 className="font-semibold text-gray-900 text-lg">{req.name}</h3>
+                            <Badge variant="outline" className="text-xs font-medium px-2 py-1">
+                              {req.department}
+                            </Badge>
+                          </div>
+                          
+                          <p className="text-sm text-gray-600 mb-2">{req.eventTitle}</p>
+                          
+                          {req.quantity && (
+                            <p className="text-sm text-gray-500 mb-2">
+                              Quantity: <span className="font-medium">{req.quantity}</span> of {req.totalQuantity} available
+                            </p>
+                          )}
+                          
+                          {req.departmentNotes && (
+                            <div className="bg-gray-50 rounded-lg p-3 mt-3">
+                              <p className="text-xs text-gray-600 font-medium mb-1">Department Notes:</p>
+                              <p className="text-sm text-gray-700">{req.departmentNotes}</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {/* Status Badge */}
+                      <div className="flex-shrink-0 ml-4">
+                        <div className={`px-4 py-2 rounded-full text-sm font-medium ${
+                          req.status === 'confirmed' ? 'bg-green-100 text-green-800' :
+                          req.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                          req.status === 'declined' ? 'bg-red-100 text-red-800' :
+                          req.status === 'partially_fulfill' ? 'bg-blue-100 text-blue-800' :
+                          req.status === 'in_preparation' ? 'bg-purple-100 text-purple-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}>
+                          {req.status === 'confirmed' ? 'Confirmed' :
+                           req.status === 'pending' ? 'Pending' :
+                           req.status === 'declined' ? 'Declined' :
+                           req.status === 'partially_fulfill' ? 'Partial' :
+                           req.status === 'in_preparation' ? 'Preparing' :
+                           req.status}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         </CardContent>

@@ -194,10 +194,8 @@ const RequestEventPage: React.FC = () => {
 
         if (response.data.success) {
           setDepartments(response.data.data);
-          console.log('✅ Departments loaded:', response.data.data);
         }
       } catch (error) {
-        console.error('Error fetching departments:', error);
         // Fallback to empty array if fetch fails
         setDepartments([]);
       } finally {
@@ -225,10 +223,8 @@ const RequestEventPage: React.FC = () => {
           const uniqueLocations = [...new Set(response.data.data.map((item: any) => item.locationName))] as string[];
           // Add "Add Custom Location" at the beginning
           setLocations(['Add Custom Location', ...uniqueLocations]);
-          console.log('✅ Locations loaded:', uniqueLocations);
         }
       } catch (error) {
-        console.error('Error fetching locations:', error);
         // Keep default "Add Custom Location" if fetch fails
         setLocations(['Add Custom Location']);
       }
@@ -257,11 +253,8 @@ const RequestEventPage: React.FC = () => {
         // Convert date strings to Date objects
         const dates = locationAvailabilities.map((item: any) => new Date(item.date));
         setAvailableDates(dates);
-        
-        console.log('✅ Available dates for', locationName, ':', dates);
       }
     } catch (error) {
-      console.error('Error fetching available dates:', error);
       setAvailableDates([]);
     }
   };
@@ -281,14 +274,8 @@ const RequestEventPage: React.FC = () => {
   // Auto-check for venue conflicts when schedule changes in modal
   useEffect(() => {
     const checkConflicts = async () => {
-      console.log(`\n🔄 === CONFLICT CHECK USEEFFECT TRIGGERED ===`);
-      console.log(`📅 startDate: ${formData.startDate}`);
-      console.log(`📍 location: ${formData.location}`);
-      console.log(`🎯 showScheduleModal: ${showScheduleModal}`);
-      console.log(`🎯 showRequirementsModal: ${showRequirementsModal}`);
       
       if (formData.startDate && formData.location && showScheduleModal) {
-        console.log(`✅ All conditions met, fetching conflicts...`);
         
         // Check conflicts for the entire day at this location to show booked time slots
         const response = await fetch(`${API_BASE_URL}/events`, {
@@ -302,7 +289,6 @@ const RequestEventPage: React.FC = () => {
           const eventsData = await response.json();
           const events = eventsData.data || [];
           
-          console.log(`📊 Total events from API: ${events.length}`);
           
           // Filter events that are on the same date (ALL locations for requirement conflicts)
           const conflicts = events.filter((event: any) => {
@@ -316,23 +302,11 @@ const RequestEventPage: React.FC = () => {
           });
           
           setConflictingEvents(conflicts);
-          console.log(`🔍 Found ${conflicts.length} existing bookings across all locations on ${formData.startDate.toDateString()}`);
-          conflicts.forEach((event: any) => {
-            console.log(`   📅 "${event.eventTitle}" - ${event.startTime} to ${event.endTime}`);
-          });
-        } else {
-          console.log(`❌ API response not ok:`, response.status);
         }
       } else {
-        console.log(`❌ Conditions not met:`);
-        console.log(`   startDate: ${!!formData.startDate}`);
-        console.log(`   location: ${!!formData.location}`);
-        console.log(`   showScheduleModal: ${showScheduleModal}`);
-        
         if (!showScheduleModal) {
           // Clear conflicts when modal is closed
           setConflictingEvents([]);
-          console.log(`🧹 Cleared conflicting events (modal closed)`);
         }
       }
     };
@@ -412,7 +386,6 @@ const RequestEventPage: React.FC = () => {
       }
       
       handleInputChange('departmentRequirements', updatedRequirements);
-      console.log('✅ Refreshed resource availabilities for all departments after schedule change');
     }
     
     setShowScheduleModal(false);
@@ -435,12 +408,7 @@ const RequestEventPage: React.FC = () => {
 
   // Fetch resource availabilities for a specific department and date
   const fetchResourceAvailabilities = async (departmentName: string, date: Date) => {
-    console.log(`\n🔍 === FETCH RESOURCE AVAILABILITIES ===`);
-    console.log(`📋 Department: ${departmentName}`);
-    console.log(`📅 Date: ${date}`);
-    
     if (!date) {
-      console.log(`❌ No date provided`);
       return [];
     }
     
@@ -448,11 +416,7 @@ const RequestEventPage: React.FC = () => {
       const token = localStorage.getItem('authToken');
       const department = departments.find(dept => dept.name === departmentName);
       
-      console.log(`🏢 Department found:`, department);
-      console.log(`🔑 Token exists: ${!!token}`);
-      
       if (!department) {
-        console.log(`❌ Department not found in departments list`);
         return [];
       }
       
@@ -462,14 +426,7 @@ const RequestEventPage: React.FC = () => {
       const day = String(date.getDate()).padStart(2, '0');
       const dateStr = `${year}-${month}-${day}`;
       
-      console.log(`📅 Original date: ${date}`);
-      console.log(`📅 Date string (timezone-safe): ${dateStr}`);
-      
       const apiUrl = `${API_BASE_URL}/resource-availability/department/${department._id}/availability?startDate=${dateStr}&endDate=${dateStr}`;
-      console.log(`🌐 API URL: ${apiUrl}`);
-      
-      // Log API request details
-      console.log(`🔍 API Request: ${apiUrl}`);
       
       const response = await axios.get(apiUrl,
         {
@@ -480,27 +437,15 @@ const RequestEventPage: React.FC = () => {
         }
       );
       
-      console.log(`🔍 Resource availabilities for ${departmentName} on ${dateStr}:`, response.data);
-      console.log(`📊 Number of availability records found: ${response.data?.length || 0}`);
-      
-      // Log each availability record for debugging
-      if (response.data && response.data.length > 0) {
-        response.data.forEach((avail: any, index: number) => {
-          console.log(`   📦 Record ${index + 1}: ${avail.requirementText} - Quantity: ${avail.quantity}, ID: ${avail.requirementId}`);
-        });
-      }
       
       return response.data || [];
     } catch (error) {
-      console.error('Error fetching resource availabilities:', error);
       return [];
     }
   };
 
   const handleDepartmentToggle = async (departmentName: string) => {
     try {
-      console.log(`🏢 Department selected: ${departmentName}`);
-      console.log(`📅 Schedule: ${formData.startDate} ${formData.startTime}-${formData.endTime} at ${formData.location}`);
     
     // If department is being selected, open requirements modal
     if (!formData.taggedDepartments.includes(departmentName)) {
@@ -508,18 +453,13 @@ const RequestEventPage: React.FC = () => {
       
       // Fetch conflicting events if date and time are set
       if (formData.startDate && formData.startTime && formData.endTime) {
-        console.log('🔍 Checking conflicts for:', formData.startDate, formData.startTime, '-', formData.endTime, 'at', formData.location);
         await fetchConflictingEvents(formData.startDate, formData.startTime, formData.endTime, formData.location);
       }
       
       // Fetch resource availabilities for the selected date
       let availabilities: any[] = [];
       if (formData.startDate) {
-        console.log(`🚀 Fetching resource availabilities for ${departmentName} on ${formData.startDate}`);
         availabilities = await fetchResourceAvailabilities(departmentName, formData.startDate);
-        console.log(`📦 Availabilities fetched:`, availabilities);
-      } else {
-        console.log(`❌ No startDate set - skipping availability fetch`);
       }
       
       setShowRequirementsModal(true);
@@ -542,10 +482,6 @@ const RequestEventPage: React.FC = () => {
               avail.requirementId === req._id
             );
             
-            console.log(`📦 Processing requirement: ${req.text}`);
-            console.log(`   🔍 Availability found:`, availability);
-            console.log(`   📊 Availability quantity: ${availability?.quantity}`);
-            console.log(`   📊 Availability status: ${availability?.isAvailable}`);
             
             return {
               id: req._id,
@@ -565,15 +501,12 @@ const RequestEventPage: React.FC = () => {
         newRequirements[departmentName] = dbRequirements;
         handleInputChange('departmentRequirements', newRequirements);
         
-        console.log('✅ Department requirements loaded with availability data:', dbRequirements);
-        console.log(`📊 Total requirements with availability: ${dbRequirements.length}`);
       } else {
         // No requirements found or no availability data for this date
         const newRequirements = { ...formData.departmentRequirements };
         newRequirements[departmentName] = [];
         handleInputChange('departmentRequirements', newRequirements);
         
-        console.log(`❌ No availability data found for ${departmentName} on ${formData.startDate?.toDateString()}`);
       }
     } else {
       // If unchecking, remove from tagged departments
@@ -581,7 +514,7 @@ const RequestEventPage: React.FC = () => {
       handleInputChange('taggedDepartments', updatedDepartments);
     }
     } catch (error) {
-      console.error('🚨 ERROR in handleDepartmentToggle:', error);
+      // Handle error silently
     }
   };
 
@@ -592,7 +525,6 @@ const RequestEventPage: React.FC = () => {
       const department = departments.find(dept => dept.name === departmentName);
       
       if (!department) {
-        console.log(`❌ Department not found: ${departmentName}`);
         return [];
       }
 
@@ -606,16 +538,13 @@ const RequestEventPage: React.FC = () => {
         }
       );
 
-      console.log(`📅 Available dates for ${departmentName}:`, response.data);
       return response.data || [];
     } catch (error) {
-      console.error('Error fetching available dates:', error);
       return [];
     }
   };
 
   const handleViewAvailableDates = async (departmentName: string) => {
-    console.log(`🔍 Fetching available dates for ${departmentName}`);
     const dates = await fetchAvailableDates(departmentName);
     setDepartmentAvailableDates(dates);
     setShowAvailableDatesModal(true);
@@ -735,7 +664,6 @@ const RequestEventPage: React.FC = () => {
     toast.success(`Requirements saved for ${selectedDepartment}!`, {
       description: `${requirementCount} requirement(s) selected${details.length > 0 ? ` (${details.join(', ')})` : ''}.`
     });
-    console.log(`Requirements saved for ${selectedDepartment}:`, selectedReqs);
   };
 
   // Check if departments have requirements added
@@ -819,20 +747,12 @@ const RequestEventPage: React.FC = () => {
           date, eventStartDate
         );
         
-        if (hasConflict) {
-          console.log(`🏢 Venue conflict detected with event: "${event.eventTitle}" at ${event.location}`);
-          console.log(`   📅 Event Date: ${new Date(event.startDate).toDateString()}`);
-          console.log(`   ⏰ Event Time: ${event.startTime} - ${event.endTime}`);
-          console.log(`   🆚 Requested Date: ${date.toDateString()}`);
-          console.log(`   ⏰ Requested Time: ${startTime} - ${endTime}`);
-        }
         
         return hasConflict;
       });
       
       return conflicts;
     } catch (error) {
-      console.error('Error fetching venue conflicts:', error);
       return [];
     }
   };
@@ -869,13 +789,6 @@ const RequestEventPage: React.FC = () => {
           date, eventStartDate
         );
         
-        if (hasConflict) {
-          console.log(`⚠️ Time conflict detected with event: "${event.eventTitle}" at ${event.location}`);
-          console.log(`   📅 Event Date: ${new Date(event.startDate).toDateString()}`);
-          console.log(`   ⏰ Event Time: ${event.startTime} - ${event.endTime}`);
-          console.log(`   🆚 Requested Date: ${date.toDateString()}`);
-          console.log(`   ⏰ Requested Time: ${startTime} - ${endTime}`);
-        }
         
         return hasConflict;
       });
@@ -883,7 +796,6 @@ const RequestEventPage: React.FC = () => {
       setConflictingEvents(conflicts);
       return conflicts;
     } catch (error) {
-      console.error('Error fetching conflicting events:', error);
       setConflictingEvents([]);
       return [];
     }
@@ -893,8 +805,6 @@ const RequestEventPage: React.FC = () => {
   const getAvailableQuantity = (requirement: any, departmentName: string) => {
     let usedQuantity = 0;
     
-    console.log(`🔍 Checking availability for "${requirement.name}" (Department: ${departmentName})`);
-    console.log(`📅 Conflicting events found: ${conflictingEvents.length}`);
     
     conflictingEvents.forEach(event => {
       // Check ALL departments in the event, not just the current department
@@ -907,10 +817,6 @@ const RequestEventPage: React.FC = () => {
             );
             if (matchingReq) {
               usedQuantity += matchingReq.quantity || 0;
-              console.log(`🔍 Found resource conflict: ${taggedDept} booked ${matchingReq.quantity} ${requirement.name}`);
-              console.log(`   📋 Event: "${event.eventTitle}" at ${event.location}`);
-              console.log(`   📅 Date: ${new Date(event.startDate).toDateString()}`);
-              console.log(`   ⏰ Time: ${event.startTime} - ${event.endTime}`);
             }
           }
         });
@@ -922,8 +828,6 @@ const RequestEventPage: React.FC = () => {
     const totalAvailable = requirement.totalQuantity || 0;
     const availableQuantity = Math.max(0, totalAvailable - usedQuantity);
     
-    console.log(`📊 ${requirement.name}: Total=${totalAvailable}, Used=${usedQuantity}, Available=${availableQuantity}`);
-    console.log(`🔍 Requirement object totalQuantity: ${requirement.totalQuantity}`);
     
     return availableQuantity;
   };
@@ -1055,9 +959,7 @@ const RequestEventPage: React.FC = () => {
           const user = JSON.parse(userData);
           const userDepartment = user.department || user.departmentName || 'Unknown';
           formDataToSubmit.append('requestorDepartment', userDepartment);
-          console.log('Adding requestor department:', userDepartment);
         } catch (error) {
-          console.error('Error parsing user data:', error);
           formDataToSubmit.append('requestorDepartment', 'Unknown');
         }
       } else {
@@ -1097,20 +999,9 @@ const RequestEventPage: React.FC = () => {
 
       const headers = {
         'Authorization': `Bearer ${token}`,
-        // Don't set Content-Type for FormData, let browser set it with boundary
+        'Content-Type': 'multipart/form-data',
       };
 
-      console.log('📤 Submitting event request...');
-      console.log('🔍 Selected requirements only:', selectedRequirementsOnly);
-      console.log('🔍 Tagged departments:', formData.taggedDepartments);
-      console.log('🔍 Form data keys:', Array.from(formDataToSubmit.keys()));
-      console.log('📅 Date formatting debug:', {
-        originalStartDate: formData.startDate,
-        formattedStartDate: formatDateOnly(formData.startDate),
-        originalEndDate: formData.endDate,
-        formattedEndDate: formatDateOnly(formData.endDate),
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
-      });
       
       const response = await axios.post(`${API_BASE_URL}/events`, formDataToSubmit, { headers });
 
@@ -1118,7 +1009,6 @@ const RequestEventPage: React.FC = () => {
         toast.success('Event request submitted successfully!', {
           description: 'Your event request has been sent for approval.'
         });
-        console.log('Event created:', response.data.data);
         
         // Navigate to My Events page after successful submission
         setTimeout(() => {
@@ -1126,7 +1016,6 @@ const RequestEventPage: React.FC = () => {
         }, 1500); // Wait 1.5 seconds to show the success toast
       }
     } catch (error: any) {
-      console.error('Error submitting event request:', error);
       toast.error('Failed to submit event request', {
         description: error.response?.data?.message || 'Please try again later.'
       });
@@ -1208,20 +1097,7 @@ const RequestEventPage: React.FC = () => {
 
   // Check if a specific time slot has requirement conflicts (any requirements used by existing events)
   const hasRequirementConflictAtTime = (timeSlot: string) => {
-    console.log(`\n🚀 === REQUIREMENT CONFLICT CHECK START ===`);
-    console.log(`🕐 Time slot: ${timeSlot}`);
-    console.log(`📍 Location: ${formData.location}`);
-    console.log(`📅 Date: ${formData.startDate}`);
-    console.log(`🔍 Conflicting events count: ${conflictingEvents.length}`);
-    console.log(`🎯 Show Schedule Modal: ${showScheduleModal}`);
-    console.log(`🎯 Show Requirements Modal: ${showRequirementsModal}`);
-    console.log(`🎯 Selected Department: ${selectedDepartment}`);
-    
     if (!formData.startDate || !formData.location || conflictingEvents.length === 0) {
-      console.log(`❌ Early exit - missing data or no conflicts`);
-      console.log(`   startDate: ${formData.startDate}`);
-      console.log(`   location: ${formData.location}`);
-      console.log(`   conflictingEvents: ${conflictingEvents.length}`);
       return { hasConflict: false, conflictedRequirements: [] };
     }
 
@@ -1229,12 +1105,6 @@ const RequestEventPage: React.FC = () => {
 
     // Check each conflicting event to see if it uses any requirements at this time slot
     conflictingEvents.forEach(event => {
-      console.log(`\n📋 Checking event: "${event.eventTitle}" at ${event.location}`);
-      
-      // For requirement conflicts, check ALL locations on the same date
-      // (Requirements are shared resources that can't be used simultaneously)
-      console.log(`  ✅ Checking requirements across all locations (shared resources)`);
-      console.log(`  📍 Event location: ${event.location}, Current location: ${formData.location}`);
       
       // Convert times to minutes for easier comparison
       const timeToMinutes = (time: string) => {
@@ -1246,43 +1116,29 @@ const RequestEventPage: React.FC = () => {
       const eventStartMinutes = timeToMinutes(event.startTime);
       const eventEndMinutes = timeToMinutes(event.endTime);
       
-      console.log(`  ⏰ Time check: ${timeSlot} (${slotMinutes}min) vs ${event.startTime}-${event.endTime} (${eventStartMinutes}-${eventEndMinutes}min)`);
-      
       // Check if this time slot overlaps with the event
       const timeOverlaps = slotMinutes >= eventStartMinutes && slotMinutes <= eventEndMinutes;
       
       if (!timeOverlaps) {
-        console.log(`  ❌ No time overlap`);
         return;
       }
-
-      console.log(`  ✅ Time overlaps! Checking if event has any requirements...`);
-      console.log(`  📋 Event tagged departments:`, event.taggedDepartments);
-      console.log(`  📋 Event department requirements:`, event.departmentRequirements);
 
       // Check if this event uses ANY requirements
       if (event.taggedDepartments && event.departmentRequirements) {
         event.taggedDepartments.forEach((dept: string) => {
           const deptReqs = event.departmentRequirements[dept] || [];
-          console.log(`    🏢 Checking dept ${dept} requirements:`, deptReqs);
-          
           deptReqs.forEach((eventReq: any) => {
             const isSelected = eventReq.selected;
             const hasQuantity = eventReq.quantity > 0;
-            
-            console.log(`      📦 ${eventReq.name}: selected=${isSelected}, quantity=${eventReq.quantity}`);
             
             if (isSelected && hasQuantity) {
               const reqName = `${eventReq.name} (${dept})`;
               if (!conflictedRequirements.includes(reqName)) {
                 conflictedRequirements.push(reqName);
-                console.log(`      ✅ REQUIREMENT CONFLICT: ${reqName}`);
               }
             }
           });
         });
-      } else {
-        console.log(`  ❌ No department requirements found`);
       }
     });
 
@@ -1291,7 +1147,6 @@ const RequestEventPage: React.FC = () => {
       conflictedRequirements 
     };
     
-    console.log(`🎯 Final result for ${timeSlot}:`, result);
     return result;
   };
 

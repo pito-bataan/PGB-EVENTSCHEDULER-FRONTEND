@@ -169,22 +169,17 @@ const MessagesPage: React.FC = () => {
     if (userData) {
       try {
         const user = JSON.parse(userData);
-        console.log('🔧 Current user data from localStorage:', user);
-        
         const currentUserData = {
           id: user._id || '1',
-          name: user.name || 'User',
+          name: user.email || 'User',
           department: user.department || user.departmentName || 'Unknown',
           isOnline: true
         };
-        
-        console.log('🔧 Setting current user:', currentUserData);
         setCurrentUser(currentUserData);
         
         // Fetch events after setting current user
         fetchEventConversations(user);
       } catch (error) {
-        console.error('Error parsing user data:', error);
         setLoading(false);
       }
     } else {
@@ -227,13 +222,11 @@ const MessagesPage: React.FC = () => {
         
         if (isRequestor) {
           // If current user is the requestor, show users from tagged departments
-          console.log(`User is requestor for event: ${event.eventTitle}. Showing tagged department users.`);
           
           if (event.taggedDepartments) {
             for (const deptName of event.taggedDepartments) {
               try {
                 // Fetch users from this department
-                console.log(`Fetching users for department: ${deptName}`);
                 const usersResponse = await fetch(`http://localhost:5000/api/users/department/${deptName}`, {
                   headers: {
                     'Authorization': `Bearer ${token}`,
@@ -244,12 +237,9 @@ const MessagesPage: React.FC = () => {
                 if (usersResponse.ok) {
                   const usersData = await usersResponse.json();
                   const deptUsers = usersData.data || usersData || [];
-                  console.log(`Found ${deptUsers.length} users in department ${deptName}:`, deptUsers);
-                  
                   // Add department users to participants
                   deptUsers.forEach((deptUser: any) => {
                     if (!participants.find(p => p.id === deptUser._id)) {
-                      console.log(`Adding user: ${deptUser.email} from ${deptUser.department}`);
                       participants.push({
                         id: deptUser._id,
                         name: deptUser.email,
@@ -259,17 +249,14 @@ const MessagesPage: React.FC = () => {
                       });
                     }
                   });
-                } else {
-                  console.error(`Failed to fetch users for department ${deptName}:`, usersResponse.status, usersResponse.statusText);
                 }
               } catch (error) {
-                console.error(`Error fetching users for department ${deptName}:`, error);
+                // Handle error silently
               }
             }
           }
         } else {
           // If current user is from tagged department, show the requestor
-          console.log(`User is from tagged department for event: ${event.eventTitle}. Showing requestor.`);
           
           participants.push({
             id: event.createdBy || 'unknown',
@@ -281,7 +268,6 @@ const MessagesPage: React.FC = () => {
           
           // Also add other users from the same tagged department (colleagues)
           try {
-            console.log(`Fetching colleagues from department: ${userDepartment}`);
             const usersResponse = await fetch(`http://localhost:5000/api/users/department/${userDepartment}`, {
               headers: {
                 'Authorization': `Bearer ${token}`,
@@ -307,13 +293,10 @@ const MessagesPage: React.FC = () => {
               });
             }
           } catch (error) {
-            console.error(`Error fetching colleagues from department ${userDepartment}:`, error);
+            // Handle error silently
           }
         }
 
-        console.log(`Final participants for event "${event.eventTitle}":`, participants.length, participants);
-        console.log(`Current user department: ${userDepartment}, Event requestor department: ${event.requestorDepartment}`);
-        console.log(`Is current user requestor: ${isRequestor}`);
         
         return {
           id: event._id,
@@ -353,7 +336,6 @@ const MessagesPage: React.FC = () => {
       
       setLoading(false);
     } catch (error) {
-      console.error('Error fetching event conversations:', error);
       setLoading(false);
     }
   };
@@ -403,9 +385,6 @@ const MessagesPage: React.FC = () => {
   // Helper function to get event unread count
   const getEventUnreadCount = (eventId: string) => {
     const count = eventUnreadCounts[eventId] || 0;
-    if (count > 0) {
-      console.log(`🎯 Event "${eventId}" has ${count} unread messages`);
-    }
     return count;
   };
 
@@ -421,24 +400,12 @@ const MessagesPage: React.FC = () => {
   });
   const conversationMessages = selectedConversation ? messages[selectedConversation] || [] : [];
   
-  console.log('🔍 Selected conversation debug:', {
-    selectedConversation,
-    selectedConvId: selectedConversation?.split('-')[0],
-    selectedUserId,
-    selectedUserIdType: typeof selectedUserId,
-    selectedUser,
-    selectedUserName: selectedUser?.name,
-    participants: selectedConv?.participants
-  });
 
   // Fetch messages and unread counts for all conversations
   const fetchAllConversationDataForConversations = async (conversationsToFetch: Conversation[]) => {
     if (!currentUser) {
-      console.log('❌ No current user, skipping conversation data fetch');
       return;
     }
-    
-    console.log('🔄 Fetching all conversation data for', conversationsToFetch.length, 'conversations');
     
     try {
       const token = localStorage.getItem('authToken');
@@ -450,7 +417,6 @@ const MessagesPage: React.FC = () => {
           if (participant.id !== currentUser.id) {
             const participantId = typeof participant.id === 'object' ? (participant.id as any)._id : participant.id;
             const conversationId = `${conv.id}-${participantId}`;
-            console.log(`🔄 Fetching data for conversation: ${conversationId}`);
             
             try {
               // Fetch messages for this conversation
@@ -464,9 +430,6 @@ const MessagesPage: React.FC = () => {
               if (messagesResponse.ok) {
                 const messagesData = await messagesResponse.json();
                 allMessages[conversationId] = messagesData.data || [];
-                console.log(`✅ Loaded ${messagesData.data?.length || 0} messages for ${conversationId}`);
-              } else {
-                console.log(`❌ Failed to fetch messages for ${conversationId}:`, messagesResponse.status);
               }
               
               // Fetch unread count for this conversation
@@ -480,12 +443,9 @@ const MessagesPage: React.FC = () => {
               if (unreadResponse.ok) {
                 const unreadData = await unreadResponse.json();
                 counts[conversationId] = unreadData.data.unreadCount;
-                console.log(`✅ Unread count for ${conversationId}: ${unreadData.data.unreadCount}`);
-              } else {
-                console.log(`❌ Failed to fetch unread count for ${conversationId}:`, unreadResponse.status);
               }
             } catch (error) {
-              console.error(`❌ Error fetching data for ${conversationId}:`, error);
+              // Handle error silently
             }
           }
         }
@@ -493,9 +453,8 @@ const MessagesPage: React.FC = () => {
       
       setMessages(allMessages);
       setUnreadCounts(counts);
-      console.log('📊 Loaded all conversation data:', { messageCount: Object.keys(allMessages).length, unreadCounts: counts });
     } catch (error) {
-      console.error('Error fetching all conversation data:', error);
+      // Handle error silently
     }
   };
 
@@ -503,12 +462,9 @@ const MessagesPage: React.FC = () => {
   const markConversationAsRead = async (eventId: string, userId: string) => {
     try {
       const token = localStorage.getItem('authToken');
-      console.log(`👀 Marking conversation as read for eventId: ${eventId}, userId: ${userId}`);
-      
       // Get the current unread count before marking as read
       const conversationId = `${eventId}-${userId}`;
       const currentUnreadCount = unreadCounts[conversationId] || 0;
-      console.log(`📊 Current unread count for conversation ${conversationId}: ${currentUnreadCount}`);
       
       const response = await fetch(`http://localhost:5000/api/messages/mark-conversation-read/${eventId}/${userId}`, {
         method: 'PUT',
@@ -520,7 +476,6 @@ const MessagesPage: React.FC = () => {
 
       if (response.ok) {
         const data = await response.json();
-        console.log('✅ Conversation marked as read:', data);
         
         // Update local unread counts
         setUnreadCounts(prev => ({
@@ -530,7 +485,6 @@ const MessagesPage: React.FC = () => {
 
         // 🔥 NOTIFY GLOBAL HOOK IMMEDIATELY via custom event
         if (currentUnreadCount > 0) {
-          console.log(`🔥 Dispatching messagesReadGlobal event - readerId: ${currentUser?.id}, messageCount: ${currentUnreadCount}`);
           window.dispatchEvent(new CustomEvent('messagesReadGlobal', {
             detail: {
               readerId: currentUser?.id,
@@ -541,11 +495,9 @@ const MessagesPage: React.FC = () => {
             }
           }));
         }
-      } else {
-        console.error('❌ Failed to mark conversation as read:', response.status);
       }
     } catch (error) {
-      console.error('❌ Error marking conversation as read:', error);
+      // Handle error silently
     }
   };
 
@@ -553,7 +505,6 @@ const MessagesPage: React.FC = () => {
   const fetchMessages = async (eventId: string, userId: string) => {
     try {
       const token = localStorage.getItem('authToken');
-      console.log(`🔍 Fetching messages for eventId: ${eventId}, userId: ${userId}, currentUser: ${currentUser?.id}`);
       
       const response = await fetch(`http://localhost:5000/api/messages/conversation/${eventId}/${userId}`, {
         headers: {
@@ -564,29 +515,19 @@ const MessagesPage: React.FC = () => {
 
       if (response.ok) {
         const messagesData = await response.json();
-        console.log(`📨 Fetched ${messagesData.data?.length || 0} messages:`, messagesData.data);
         setMessages(prev => ({
           ...prev,
           [`${eventId}-${userId}`]: messagesData.data || []
         }));
-      } else {
-        console.error('Failed to fetch messages:', response.status, response.statusText);
-        const errorText = await response.text();
-        console.error('Error response:', errorText);
       }
     } catch (error) {
-      console.error('Error fetching messages:', error);
+      // Handle error silently
     }
   };
 
   // Load messages when conversation is selected (with debouncing)
   useEffect(() => {
     if (selectedConversation && selectedConv && selectedUserId && typeof selectedUserId === 'string') {
-      console.log('🔍 About to fetch messages with:', {
-        eventId: selectedConv.eventId || selectedConv.id,
-        userId: selectedUserId,
-        userIdType: typeof selectedUserId
-      });
       
       // Add debouncing to prevent multiple rapid API calls
       const timeoutId = setTimeout(() => {
@@ -596,20 +537,12 @@ const MessagesPage: React.FC = () => {
       }, 200);
       
       return () => clearTimeout(timeoutId);
-    } else {
-      console.log('🚨 Cannot fetch messages - invalid parameters:', {
-        selectedConversation,
-        selectedConv: !!selectedConv,
-        selectedUserId,
-        selectedUserIdType: typeof selectedUserId
-      });
     }
   }, [selectedConversation, selectedConv, selectedUserId]);
 
   // Set up real-time message listener
   useEffect(() => {
     onNewMessage((data: any) => {
-      console.log('🔔 Received new message:', data);
       const { message, conversationId } = data;
       
       // Add message to the appropriate conversation
@@ -639,12 +572,7 @@ const MessagesPage: React.FC = () => {
 
   // Set up real-time seen status listener
   useEffect(() => {
-    console.log('🔧 Setting up messages-seen listener for user:', currentUser?.id);
-    
     onMessagesRead((data: any) => {
-      console.log('👀 Received seen status update:', data);
-      console.log('👀 Current user ID:', currentUser?.id);
-      console.log('👀 Current messages state:', Object.keys(messages));
       const { eventId, readerId } = data;
       
       // Update messages to mark them as read
@@ -667,7 +595,6 @@ const MessagesPage: React.FC = () => {
         return updatedMessages;
       });
       
-      console.log(`👀 Updated seen status for messages in event ${eventId} seen by ${readerId}`);
     });
 
     // Cleanup listener on unmount
@@ -680,7 +607,6 @@ const MessagesPage: React.FC = () => {
   // Fetch all conversation data when conversations are loaded
   useEffect(() => {
     if (conversations.length > 0 && currentUser) {
-      console.log('🔄 Conversations loaded, fetching all conversation data...');
       fetchAllConversationDataForConversations(conversations);
     }
   }, [conversations.length, currentUser?.id]);
@@ -696,13 +622,11 @@ const MessagesPage: React.FC = () => {
       if (currentRoomRef.current !== conversationRoomId) {
         // Leave previous room if exists
         if (currentRoomRef.current) {
-          console.log(`🔄 Leaving previous room: ${currentRoomRef.current}`);
           leaveConversation(currentRoomRef.current);
         }
         
         // Join new room with debouncing
         const timeoutId = setTimeout(() => {
-          console.log(`🔄 Joining conversation room: ${conversationRoomId}`);
           joinConversation(conversationRoomId);
           currentRoomRef.current = conversationRoomId;
         }, 200);
@@ -714,7 +638,6 @@ const MessagesPage: React.FC = () => {
     } else {
       // No conversation selected, leave current room
       if (currentRoomRef.current) {
-        console.log(`🔄 Leaving room (no conversation): ${currentRoomRef.current}`);
         leaveConversation(currentRoomRef.current);
         currentRoomRef.current = null;
       }
@@ -754,7 +677,6 @@ const MessagesPage: React.FC = () => {
 
       if (response.ok) {
         const messageData = await response.json();
-        console.log('File message sent successfully:', messageData);
         
         // Add the new message to local state
         setMessages(prev => ({
@@ -768,11 +690,9 @@ const MessagesPage: React.FC = () => {
         if (fileInputRef.current) {
           fileInputRef.current.value = '';
         }
-      } else {
-        console.error('Failed to send file message:', response.status);
       }
     } catch (error) {
-      console.error('Error sending file message:', error);
+      // Handle error silently
     } finally {
       // Always reset uploading state
       setIsUploading(false);
@@ -786,7 +706,6 @@ const MessagesPage: React.FC = () => {
       
       // Extract just the filename from the full path (handle both / and \ separators)
       const filename = filePath.split(/[/\\]/).pop() || filePath;
-      console.log('📁 Downloading file:', { originalPath: filePath, extractedFilename: filename });
       
       const response = await fetch(`http://localhost:5000/api/messages/file/${filename}`, {
         headers: {
@@ -805,11 +724,9 @@ const MessagesPage: React.FC = () => {
         document.body.removeChild(link);
         window.URL.revokeObjectURL(url);
       } else {
-        console.error('Failed to download file:', response.status);
         alert('Failed to download file. Please try again.');
       }
     } catch (error) {
-      console.error('Error downloading file:', error);
       alert('Error downloading file. Please try again.');
     }
   };
@@ -837,7 +754,6 @@ const MessagesPage: React.FC = () => {
 
       if (response.ok) {
         const messageData = await response.json();
-        console.log('Message sent successfully:', messageData);
         
         // Add the new message to local state
         setMessages(prev => ({
@@ -846,11 +762,9 @@ const MessagesPage: React.FC = () => {
         }));
         
         setNewMessage('');
-      } else {
-        console.error('Failed to send message:', response.status);
       }
     } catch (error) {
-      console.error('Error sending message:', error);
+      // Handle error silently
     }
   };
 
@@ -1028,13 +942,9 @@ const MessagesPage: React.FC = () => {
                             isUserSelected ? 'bg-blue-50 border-l-blue-600' : 'border-l-transparent'
                           }`}
                           onClick={() => {
-                            console.log('🔍 Clicking user:', user);
                             // Extract the actual user ID - handle both string and object cases
                             const actualUserId = typeof user.id === 'object' ? (user.id as any)._id : user.id;
-                            console.log('🔍 Actual User ID:', actualUserId, 'Type:', typeof actualUserId);
-                            console.log('🔍 Conv ID:', conv.id, 'Type:', typeof conv.id);
                             const conversationId = `${conv.id}-${actualUserId}`;
-                            console.log('🔍 Setting conversation ID:', conversationId);
                             setSelectedConversation(conversationId);
                           }}
                         >

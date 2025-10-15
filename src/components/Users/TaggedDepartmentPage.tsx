@@ -19,6 +19,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Separator } from '@/components/ui/separator';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
   Select,
   SelectContent,
@@ -36,7 +38,13 @@ import {
   AlertCircle,
   Loader2,
   XCircle,
-  HelpCircle
+  HelpCircle,
+  Package,
+  User,
+  MessageSquare,
+  Edit3,
+  Save,
+  X
 } from 'lucide-react';
 
 // Event type definitions
@@ -95,6 +103,8 @@ const TaggedDepartmentPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [showNotesMap, setShowNotesMap] = useState<Record<string, boolean>>({});
   const [notesMap, setNotesMap] = useState<Record<string, string>>({});
+  const [currentUserDepartment, setCurrentUserDepartment] = useState<string>('');
+  const [activeEventTab, setActiveEventTab] = useState<'ongoing' | 'completed'>('ongoing');
   const [statusDialog, setStatusDialog] = useState<{
     isOpen: boolean;
     eventId: string;
@@ -108,6 +118,17 @@ const TaggedDepartmentPage: React.FC = () => {
   });
 
   useEffect(() => {
+    // Get current user's department from localStorage
+    const userData = localStorage.getItem('userData');
+    if (userData) {
+      try {
+        const user = JSON.parse(userData);
+        setCurrentUserDepartment(user.department || user.departmentName || '');
+      } catch (error) {
+        console.error('Error parsing user data:', error);
+      }
+    }
+
     const fetchTaggedEvents = async () => {
       try {
         setLoading(true);
@@ -165,6 +186,7 @@ const TaggedDepartmentPage: React.FC = () => {
 
   const handleRequirementStatusChange = async (eventId: string, requirementId: string, status: string) => {
     try {
+      console.log('🔄 Updating requirement status:', { eventId, requirementId, status });
       const token = localStorage.getItem('authToken');
       
       if (!token) {
@@ -180,6 +202,8 @@ const TaggedDepartmentPage: React.FC = () => {
         },
         body: JSON.stringify({ status })
       });
+
+      console.log('📋 Status update response status:', response.status);
 
       if (response.status === 403) {
         toast.error('You do not have permission to update this requirement');
@@ -364,11 +388,12 @@ const TaggedDepartmentPage: React.FC = () => {
     return requirement.status || 'pending';
   };
 
-  // Helper function to get requirement counts by status
+  // Helper function to get requirement counts by status (filtered by current user's department)
   const getRequirementCounts = (event: Event) => {
-    const allRequirements = Object.values(event.departmentRequirements).flat();
+    // Only get requirements for the current user's department
+    const userDepartmentRequirements = event.departmentRequirements[currentUserDepartment] || [];
     const counts = {
-      all: allRequirements.length,
+      all: userDepartmentRequirements.length,
       confirmed: 0,
       pending: 0,
       declined: 0,
@@ -376,7 +401,7 @@ const TaggedDepartmentPage: React.FC = () => {
       in_preparation: 0
     };
 
-    allRequirements.forEach(req => {
+    userDepartmentRequirements.forEach(req => {
       const status = getRequirementStatus(req);
       if (counts.hasOwnProperty(status)) {
         counts[status as keyof typeof counts]++;
@@ -440,23 +465,62 @@ const TaggedDepartmentPage: React.FC = () => {
         {/* Events List */}
         <div className="w-[380px] bg-muted/5 rounded-xl flex flex-col overflow-hidden border">
           <div className="p-4 bg-background/95 backdrop-blur-sm border-b">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-medium">Tagged Events</h3>
               <Badge variant="outline" className="font-mono">
                 {events.length} Events
               </Badge>
             </div>
+            
+            {/* Event Tabs */}
+            <Tabs value={activeEventTab} onValueChange={(value) => setActiveEventTab(value as 'ongoing' | 'completed')} className="w-full">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="ongoing" className="flex items-center gap-2">
+                  <Clock className="h-3 w-3" />
+                  Ongoing
+                  <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
+                    {events.filter(event => {
+                      const userDeptReqs = event.departmentRequirements[currentUserDepartment] || [];
+                      const confirmedCount = userDeptReqs.filter(r => getRequirementStatus(r) === 'confirmed').length;
+                      const totalCount = userDeptReqs.length;
+                      return totalCount === 0 || confirmedCount < totalCount;
+                    }).length}
+                  </Badge>
+                </TabsTrigger>
+                <TabsTrigger value="completed" className="flex items-center gap-2">
+                  <CheckCircle className="h-3 w-3" />
+                  Completed
+                  <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
+                    {events.filter(event => {
+                      const userDeptReqs = event.departmentRequirements[currentUserDepartment] || [];
+                      const confirmedCount = userDeptReqs.filter(r => getRequirementStatus(r) === 'confirmed').length;
+                      const totalCount = userDeptReqs.length;
+                      return totalCount > 0 && confirmedCount === totalCount;
+                    }).length}
+                  </Badge>
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
           </div>
           
-          <ScrollArea className="flex-1">
-            <div className="p-3">
-              {loading ? (
-                <div className="flex items-center justify-center h-24">
-                  <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-                </div>
-              ) : (
-                <AnimatePresence>
-                  {events.map((event) => (
+          <Tabs value={activeEventTab} className="flex-1 flex flex-col">
+            <TabsContent value="ongoing" className="flex-1 mt-0">
+              <ScrollArea className="h-full">
+                <div className="p-3">
+                  {loading ? (
+                    <div className="flex items-center justify-center h-24">
+                      <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : (
+                    <AnimatePresence>
+                      {events
+                        .filter(event => {
+                          const userDeptReqs = event.departmentRequirements[currentUserDepartment] || [];
+                          const confirmedCount = userDeptReqs.filter(r => getRequirementStatus(r) === 'confirmed').length;
+                          const totalCount = userDeptReqs.length;
+                          return totalCount === 0 || confirmedCount < totalCount;
+                        })
+                        .map((event) => (
                     <motion.div
                     key={event._id}
                     initial={{ opacity: 0, y: 20 }}
@@ -500,40 +564,128 @@ const TaggedDepartmentPage: React.FC = () => {
                             <div className="flex items-center gap-2 flex-1">
                               <Progress 
                                 value={
-                                  (Object.values(event.departmentRequirements)
-                                    .flat()
-                                    .filter(r => getRequirementStatus(r) === 'confirmed').length / 
-                                  Object.values(event.departmentRequirements)
-                                    .flat().length) * 100
+                                  (() => {
+                                    const userDeptReqs = event.departmentRequirements[currentUserDepartment] || [];
+                                    const confirmedCount = userDeptReqs.filter(r => getRequirementStatus(r) === 'confirmed').length;
+                                    const totalCount = userDeptReqs.length;
+                                    return totalCount > 0 ? (confirmedCount / totalCount) * 100 : 0;
+                                  })()
                                 } 
                                 className="h-1 flex-1"
                               />
                               <span className="text-muted-foreground whitespace-nowrap">
-                                {Object.values(event.departmentRequirements)
-                                  .flat()
-                                  .filter(r => getRequirementStatus(r) === 'confirmed').length}/
-                                {Object.values(event.departmentRequirements)
-                                  .flat().length}
+                                {(() => {
+                                  const userDeptReqs = event.departmentRequirements[currentUserDepartment] || [];
+                                  const confirmedCount = userDeptReqs.filter(r => getRequirementStatus(r) === 'confirmed').length;
+                                  const totalCount = userDeptReqs.length;
+                                  return `${confirmedCount}/${totalCount}`;
+                                })()}
                               </span>
                             </div>
                             <Badge variant="outline" className="text-[10px] h-4 whitespace-nowrap">
-                              {Object.values(event.departmentRequirements)
-                                .flat().length} requirements
+                              {(event.departmentRequirements[currentUserDepartment] || []).length} requirements
                             </Badge>
                           </div>
                         </div>
                       </CardContent>
                     </Card>
                   </motion.div>
-                    ))}
-                </AnimatePresence>
-              )}
-            </div>
-          </ScrollArea>
+                        ))}
+                    </AnimatePresence>
+                  )}
+                </div>
+              </ScrollArea>
+            </TabsContent>
+            
+            <TabsContent value="completed" className="flex-1 mt-0">
+              <ScrollArea className="h-full">
+                <div className="p-3">
+                  {loading ? (
+                    <div className="flex items-center justify-center h-24">
+                      <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : (
+                    <AnimatePresence>
+                      {events
+                        .filter(event => {
+                          const userDeptReqs = event.departmentRequirements[currentUserDepartment] || [];
+                          const confirmedCount = userDeptReqs.filter(r => getRequirementStatus(r) === 'confirmed').length;
+                          const totalCount = userDeptReqs.length;
+                          return totalCount > 0 && confirmedCount === totalCount;
+                        })
+                        .map((event) => (
+                          <motion.div
+                            key={event._id}
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, x: -20 }}
+                            transition={{ duration: 0.2 }}
+                            className="mb-2 last:mb-0"
+                          >
+                            <Card 
+                              className={`transition-all hover:shadow-sm cursor-pointer overflow-hidden border-l-4 border-l-green-500 ${selectedEvent?._id === event._id ? 'ring-2 ring-primary bg-primary/5' : ''}`}
+                              onClick={() => setSelectedEvent(event)}
+                            >
+                              <CardContent className="p-4">
+                                <div className="space-y-4">
+                                  <div>
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <h3 className="font-medium text-sm truncate">{event.eventTitle}</h3>
+                                      <Badge variant="secondary" className="text-[10px] h-4">
+                                        {event.status}
+                                      </Badge>
+                                      <Badge className="text-[10px] h-4 bg-green-500 text-white">
+                                        ✓ Complete
+                                      </Badge>
+                                    </div>
+                                    <div className="space-y-1">
+                                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                          <CalendarDays className="w-3 h-3" />
+                                          <span>
+                                            {new Date(event.startDate).toLocaleDateString()} - {new Date(event.endDate).toLocaleDateString()}
+                                          </span>
+                                      </div>
+                                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                          <Clock className="w-3 h-3" />
+                                          <span>
+                                            {event.startTime} - {event.endTime}
+                                          </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  
+                                  <div className="flex items-center gap-3 text-xs">
+                                    <div className="flex items-center gap-2 flex-1">
+                                      <Progress 
+                                        value={100}
+                                        className="h-1 flex-1"
+                                      />
+                                      <span className="text-green-600 font-medium whitespace-nowrap">
+                                        {(() => {
+                                          const userDeptReqs = event.departmentRequirements[currentUserDepartment] || [];
+                                          return `${userDeptReqs.length}/${userDeptReqs.length}`;
+                                        })()}
+                                      </span>
+                                    </div>
+                                    <Badge variant="outline" className="text-[10px] h-4 whitespace-nowrap bg-green-50 text-green-700 border-green-200">
+                                      {(event.departmentRequirements[currentUserDepartment] || []).length} requirements
+                                    </Badge>
+                                  </div>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          </motion.div>
+                        ))}
+                    </AnimatePresence>
+                  )}
+                </div>
+              </ScrollArea>
+            </TabsContent>
+          </Tabs>
         </div>
 
         {/* Event Details */}
-        <div className="flex-1 bg-muted/5 rounded-xl border overflow-hidden flex flex-col">
+        <div className="flex-1 bg-muted/5 rounded-xl border overflow-hidden flex flex-col h-[calc(100vh-80px)]">
           {selectedEvent ? (
             <motion.div 
               initial={{ opacity: 0 }}
@@ -545,7 +697,7 @@ const TaggedDepartmentPage: React.FC = () => {
                 <div className="flex items-center justify-between mb-6">
                   <h2 className="text-2xl font-semibold">{selectedEvent.eventTitle}</h2>
                   <Badge variant="outline" className="text-base px-3 py-1">
-                    {Object.values(selectedEvent.departmentRequirements).flat().length} Requirements
+                    {(selectedEvent.departmentRequirements[currentUserDepartment] || []).length} Requirements
                   </Badge>
                 </div>
 
@@ -602,37 +754,37 @@ const TaggedDepartmentPage: React.FC = () => {
                           <>
                             <TabsTrigger value="all" className="flex items-center gap-2">
                               All
-                              <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
+                              <Badge className="text-[10px] h-4 px-1.5 bg-red-500 text-white hover:bg-red-600">
                                 {counts.all}
                               </Badge>
                             </TabsTrigger>
                             <TabsTrigger value="confirmed" className="flex items-center gap-2">
                               Confirmed
-                              <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
+                              <Badge className="text-[10px] h-4 px-1.5 bg-red-500 text-white hover:bg-red-600">
                                 {counts.confirmed}
                               </Badge>
                             </TabsTrigger>
                             <TabsTrigger value="pending" className="flex items-center gap-2">
                               Pending
-                              <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
+                              <Badge className="text-[10px] h-4 px-1.5 bg-red-500 text-white hover:bg-red-600">
                                 {counts.pending}
                               </Badge>
                             </TabsTrigger>
                             <TabsTrigger value="declined" className="flex items-center gap-2">
                               Declined
-                              <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
+                              <Badge className="text-[10px] h-4 px-1.5 bg-red-500 text-white hover:bg-red-600">
                                 {counts.declined}
                               </Badge>
                             </TabsTrigger>
                             <TabsTrigger value="partially_fulfill" className="flex items-center gap-2">
                               Partially Fulfilled
-                              <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
+                              <Badge className="text-[10px] h-4 px-1.5 bg-red-500 text-white hover:bg-red-600">
                                 {counts.partially_fulfill}
                               </Badge>
                             </TabsTrigger>
                             <TabsTrigger value="in_preparation" className="flex items-center gap-2">
                               In Preparation
-                              <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
+                              <Badge className="text-[10px] h-4 px-1.5 bg-red-500 text-white hover:bg-red-600">
                                 {counts.in_preparation}
                               </Badge>
                             </TabsTrigger>
@@ -647,74 +799,126 @@ const TaggedDepartmentPage: React.FC = () => {
                 <ScrollArea className="h-full">
                   <div className="px-6 py-4 space-y-4">
                     <AnimatePresence>
-                      {Object.entries(selectedEvent.departmentRequirements).map(([department, requirements]) => 
+                      {Object.entries(selectedEvent.departmentRequirements)
+                        .filter(([department, requirements]) => department === currentUserDepartment)
+                        .map(([department, requirements]) => 
                         requirements.map((req: Requirement) => (
                         <motion.div
                           key={req.id}
                           initial={{ opacity: 0, y: 10 }}
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, x: -10 }}
-                          className="bg-white rounded-lg border"
+                          className="group"
                         >
-                          {/* Requirement Header */}
-                          <div className="flex items-center justify-between p-4 border-b">
-                            <div className="flex items-center gap-2">
-                              <h4 className="font-medium">{req.name}</h4>
-                              <Badge variant="outline" className="text-[10px] h-5 px-2">
-                                {req.type}
-                              </Badge>
-                            </div>
-                            <Select 
-                              defaultValue={getRequirementStatus(req)}
-                                onValueChange={(value) => setStatusDialog({
-                                  isOpen: true,
-                                  eventId: selectedEvent._id,
-                                  requirementId: req.id,
-                                  status: value
-                                })}
-                              >
-                                <SelectTrigger className="w-[130px] h-8 text-xs">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="confirmed">Confirm</SelectItem>
-                                  <SelectItem value="pending">Pending</SelectItem>
-                                  <SelectItem value="declined">Decline</SelectItem>
-                                  <SelectItem value="partially_fulfill">Partially Fulfill</SelectItem>
-                                  <SelectItem value="in_preparation">In Preparation</SelectItem>
-                                </SelectContent>
-                              </Select>
-                              
-                            </div>
-
-                            <div className="px-4 py-3">
-                              <div className="text-sm text-muted-foreground mb-4">
-                                Requested: {req.quantity} of {req.totalQuantity} available
+                          <Card className="overflow-hidden hover:shadow-md transition-all duration-200 border-l-4 border-l-blue-500">
+                            <CardContent className="p-0">
+                              {/* Header Section */}
+                              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 border-b">
+                                <div className="flex items-start justify-between gap-4">
+                                  <div className="flex items-start gap-3 flex-1">
+                                    <Avatar className="h-10 w-10 bg-blue-100">
+                                      <AvatarFallback className="bg-blue-100 text-blue-700">
+                                        <Package className="h-5 w-5" />
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2 mb-1">
+                                        <h4 className="font-semibold text-gray-900 truncate">{req.name}</h4>
+                                        <Badge variant="secondary" className="text-xs px-2 py-0.5">
+                                          {req.type}
+                                        </Badge>
+                                      </div>
+                                      <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                                        <span className="flex items-center gap-1">
+                                          <Package className="h-3 w-3" />
+                                          Requested: {req.quantity} of {req.totalQuantity}
+                                        </span>
+                                        {getStatusIcon(getRequirementStatus(req))}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <Select 
+                                    defaultValue={getRequirementStatus(req)}
+                                    onValueChange={(value) => setStatusDialog({
+                                      isOpen: true,
+                                      eventId: selectedEvent._id,
+                                      requirementId: req.id,
+                                      status: value
+                                    })}
+                                  >
+                                    <SelectTrigger className="w-[140px] h-9">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="confirmed">
+                                        <div className="flex items-center gap-2">
+                                          <CheckCircle className="h-3 w-3 text-green-500" />
+                                          Confirm
+                                        </div>
+                                      </SelectItem>
+                                      <SelectItem value="pending">
+                                        <div className="flex items-center gap-2">
+                                          <Clock className="h-3 w-3 text-yellow-500" />
+                                          Pending
+                                        </div>
+                                      </SelectItem>
+                                      <SelectItem value="declined">
+                                        <div className="flex items-center gap-2">
+                                          <XCircle className="h-3 w-3 text-red-500" />
+                                          Decline
+                                        </div>
+                                      </SelectItem>
+                                      <SelectItem value="partially_fulfill">
+                                        <div className="flex items-center gap-2">
+                                          <HelpCircle className="h-3 w-3 text-blue-500" />
+                                          Partially Fulfill
+                                        </div>
+                                      </SelectItem>
+                                      <SelectItem value="in_preparation">
+                                        <div className="flex items-center gap-2">
+                                          <Loader2 className="h-3 w-3 text-purple-500" />
+                                          In Preparation
+                                        </div>
+                                      </SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
                               </div>
 
-                              {/* Notes Section */}
-                              <div className="space-y-4">
+                              {/* Content Section */}
+                              <div className="p-4 space-y-4">
                                 {/* Requestor's Note */}
-                                <div>
-                                  <Label className="text-xs uppercase text-muted-foreground mb-2">Requestor's Note</Label>
-                                  <div className="text-sm border rounded-lg p-3">
-                                    {req.notes || 'No notes provided'}
+                                <div className="space-y-2">
+                                  <div className="flex items-center gap-2">
+                                    <User className="h-4 w-4 text-blue-600" />
+                                    <Label className="text-sm font-medium text-gray-700">Requestor's Note</Label>
                                   </div>
+                                  <Card className="bg-blue-50/50 border-blue-200">
+                                    <CardContent className="p-3">
+                                      <p className="text-sm text-gray-700 leading-relaxed">
+                                        {req.notes || 'No notes provided by the requestor'}
+                                      </p>
+                                    </CardContent>
+                                  </Card>
                                 </div>
 
+                                <Separator className="my-4" />
+
                                 {/* Department's Note */}
-                                <div>
-                                  <div className="flex items-center justify-between mb-2">
-                                    <Label className="text-xs uppercase text-muted-foreground">Your Notes</Label>
+                                <div className="space-y-3">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      <MessageSquare className="h-4 w-4 text-green-600" />
+                                      <Label className="text-sm font-medium text-gray-700">Your Department Notes</Label>
+                                    </div>
                                     <Button
-                                      variant="outline"
+                                      variant={showNotesMap[req.id] ? "secondary" : "outline"}
                                       size="sm"
                                       onClick={() => {
                                         setShowNotesMap(prev => ({
                                           ...prev,
                                           [req.id]: !prev[req.id]
                                         }));
-                                        // Initialize notes when showing
                                         if (!showNotesMap[req.id]) {
                                           const currentNote = req.departmentNotes || notesMap[req.id] || '';
                                           setNotesMap(prev => ({
@@ -723,17 +927,36 @@ const TaggedDepartmentPage: React.FC = () => {
                                           }));
                                         }
                                       }}
-                                      className="h-7 px-2 text-xs"
+                                      className="h-8 px-3 text-xs gap-1"
                                     >
-                                      {showNotesMap[req.id] ? 'Hide Notes' : (req.departmentNotes || notesMap[req.id] ? 'Edit Notes' : 'Add Notes')}
+                                      {showNotesMap[req.id] ? (
+                                        <><X className="h-3 w-3" /> Cancel</>
+                                      ) : (
+                                        <><Edit3 className="h-3 w-3" /> {req.departmentNotes || notesMap[req.id] ? 'Edit' : 'Add'} Notes</>
+                                      )}
                                     </Button>
                                   </div>
                                   
                                   {/* Display saved notes when not editing */}
                                   {!showNotesMap[req.id] && (req.departmentNotes || notesMap[req.id]) && (
-                                    <div className="text-sm border rounded-lg p-3 bg-muted/20">
-                                      {req.departmentNotes || notesMap[req.id] || 'No notes provided'}
-                                    </div>
+                                    <Card className="bg-green-50/50 border-green-200">
+                                      <CardContent className="p-3">
+                                        <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+                                          {req.departmentNotes || notesMap[req.id]}
+                                        </p>
+                                      </CardContent>
+                                    </Card>
+                                  )}
+                                  
+                                  {/* Empty state when no notes */}
+                                  {!showNotesMap[req.id] && !(req.departmentNotes || notesMap[req.id]) && (
+                                    <Card className="bg-gray-50/50 border-gray-200 border-dashed">
+                                      <CardContent className="p-4 text-center">
+                                        <MessageSquare className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+                                        <p className="text-sm text-gray-500">No notes added yet</p>
+                                        <p className="text-xs text-gray-400 mt-1">Click "Add Notes" to provide feedback</p>
+                                      </CardContent>
+                                    </Card>
                                   )}
                                   
                                   {/* Editing interface */}
@@ -744,63 +967,78 @@ const TaggedDepartmentPage: React.FC = () => {
                                       exit={{ opacity: 0, height: 0 }}
                                       transition={{ duration: 0.2 }}
                                     >
-                                      <div className="space-y-2">
-                                        <Textarea
-                                          placeholder="Add your notes about this requirement..."
-                                          value={notesMap[req.id] || ''}
-                                          onChange={(e) => {
-                                            setNotesMap(prev => ({
-                                              ...prev,
-                                              [req.id]: e.target.value
-                                            }));
-                                          }}
-                                          className="resize-none text-sm min-h-[80px]"
-                                        />
-                                        <div className="flex justify-end gap-2">
-                                          <Button
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={() => {
+                                      <Card className="border-green-300 bg-green-50/30">
+                                        <CardContent className="p-4 space-y-3">
+                                          <Textarea
+                                            placeholder="Add your department's notes about this requirement..."
+                                            value={notesMap[req.id] || ''}
+                                            onChange={(e) => {
                                               setNotesMap(prev => ({
                                                 ...prev,
-                                                [req.id]: req.departmentNotes || ''
-                                              }));
-                                              setShowNotesMap(prev => ({
-                                                ...prev,
-                                                [req.id]: false
+                                                [req.id]: e.target.value
                                               }));
                                             }}
-                                          >
-                                            Cancel
-                                          </Button>
-                                          <Button
-                                            size="sm"
-                                            onClick={() => {
-                                              handleNoteUpdate(selectedEvent._id, req.id, notesMap[req.id] || '');
-                                              setShowNotesMap(prev => ({
-                                                ...prev,
-                                                [req.id]: false
-                                              }));
-                                            }}
-                                          >
-                                            Save Notes
-                                          </Button>
-                                        </div>
-                                      </div>
+                                            className="resize-none min-h-[100px] border-green-200 focus:border-green-400"
+                                          />
+                                          <div className="flex justify-end gap-2">
+                                            <Button
+                                              variant="outline"
+                                              size="sm"
+                                              onClick={() => {
+                                                setNotesMap(prev => ({
+                                                  ...prev,
+                                                  [req.id]: req.departmentNotes || ''
+                                                }));
+                                                setShowNotesMap(prev => ({
+                                                  ...prev,
+                                                  [req.id]: false
+                                                }));
+                                              }}
+                                              className="gap-1"
+                                            >
+                                              <X className="h-3 w-3" />
+                                              Cancel
+                                            </Button>
+                                            <Button
+                                              size="sm"
+                                              onClick={() => {
+                                                handleNoteUpdate(selectedEvent._id, req.id, notesMap[req.id] || '');
+                                                setShowNotesMap(prev => ({
+                                                  ...prev,
+                                                  [req.id]: false
+                                                }));
+                                              }}
+                                              className="gap-1 bg-green-600 hover:bg-green-700"
+                                            >
+                                              <Save className="h-3 w-3" />
+                                              Save Notes
+                                            </Button>
+                                          </div>
+                                        </CardContent>
+                                      </Card>
                                     </motion.div>
                                   )}
                                 </div>
                               </div>
 
                               {/* Footer */}
-                              <div className="flex items-center gap-6 text-xs text-muted-foreground mt-4 pt-3 border-t">
-                                <span className="flex items-center gap-1.5">
-                                  <Clock className="w-3.5 h-3.5" />
-                                  Last updated: {new Date(selectedEvent.submittedAt).toLocaleString()}
-                                </span>
+                              <div className="px-4 py-3 bg-gray-50/50 border-t">
+                                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                                  <span className="flex items-center gap-1.5">
+                                    <Clock className="w-3 h-3" />
+                                    Last updated: {new Date(selectedEvent.submittedAt).toLocaleDateString()}
+                                  </span>
+                                  <Badge 
+                                    variant="outline" 
+                                    className={`text-xs ${getStatusColor(getRequirementStatus(req))} text-white border-0`}
+                                  >
+                                    {getRequirementStatus(req).replace('_', ' ').toUpperCase()}
+                                  </Badge>
+                                </div>
                               </div>
-                            </div>
-                          </motion.div>
+                            </CardContent>
+                          </Card>
+                        </motion.div>
                         ))
                       )}
                     </AnimatePresence>
@@ -814,7 +1052,9 @@ const TaggedDepartmentPage: React.FC = () => {
                       <ScrollArea className="h-full">
                         <div className="px-6 py-4 space-y-4">
                           <AnimatePresence>
-                            {Object.entries(selectedEvent.departmentRequirements).map(([department, requirements]) => 
+                            {Object.entries(selectedEvent.departmentRequirements)
+                              .filter(([department, requirements]) => department === currentUserDepartment)
+                              .map(([department, requirements]) => 
                               requirements
                                 .filter(req => getRequirementStatus(req) === status)
                                 .map((req: Requirement) => (
@@ -823,152 +1063,237 @@ const TaggedDepartmentPage: React.FC = () => {
                                     initial={{ opacity: 0, y: 10 }}
                                     animate={{ opacity: 1, y: 0 }}
                                     exit={{ opacity: 0, x: -10 }}
-                                    className="bg-white rounded-lg border"
+                                    className="group"
                                   >
-                                    {/* Requirement Header */}
-                                    <div className="flex items-center justify-between p-4 border-b">
-                                      <div className="flex items-center gap-2">
-                                        <h4 className="font-medium">{req.name}</h4>
-                                        <Badge variant="outline" className="text-[10px] h-5 px-2">
-                                          {req.type}
-                                        </Badge>
-                                      </div>
-                                      <Select 
-                                        defaultValue={getRequirementStatus(req)}
-                                        onValueChange={(value) => setStatusDialog({
-                                          isOpen: true,
-                                          eventId: selectedEvent._id,
-                                          requirementId: req.id,
-                                          status: value
-                                        })}
-                            >
-                              <SelectTrigger className="w-[130px] h-8 text-xs">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="confirmed">Confirm</SelectItem>
-                                <SelectItem value="pending">Pending</SelectItem>
-                                <SelectItem value="declined">Decline</SelectItem>
-                                <SelectItem value="partially_fulfill">Partially Fulfill</SelectItem>
-                                <SelectItem value="in_preparation">In Preparation</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
+                                    <Card className="overflow-hidden hover:shadow-md transition-all duration-200 border-l-4 border-l-blue-500">
+                                      <CardContent className="p-0">
+                                        {/* Header Section */}
+                                        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 border-b">
+                                          <div className="flex items-start justify-between gap-4">
+                                            <div className="flex items-start gap-3 flex-1">
+                                              <Avatar className="h-10 w-10 bg-blue-100">
+                                                <AvatarFallback className="bg-blue-100 text-blue-700">
+                                                  <Package className="h-5 w-5" />
+                                                </AvatarFallback>
+                                              </Avatar>
+                                              <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-2 mb-1">
+                                                  <h4 className="font-semibold text-gray-900 truncate">{req.name}</h4>
+                                                  <Badge variant="secondary" className="text-xs px-2 py-0.5">
+                                                    {req.type}
+                                                  </Badge>
+                                                </div>
+                                                <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                                                  <span className="flex items-center gap-1">
+                                                    <Package className="h-3 w-3" />
+                                                    Requested: {req.quantity} of {req.totalQuantity}
+                                                  </span>
+                                                  {getStatusIcon(getRequirementStatus(req))}
+                                                </div>
+                                              </div>
+                                            </div>
+                                            <Select 
+                                              defaultValue={getRequirementStatus(req)}
+                                              onValueChange={(value) => setStatusDialog({
+                                                isOpen: true,
+                                                eventId: selectedEvent._id,
+                                                requirementId: req.id,
+                                                status: value
+                                              })}
+                                            >
+                                              <SelectTrigger className="w-[140px] h-9">
+                                                <SelectValue />
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                <SelectItem value="confirmed">
+                                                  <div className="flex items-center gap-2">
+                                                    <CheckCircle className="h-3 w-3 text-green-500" />
+                                                    Confirm
+                                                  </div>
+                                                </SelectItem>
+                                                <SelectItem value="pending">
+                                                  <div className="flex items-center gap-2">
+                                                    <Clock className="h-3 w-3 text-yellow-500" />
+                                                    Pending
+                                                  </div>
+                                                </SelectItem>
+                                                <SelectItem value="declined">
+                                                  <div className="flex items-center gap-2">
+                                                    <XCircle className="h-3 w-3 text-red-500" />
+                                                    Decline
+                                                  </div>
+                                                </SelectItem>
+                                                <SelectItem value="partially_fulfill">
+                                                  <div className="flex items-center gap-2">
+                                                    <HelpCircle className="h-3 w-3 text-blue-500" />
+                                                    Partially Fulfill
+                                                  </div>
+                                                </SelectItem>
+                                                <SelectItem value="in_preparation">
+                                                  <div className="flex items-center gap-2">
+                                                    <Loader2 className="h-3 w-3 text-purple-500" />
+                                                    In Preparation
+                                                  </div>
+                                                </SelectItem>
+                                              </SelectContent>
+                                            </Select>
+                                          </div>
+                                        </div>
 
-                          <div className="px-4 py-3">
-                            <div className="text-sm text-muted-foreground mb-4">
-                              Requested: {req.quantity} of {req.totalQuantity} available
-                            </div>
+                                        {/* Content Section */}
+                                        <div className="p-4 space-y-4">
+                                          {/* Requestor's Note */}
+                                          <div className="space-y-2">
+                                            <div className="flex items-center gap-2">
+                                              <User className="h-4 w-4 text-blue-600" />
+                                              <Label className="text-sm font-medium text-gray-700">Requestor's Note</Label>
+                                            </div>
+                                            <Card className="bg-blue-50/50 border-blue-200">
+                                              <CardContent className="p-3">
+                                                <p className="text-sm text-gray-700 leading-relaxed">
+                                                  {req.notes || 'No notes provided by the requestor'}
+                                                </p>
+                                              </CardContent>
+                                            </Card>
+                                          </div>
 
-                            {/* Notes Section */}
-                            <div className="space-y-4">
-                              {/* Requestor's Note */}
-                              <div>
-                                <Label className="text-xs uppercase text-muted-foreground mb-2">Requestor's Note</Label>
-                                <div className="text-sm border rounded-lg p-3">
-                                  {req.notes || 'No notes provided'}
-                                </div>
-                              </div>
+                                          <Separator className="my-4" />
 
-                              {/* Department's Note */}
-                              <div>
-                                <div className="flex items-center justify-between mb-2">
-                                  <Label className="text-xs uppercase text-muted-foreground">Your Notes</Label>
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => {
-                                      setShowNotesMap(prev => ({
-                                        ...prev,
-                                        [req.id]: !prev[req.id]
-                                      }));
-                                      // Initialize notes when showing
-                                      if (!showNotesMap[req.id]) {
-                                        const currentNote = req.departmentNotes || notesMap[req.id] || '';
-                                        setNotesMap(prev => ({
-                                          ...prev,
-                                          [req.id]: currentNote
-                                        }));
-                                      }
-                                    }}
-                                    className="h-7 px-2 text-xs"
-                                  >
-                                    {showNotesMap[req.id] ? 'Hide Notes' : (req.departmentNotes || notesMap[req.id] ? 'Edit Notes' : 'Add Notes')}
-                                  </Button>
-                                </div>
-                                
-                                {/* Display saved notes when not editing */}
-                                {!showNotesMap[req.id] && (req.departmentNotes || notesMap[req.id]) && (
-                                  <div className="text-sm border rounded-lg p-3 bg-muted/20">
-                                    {req.departmentNotes || notesMap[req.id] || 'No notes provided'}
-                                  </div>
-                                )}
-                                
-                                {/* Editing interface */}
-                                {showNotesMap[req.id] && (
-                                  <motion.div
-                                    initial={{ opacity: 0, height: 0 }}
-                                    animate={{ opacity: 1, height: 'auto' }}
-                                    exit={{ opacity: 0, height: 0 }}
-                                    transition={{ duration: 0.2 }}
-                                  >
-                                    <div className="space-y-2">
-                                      <Textarea
-                                        placeholder="Add your notes about this requirement..."
-                                        value={notesMap[req.id] || ''}
-                                        onChange={(e) => {
-                                          setNotesMap(prev => ({
-                                            ...prev,
-                                            [req.id]: e.target.value
-                                          }));
-                                        }}
-                                        className="resize-none text-sm min-h-[80px]"
-                                      />
-                                      <div className="flex justify-end gap-2">
-                                        <Button
-                                          variant="outline"
-                                          size="sm"
-                                          onClick={() => {
-                                            setNotesMap(prev => ({
-                                              ...prev,
-                                              [req.id]: req.departmentNotes || ''
-                                            }));
-                                            setShowNotesMap(prev => ({
-                                              ...prev,
-                                              [req.id]: false
-                                            }));
-                                          }}
-                                        >
-                                          Cancel
-                                        </Button>
-                                        <Button
-                                          size="sm"
-                                          onClick={() => {
-                                            handleNoteUpdate(selectedEvent._id, req.id, notesMap[req.id] || '');
-                                            setShowNotesMap(prev => ({
-                                              ...prev,
-                                              [req.id]: false
-                                            }));
-                                          }}
-                                        >
-                                          Save Notes
-                                        </Button>
-                                      </div>
-                                    </div>
+                                          {/* Department's Note */}
+                                          <div className="space-y-3">
+                                            <div className="flex items-center justify-between">
+                                              <div className="flex items-center gap-2">
+                                                <MessageSquare className="h-4 w-4 text-green-600" />
+                                                <Label className="text-sm font-medium text-gray-700">Your Department Notes</Label>
+                                              </div>
+                                              <Button
+                                                variant={showNotesMap[req.id] ? "secondary" : "outline"}
+                                                size="sm"
+                                                onClick={() => {
+                                                  setShowNotesMap(prev => ({
+                                                    ...prev,
+                                                    [req.id]: !prev[req.id]
+                                                  }));
+                                                  if (!showNotesMap[req.id]) {
+                                                    const currentNote = req.departmentNotes || notesMap[req.id] || '';
+                                                    setNotesMap(prev => ({
+                                                      ...prev,
+                                                      [req.id]: currentNote
+                                                    }));
+                                                  }
+                                                }}
+                                                className="h-8 px-3 text-xs gap-1"
+                                              >
+                                                {showNotesMap[req.id] ? (
+                                                  <><X className="h-3 w-3" /> Cancel</>
+                                                ) : (
+                                                  <><Edit3 className="h-3 w-3" /> {req.departmentNotes || notesMap[req.id] ? 'Edit' : 'Add'} Notes</>
+                                                )}
+                                              </Button>
+                                            </div>
+                                            
+                                            {/* Display saved notes when not editing */}
+                                            {!showNotesMap[req.id] && (req.departmentNotes || notesMap[req.id]) && (
+                                              <Card className="bg-green-50/50 border-green-200">
+                                                <CardContent className="p-3">
+                                                  <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+                                                    {req.departmentNotes || notesMap[req.id]}
+                                                  </p>
+                                                </CardContent>
+                                              </Card>
+                                            )}
+                                            
+                                            {/* Empty state when no notes */}
+                                            {!showNotesMap[req.id] && !(req.departmentNotes || notesMap[req.id]) && (
+                                              <Card className="bg-gray-50/50 border-gray-200 border-dashed">
+                                                <CardContent className="p-4 text-center">
+                                                  <MessageSquare className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+                                                  <p className="text-sm text-gray-500">No notes added yet</p>
+                                                  <p className="text-xs text-gray-400 mt-1">Click "Add Notes" to provide feedback</p>
+                                                </CardContent>
+                                              </Card>
+                                            )}
+                                            
+                                            {/* Editing interface */}
+                                            {showNotesMap[req.id] && (
+                                              <motion.div
+                                                initial={{ opacity: 0, height: 0 }}
+                                                animate={{ opacity: 1, height: 'auto' }}
+                                                exit={{ opacity: 0, height: 0 }}
+                                                transition={{ duration: 0.2 }}
+                                              >
+                                                <Card className="border-green-300 bg-green-50/30">
+                                                  <CardContent className="p-4 space-y-3">
+                                                    <Textarea
+                                                      placeholder="Add your department's notes about this requirement..."
+                                                      value={notesMap[req.id] || ''}
+                                                      onChange={(e) => {
+                                                        setNotesMap(prev => ({
+                                                          ...prev,
+                                                          [req.id]: e.target.value
+                                                        }));
+                                                      }}
+                                                      className="resize-none min-h-[100px] border-green-200 focus:border-green-400"
+                                                    />
+                                                    <div className="flex justify-end gap-2">
+                                                      <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        onClick={() => {
+                                                          setNotesMap(prev => ({
+                                                            ...prev,
+                                                            [req.id]: req.departmentNotes || ''
+                                                          }));
+                                                          setShowNotesMap(prev => ({
+                                                            ...prev,
+                                                            [req.id]: false
+                                                          }));
+                                                        }}
+                                                        className="gap-1"
+                                                      >
+                                                        <X className="h-3 w-3" />
+                                                        Cancel
+                                                      </Button>
+                                                      <Button
+                                                        size="sm"
+                                                        onClick={() => {
+                                                          handleNoteUpdate(selectedEvent._id, req.id, notesMap[req.id] || '');
+                                                          setShowNotesMap(prev => ({
+                                                            ...prev,
+                                                            [req.id]: false
+                                                          }));
+                                                        }}
+                                                        className="gap-1 bg-green-600 hover:bg-green-700"
+                                                      >
+                                                        <Save className="h-3 w-3" />
+                                                        Save Notes
+                                                      </Button>
+                                                    </div>
+                                                  </CardContent>
+                                                </Card>
+                                              </motion.div>
+                                            )}
+                                          </div>
+                                        </div>
+
+                                        {/* Footer */}
+                                        <div className="px-4 py-3 bg-gray-50/50 border-t">
+                                          <div className="flex items-center justify-between text-xs text-muted-foreground">
+                                            <span className="flex items-center gap-1.5">
+                                              <Clock className="w-3 h-3" />
+                                              Last updated: {new Date(selectedEvent.submittedAt).toLocaleDateString()}
+                                            </span>
+                                            <Badge 
+                                              variant="outline" 
+                                              className={`text-xs ${getStatusColor(getRequirementStatus(req))} text-white border-0`}
+                                            >
+                                              {getRequirementStatus(req).replace('_', ' ').toUpperCase()}
+                                            </Badge>
+                                          </div>
+                                        </div>
+                                      </CardContent>
+                                    </Card>
                                   </motion.div>
-                                )}
-                              </div>
-                            </div>
-
-                            {/* Footer */}
-                            <div className="flex items-center gap-6 text-xs text-muted-foreground mt-4 pt-3 border-t">
-                              <span className="flex items-center gap-1.5">
-                                <Clock className="w-3.5 h-3.5" />
-                                Last updated: {new Date(selectedEvent.submittedAt).toLocaleString()}
-                              </span>
-                            </div>
-                          </div>
-                        </motion.div>
                                 ))
                             )}
                     </AnimatePresence>

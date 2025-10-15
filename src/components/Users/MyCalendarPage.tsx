@@ -17,7 +17,6 @@ import {
 import { toast } from 'sonner';
 import CustomCalendar, { type CalendarEvent } from '@/components/ui/custom-calendar';
 import RequirementAvailabilityModal from './RequirementAvailabilityModal';
-import { useEventCount } from '@/hooks/useEventCount';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
 import { 
@@ -90,12 +89,20 @@ const MyCalendarPage: React.FC = () => {
   const [progressText, setProgressText] = useState('');
   const [progressOperation, setProgressOperation] = useState<'available' | 'unavailable' | 'delete' | ''>('');
 
-  // Use the event count hook for badge functionality
-  const { getEventCountForDate } = useEventCount({
-    userDepartment: currentUser?.department || currentUser?.departmentName,
-    filterByDepartment: true,
-    includeAllStatuses: false
-  });
+  // Event count function for badge functionality
+  const getEventCountForDate = (date: Date): number => {
+    if (!events || events.length === 0) return 0;
+    
+    const dateString = date.toDateString();
+    return events.filter(event => {
+      const eventStartDate = new Date(event.startDate);
+      const eventEndDate = new Date(event.endDate);
+      
+      // Check if the date falls within the event's date range
+      return date >= eventStartDate && date <= eventEndDate &&
+             event.taggedDepartments?.includes(currentUser?.department);
+    }).length;
+  };
 
   // Get current user and department info
   useEffect(() => {
@@ -103,12 +110,10 @@ const MyCalendarPage: React.FC = () => {
     if (userData) {
       try {
         const user = JSON.parse(userData);
-        console.log('Current user data:', user);
         setCurrentUser(user);
         
         // If user has department data with requirements, use it directly
         if (user.departmentData && user.departmentData.requirements) {
-          console.log('Using department data from user:', user.departmentData);
           setRequirements(user.departmentData.requirements);
           setLoading(false);
         } else {
@@ -119,7 +124,6 @@ const MyCalendarPage: React.FC = () => {
         // Fetch events for calendar display
         fetchEvents();
       } catch (error) {
-        console.error('Error parsing user data:', error);
         setLoading(false);
       }
     } else {
@@ -130,7 +134,6 @@ const MyCalendarPage: React.FC = () => {
   // Fetch department requirements
   const fetchDepartmentRequirements = async (departmentName: string) => {
     try {
-      console.log('Attempting to fetch requirements for department:', departmentName);
       
       // Try API call first
       const departmentsResponse = await fetch('http://localhost:5000/api/departments/visible');
@@ -146,13 +149,11 @@ const MyCalendarPage: React.FC = () => {
         throw new Error(`Department '${departmentName}' not found in API response`);
       }
 
-      console.log('Department found via API:', department);
       const departmentRequirements: Requirement[] = department.requirements || [];
       
       setRequirements(departmentRequirements);
       await fetchAvailabilityData(department._id);
     } catch (error) {
-      console.error('API call failed, using fallback data:', error);
       
       // Fallback to hardcoded department data when API fails
       const fallbackDepartments: Record<string, Requirement[]> = {
@@ -175,7 +176,6 @@ const MyCalendarPage: React.FC = () => {
         { _id: '2', text: 'General Resource 2', type: 'service', isActive: true, isAvailable: true, createdAt: '2025-10-04T08:08:00.360Z' }
       ];
       
-      console.log(`Using fallback requirements for ${departmentName}:`, fallbackRequirements);
       setRequirements(fallbackRequirements);
       
       // Set empty availability data for fallback
@@ -205,7 +205,6 @@ const MyCalendarPage: React.FC = () => {
       const eventsData = await response.json();
       setEvents(eventsData.data || []);
     } catch (error) {
-      console.error('Error fetching events:', error);
       setEvents([]);
     }
   };
@@ -228,7 +227,6 @@ const MyCalendarPage: React.FC = () => {
       const availabilityData = await response.json();
       setAvailabilityData(availabilityData || []);
     } catch (error) {
-      console.error('Error fetching availability data:', error);
       // Fallback to empty array on error
       setAvailabilityData([]);
     }
@@ -245,17 +243,9 @@ const MyCalendarPage: React.FC = () => {
     const eventStartDate = new Date(event.startDate);
     const eventEndDate = new Date(event.endDate);
     
-    console.log(`Processing Event: ${event.eventTitle}`);
-    console.log(`Original startDate: ${event.startDate}`);
-    console.log(`Parsed startDate: ${eventStartDate.toDateString()}`);
-    console.log(`Tagged departments: ${JSON.stringify(event.taggedDepartments)}`);
-    console.log(`Current user department: ${currentUser?.department}`);
-    
     // Check if this event has bookings for the current user's department
     const hasBookingsForDepartment = event.taggedDepartments && 
       event.taggedDepartments.includes(currentUser?.department);
-    
-    console.log(`Has bookings for department: ${hasBookingsForDepartment}`);
     
     if (hasBookingsForDepartment) {
       // Create calendar events for each day the event spans
@@ -280,7 +270,6 @@ const MyCalendarPage: React.FC = () => {
         const alreadyExists = eventsByDate[dateString].some(e => e._id === event._id);
         if (!alreadyExists) {
           eventsByDate[dateString].push(event);
-          console.log(`Added event "${event.eventTitle}" to date ${dateString}`);
         }
         
         // Move to next day
@@ -289,24 +278,12 @@ const MyCalendarPage: React.FC = () => {
     }
   });
   
-  // Debug: Show what we have grouped
-  console.log('=== EVENTS GROUPED BY DATE ===');
-  Object.keys(eventsByDate).forEach(date => {
-    console.log(`Date ${date}: ${eventsByDate[date].length} events`);
-    eventsByDate[date].forEach((event, index) => {
-      console.log(`  ${index + 1}. ${event.eventTitle} (ID: ${event._id})`);
-    });
-  });
-  console.log('=== END GROUPING ===');
   
   // Now create separate calendar events for each event (to show vertically)
   Object.keys(eventsByDate).forEach(dateString => {
     const eventsForDate = eventsByDate[dateString];
     
-    console.log(`Creating ${eventsForDate.length} separate calendar events for ${dateString}:`);
-    
     eventsForDate.forEach((event, index) => {
-      console.log(`  Creating event ${index + 1}: "${event.eventTitle}"`);
       
       calendarEvents.push({
         id: `${event._id}-${dateString}`,
@@ -363,12 +340,6 @@ const MyCalendarPage: React.FC = () => {
     try {
       const dateString = format(date, 'yyyy-MM-dd');
       
-      // Debug: Check token
-      const token = localStorage.getItem('authToken');
-      console.log('🔍 Token exists:', !!token);
-      console.log('🔍 Token preview:', token?.substring(0, 20) + '...');
-      console.log('🔍 Current user:', currentUser);
-      
       // Get department info
       const departmentsResponse = await fetch('http://localhost:5000/api/departments/visible');
       if (!departmentsResponse.ok) {
@@ -406,18 +377,15 @@ const MyCalendarPage: React.FC = () => {
 
       if (!response.ok) {
         const errorData = await response.text();
-        console.log('🚨 Backend error response:', errorData);
         throw new Error(`Failed to save availability: ${response.statusText}`);
       }
 
       const result = await response.json();
-      console.log('Availability saved successfully:', result);
       
       // Refresh availability data
       await fetchAvailabilityData(department._id);
       
     } catch (error) {
-      console.error('Error saving availability:', error);
       throw error;
     }
   };
@@ -532,7 +500,6 @@ const MyCalendarPage: React.FC = () => {
         });
 
         await Promise.all(batchPromises);
-        console.log(`✅ Processed batch ${currentBatch}/${totalBatches}`);
       }
 
       // Refresh availability data
@@ -554,7 +521,6 @@ const MyCalendarPage: React.FC = () => {
       toast.success(`Successfully set all ${requirements.length} requirements as AVAILABLE for ${futureDates.length} current/future days in ${format(calendarCurrentMonth, 'MMMM yyyy')}!`);
       
     } catch (error) {
-      console.error('Error setting bulk availability:', error);
       toast.error(`Error setting bulk availability: ${error instanceof Error ? error.message : 'Unknown error'}`);
       
       // Close progress modal on error
@@ -641,7 +607,6 @@ const MyCalendarPage: React.FC = () => {
         });
 
         await Promise.all(batchPromises);
-        console.log(`✅ Processed batch ${currentBatch}/${totalBatches}`);
       }
 
       // Refresh availability data
@@ -663,7 +628,6 @@ const MyCalendarPage: React.FC = () => {
       toast.success(`Successfully set all ${requirements.length} requirements as UNAVAILABLE for ${futureDates.length} current/future days in ${format(calendarCurrentMonth, 'MMMM yyyy')}!`);
       
     } catch (error) {
-      console.error('Error setting bulk unavailability:', error);
       toast.error(`Error setting bulk unavailability: ${error instanceof Error ? error.message : 'Unknown error'}`);
       
       // Close progress modal on error
@@ -740,7 +704,6 @@ const MyCalendarPage: React.FC = () => {
       setProgressValue(70);
 
       const result = await response.json();
-      console.log(`✅ Bulk delete completed: ${result.totalDeleted} records deleted, ${result.protectedDates} dates protected`);
 
       // Refresh availability data
       setProgressText('Refreshing data...');
@@ -779,7 +742,6 @@ const MyCalendarPage: React.FC = () => {
       }, 1500);
       
     } catch (error) {
-      console.error('Error deleting availability data:', error);
       toast.error(`Error deleting availability data: ${error instanceof Error ? error.message : 'Unknown error'}`);
       
       // Close progress modal on error
@@ -890,7 +852,6 @@ const MyCalendarPage: React.FC = () => {
       setProgressValue(70);
 
       const result = await response.json();
-      console.log(`✅ Selective delete completed: ${result.totalDeleted} records deleted, ${result.protectedDates} dates protected`);
 
       // Refresh availability data
       setProgressText('Refreshing data...');
@@ -933,7 +894,6 @@ const MyCalendarPage: React.FC = () => {
       }
       
     } catch (error) {
-      console.error('Error deleting selected dates:', error);
       toast.error(`Error deleting selected dates: ${error instanceof Error ? error.message : 'Unknown error'}`);
       
       // Close progress modal on error
