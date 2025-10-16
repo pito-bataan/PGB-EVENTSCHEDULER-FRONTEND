@@ -126,7 +126,6 @@ export const useManageLocationStore = create<ManageLocationState>((set, get) => 
     
     // Check cache validity
     if (!forceRefresh && now - lastLocationDataFetch < CACHE_DURATION) {
-      console.log('🚀 Using cached location data');
       return;
     }
 
@@ -163,10 +162,7 @@ export const useManageLocationStore = create<ManageLocationState>((set, get) => 
           lastLocationDataFetch: now,
           loading: false
         });
-        
-        console.log('✅ Location data loaded and cached');
       } else {
-        console.error('Failed to fetch location data');
         set({ loading: false });
       }
     } catch (error) {
@@ -182,7 +178,6 @@ export const useManageLocationStore = create<ManageLocationState>((set, get) => 
     
     // Check cache validity
     if (!forceRefresh && now - lastEventsDataFetch < CACHE_DURATION) {
-      console.log('🚀 Using cached events data');
       return;
     }
 
@@ -226,11 +221,8 @@ export const useManageLocationStore = create<ManageLocationState>((set, get) => 
           eventCounts: counts,
           lastEventsDataFetch: now
         });
-        
-        console.log('✅ Events data loaded and cached');
       }
     } catch (error) {
-      console.error('Error loading events for counts:', error);
     }
   },
 
@@ -332,8 +324,26 @@ export const useManageLocationStore = create<ManageLocationState>((set, get) => 
       });
 
       if (response.ok) {
-        // Refresh data after successful save
-        await get().loadLocationData(true);
+        const result = await response.json();
+        const newLocation = result.data;
+        
+        // Immediately update state with the new location for instant UI feedback
+        const { locationAvailabilities, calendarEvents } = get();
+        const updatedLocations = [...locationAvailabilities, newLocation];
+        const newCalendarEvent: CalendarEvent = {
+          id: newLocation._id,
+          date: newLocation.date,
+          title: `${newLocation.locationName} (${newLocation.status})`,
+          type: newLocation.status === 'available' ? 'available' : 'unavailable',
+          notes: `Capacity: ${newLocation.capacity} | ${newLocation.description}`
+        };
+        
+        set({
+          locationAvailabilities: updatedLocations,
+          calendarEvents: [...calendarEvents, newCalendarEvent],
+          lastLocationDataFetch: Date.now()
+        });
+        
         return true;
       } else {
         const result = await response.json();
@@ -365,8 +375,17 @@ export const useManageLocationStore = create<ManageLocationState>((set, get) => 
       });
 
       if (response.ok) {
-        // Refresh data after successful deletion
-        await get().loadLocationData(true);
+        // Immediately update state by removing the deleted location for instant UI feedback
+        const { locationAvailabilities, calendarEvents } = get();
+        const updatedLocations = locationAvailabilities.filter(loc => loc._id !== locationId);
+        const updatedEvents = calendarEvents.filter(event => event.id !== locationId);
+        
+        set({
+          locationAvailabilities: updatedLocations,
+          calendarEvents: updatedEvents,
+          lastLocationDataFetch: Date.now()
+        });
+        
         return true;
       } else {
         const result = await response.json();
@@ -482,7 +501,8 @@ export const useManageLocationStore = create<ManageLocationState>((set, get) => 
         totalFailed += batchFailCount;
       }
 
-      setProgressModal(true, 'add', 90, 'Refreshing location data...');
+      setProgressModal(true, 'add', 90, 'Updating interface...');
+      // Force a complete refresh to ensure all data is synchronized
       await get().loadLocationData(true);
       
       setProgressModal(true, 'add', 100, 'Operation completed!');

@@ -39,6 +39,22 @@ const LoginForm = () => {
         // Store user data for reference
         localStorage.setItem('userData', JSON.stringify(user));
         
+        // Create login log
+        try {
+          await axios.post(`${API_BASE_URL}/login-logs`, {
+            userId: user._id,
+            username: user.username,
+            email: user.email,
+            department: user.department,
+            ipAddress: '', // Can be populated from backend
+            userAgent: navigator.userAgent
+          });
+          console.log('✅ Login log created');
+        } catch (logError) {
+          console.error('Failed to create login log:', logError);
+          // Don't block login if log creation fails
+        }
+        
         // Navigate based on user role
         if (user.role === 'Admin') {
           toast.success(`Welcome back, ${user.username}! Redirecting to Admin Panel...`);

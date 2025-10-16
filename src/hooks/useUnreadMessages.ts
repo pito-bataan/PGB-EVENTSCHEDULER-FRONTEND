@@ -178,96 +178,71 @@ export const useUnreadMessages = (currentUserId?: string): UseUnreadMessagesRetu
       return;
     }
 
-    // TEMPORARILY DISABLED - This hook was causing too many API calls on login
+    // DISABLED: Using messagesStore for unread counts instead
     // fetchUnreadCounts();
     
-    // Set loading to false and default count to 0 for now
-    setIsLoading(false);
-    setTotalUnreadCount(0);
-
-    // Disabled background polling - real-time events handle everything now
-    // const interval = setInterval(fetchUnreadCounts, 300000);
+    // DISABLED: Polling to prevent duplicate API calls
+    // const interval = setInterval(fetchUnreadCounts, 30000);
     // return () => clearInterval(interval);
+    
+    setIsLoading(false);
   }, [currentUserId]);
 
-  // Real-time listeners for immediate badge updates
+  // Real-time listeners for immediate badge updates from messagesStore
   useEffect(() => {
     if (!currentUserId) return;
 
+    console.log('🔔 Setting up real-time badge update listeners');
 
-    // Track processed messages to prevent duplicates (with time-based cleanup)
-    const processedMessages = new Map<string, number>();
-    const MESSAGE_CACHE_TIME = 30000; // 30 seconds
+    // Listen for unread messages updates from messagesStore
+    const handleUnreadUpdate = (event: CustomEvent) => {
+      const { count } = event.detail;
+      console.log(`📊 Received unread update: ${count} messages`);
+      setTotalUnreadCount(count);
+      setIsLoading(false);
+    };
 
-    // Listen for new messages via Socket.IO - increment count
-    onNewMessage((data: any) => {
-      
-      const { message } = data;
-      const messageId = message._id || message.id || `${message.senderId}-${Date.now()}`;
-      const now = Date.now();
-      
-      // Clean up old processed messages (older than 30 seconds)
-      for (const [id, timestamp] of processedMessages.entries()) {
-        if (now - timestamp > MESSAGE_CACHE_TIME) {
-          processedMessages.delete(id);
-        }
-      }
-      
-      // Check if we've recently processed this message
-      if (processedMessages.has(messageId)) {
-        const lastProcessed = processedMessages.get(messageId)!;
-        if (now - lastProcessed < 5000) { // Only block if within 5 seconds
-          return;
-        }
-      }
-      
-      // Mark message as processed with timestamp
-      processedMessages.set(messageId, now);
-      
-      // Only increment if the message is not from current user
-      if (message.senderId !== currentUserId && message.senderId._id !== currentUserId) {
-        setTotalUnreadCount(prev => {
-          const newCount = prev + 1;
-          
-          // Update localStorage for other components
-          localStorage.setItem('totalUnreadMessages', newCount.toString());
-          window.dispatchEvent(new CustomEvent('unreadMessagesUpdated', { 
-            detail: { count: newCount } 
-          }));
-          
-          return newCount;
-        });
-      }
-    });
-
-    // Listen for custom browser events when messages are read
-    const handleMessagesRead = (event: CustomEvent) => {
-      const { readerId, messageCount = 1 } = event.detail;
-      
-      if (readerId === currentUserId) {
-        setTotalUnreadCount(prev => {
-          const newCount = Math.max(0, prev - messageCount);
-          
-          // Update localStorage immediately
-          localStorage.setItem('totalUnreadMessages', newCount.toString());
-          window.dispatchEvent(new CustomEvent('unreadMessagesUpdated', { 
-            detail: { count: newCount } 
-          }));
-          
-          return newCount;
-        });
+    // Listen for new messages to update badge
+    const handleNewMessage = (event: CustomEvent) => {
+      const { count } = event.detail;
+      if (count !== undefined) {
+        console.log(`📨 New message received, updating badge: ${count}`);
+        setTotalUnreadCount(count);
       }
     };
 
-    // Listen for custom browser event instead of Socket.IO
+    // Listen for messages read to update badge
+    const handleMessagesRead = (event: CustomEvent) => {
+      const { count } = event.detail;
+      if (count !== undefined) {
+        console.log(`✅ Messages read, updating badge: ${count}`);
+        setTotalUnreadCount(count);
+      }
+    };
+
+    // Add event listeners
+    window.addEventListener('unreadMessagesUpdated', handleUnreadUpdate as EventListener);
+    window.addEventListener('newMessageReceived', handleNewMessage as EventListener);
     window.addEventListener('messagesReadGlobal', handleMessagesRead as EventListener);
+
+    // Initial sync from localStorage
+    const storedCount = localStorage.getItem('totalUnreadMessages');
+    if (storedCount) {
+      const count = parseInt(storedCount, 10);
+      if (!isNaN(count)) {
+        setTotalUnreadCount(count);
+        console.log(`📂 Loaded initial count from localStorage: ${count}`);
+      }
+    }
 
     return () => {
       // Cleanup listeners
-      offNewMessage();
+      window.removeEventListener('unreadMessagesUpdated', handleUnreadUpdate as EventListener);
+      window.removeEventListener('newMessageReceived', handleNewMessage as EventListener);
       window.removeEventListener('messagesReadGlobal', handleMessagesRead as EventListener);
+      console.log('🧹 Cleaned up badge update listeners');
     };
-  }, [currentUserId, onNewMessage, offNewMessage]);
+  }, [currentUserId]);
 
   return { totalUnreadCount, isLoading };
 };

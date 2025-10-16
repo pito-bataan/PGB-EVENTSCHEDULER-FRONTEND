@@ -57,7 +57,9 @@ import {
   Settings,
   Package,
   MapPin,
-  CalendarDays
+  CalendarDays,
+  CalendarCheck,
+  Building2
 } from 'lucide-react';
 
 interface User {
@@ -86,6 +88,8 @@ interface DepartmentPermissions {
     myRequirements: boolean;
     manageLocation: boolean;
     myCalendar: boolean;
+    allEvents: boolean;
+    taggedDepartments: boolean;
   };
 }
 
@@ -123,7 +127,9 @@ const UsersManagement: React.FC = () => {
     permissions: {
       myRequirements: false,
       manageLocation: false,
-      myCalendar: false
+      myCalendar: false,
+      allEvents: false,
+      taggedDepartments: false
     }
   });
   const [newUser, setNewUser] = useState<NewUser>({
@@ -228,22 +234,47 @@ const UsersManagement: React.FC = () => {
   // Fetch department permissions
   const fetchDepartmentPermissions = async (department: string) => {
     try {
+      console.log('📥 Fetching permissions for department:', department);
+      
       const response = await axios.get(`${API_BASE_URL}/department-permissions/${department}`, {
         headers: getAuthHeaders()
       });
       
+      console.log('📥 Backend returned:', response.data);
+      
       if (response.data.success) {
-        setDepartmentPermissions(response.data.data);
+        // Ensure all permission fields exist (for backward compatibility)
+        const permissions = response.data.data.permissions || {};
+        
+        console.log('📥 Raw permissions from backend:', permissions);
+        
+        const processedPermissions = {
+          myRequirements: permissions.myRequirements || false,
+          manageLocation: permissions.manageLocation || false,
+          myCalendar: permissions.myCalendar || false,
+          allEvents: permissions.allEvents || false,
+          taggedDepartments: permissions.taggedDepartments || false
+        };
+        
+        console.log('📥 Processed permissions:', processedPermissions);
+        
+        setDepartmentPermissions({
+          department: response.data.data.department,
+          permissions: processedPermissions
+        });
       }
     } catch (error: any) {
-      console.error('Error fetching department permissions:', error);
+      console.error('❌ Error fetching department permissions:', error);
+      console.error('❌ Error response:', error.response?.data);
       // If no permissions found, use defaults
       setDepartmentPermissions({
         department,
         permissions: {
           myRequirements: false,
           manageLocation: false,
-          myCalendar: false
+          myCalendar: false,
+          allEvents: false,
+          taggedDepartments: false
         }
       });
     }
@@ -253,18 +284,30 @@ const UsersManagement: React.FC = () => {
   const updateDepartmentPermissions = async () => {
     try {
       setLoading(true);
+      
+      console.log('🔄 Updating permissions for department:', selectedDepartment);
+      console.log('📦 Permissions being sent:', departmentPermissions.permissions);
+      
       const response = await axios.put(
         `${API_BASE_URL}/department-permissions/${selectedDepartment}`,
         { permissions: departmentPermissions.permissions },
         { headers: getAuthHeaders() }
       );
       
+      console.log('✅ Backend response:', response.data);
+      
       if (response.data.success) {
         toast.success('Department permissions updated successfully!');
+        
+        // Fetch permissions again to verify they were saved
+        await fetchDepartmentPermissions(selectedDepartment);
+        console.log('🔍 Permissions after refetch:', departmentPermissions.permissions);
+        
         setShowPermissionsModal(false);
       }
     } catch (error: any) {
-      console.error('Error updating department permissions:', error);
+      console.error('❌ Error updating department permissions:', error);
+      console.error('❌ Error response:', error.response?.data);
       toast.error(error.response?.data?.message || 'Failed to update permissions');
     } finally {
       setLoading(false);
@@ -765,28 +808,30 @@ const UsersManagement: React.FC = () => {
 
       {/* Department Permissions Modal */}
       <Dialog open={showPermissionsModal} onOpenChange={setShowPermissionsModal}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
+        <DialogContent className="!max-w-[1100px] !w-[85vw] p-8" style={{ maxWidth: '1100px', width: '85vw' }}>
+          <DialogHeader className="pb-2">
+            <DialogTitle className="flex items-center gap-2 text-xl">
               <Settings className="w-5 h-5" />
               Department Sidebar Permissions
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="text-sm">
               Control which sidebar buttons are visible for <strong>{selectedDepartment}</strong> department users.
             </DialogDescription>
           </DialogHeader>
           
-          <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-2">
             {/* My Requirements Permission */}
-            <div className="flex items-center justify-between p-4 border rounded-lg">
-              <div className="flex items-center gap-3">
-                <Package className="w-5 h-5 text-blue-600" />
-                <div>
-                  <h4 className="font-medium">My Requirements</h4>
-                  <p className="text-sm text-gray-600">Allow users to view and manage their department requirements</p>
+            <div className="flex items-start justify-between p-5 border-2 rounded-lg hover:border-blue-300 transition-colors bg-white">
+              <div className="flex items-start gap-4 flex-1">
+                <div className="p-2 bg-blue-50 rounded-lg">
+                  <Package className="w-5 h-5 text-blue-600" />
+                </div>
+                <div className="flex-1">
+                  <h4 className="font-semibold text-base mb-1">My Requirements</h4>
+                  <p className="text-sm text-gray-600 leading-relaxed">Allow users to view and manage their department requirements</p>
                 </div>
               </div>
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center ml-4">
                 <input
                   type="checkbox"
                   id="myRequirements"
@@ -798,21 +843,23 @@ const UsersManagement: React.FC = () => {
                       myRequirements: e.target.checked
                     }
                   }))}
-                  className="w-4 h-4 text-red-600 bg-gray-100 border-gray-300 rounded focus:ring-red-500"
+                  className="w-5 h-5 text-red-600 bg-gray-100 border-gray-300 rounded focus:ring-red-500 cursor-pointer"
                 />
               </div>
             </div>
 
             {/* Manage Location Permission */}
-            <div className="flex items-center justify-between p-4 border rounded-lg">
-              <div className="flex items-center gap-3">
-                <MapPin className="w-5 h-5 text-green-600" />
-                <div>
-                  <h4 className="font-medium">Manage Location</h4>
-                  <p className="text-sm text-gray-600">Allow users to manage location availability and bookings</p>
+            <div className="flex items-start justify-between p-5 border-2 rounded-lg hover:border-green-300 transition-colors bg-white">
+              <div className="flex items-start gap-4 flex-1">
+                <div className="p-2 bg-green-50 rounded-lg">
+                  <MapPin className="w-5 h-5 text-green-600" />
+                </div>
+                <div className="flex-1">
+                  <h4 className="font-semibold text-base mb-1">Manage Location</h4>
+                  <p className="text-sm text-gray-600 leading-relaxed">Allow users to manage location availability and bookings</p>
                 </div>
               </div>
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center ml-4">
                 <input
                   type="checkbox"
                   id="manageLocation"
@@ -824,21 +871,23 @@ const UsersManagement: React.FC = () => {
                       manageLocation: e.target.checked
                     }
                   }))}
-                  className="w-4 h-4 text-red-600 bg-gray-100 border-gray-300 rounded focus:ring-red-500"
+                  className="w-5 h-5 text-red-600 bg-gray-100 border-gray-300 rounded focus:ring-red-500 cursor-pointer"
                 />
               </div>
             </div>
 
             {/* My Calendar Permission */}
-            <div className="flex items-center justify-between p-4 border rounded-lg">
-              <div className="flex items-center gap-3">
-                <CalendarDays className="w-5 h-5 text-purple-600" />
-                <div>
-                  <h4 className="font-medium">My Calendar</h4>
-                  <p className="text-sm text-gray-600">Allow users to access their personal calendar view</p>
+            <div className="flex items-start justify-between p-5 border-2 rounded-lg hover:border-purple-300 transition-colors bg-white">
+              <div className="flex items-start gap-4 flex-1">
+                <div className="p-2 bg-purple-50 rounded-lg">
+                  <CalendarDays className="w-5 h-5 text-purple-600" />
+                </div>
+                <div className="flex-1">
+                  <h4 className="font-semibold text-base mb-1">My Calendar</h4>
+                  <p className="text-sm text-gray-600 leading-relaxed">Allow users to access their personal calendar view</p>
                 </div>
               </div>
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center ml-4">
                 <input
                   type="checkbox"
                   id="myCalendar"
@@ -850,13 +899,69 @@ const UsersManagement: React.FC = () => {
                       myCalendar: e.target.checked
                     }
                   }))}
-                  className="w-4 h-4 text-red-600 bg-gray-100 border-gray-300 rounded focus:ring-red-500"
+                  className="w-5 h-5 text-red-600 bg-gray-100 border-gray-300 rounded focus:ring-red-500 cursor-pointer"
                 />
               </div>
             </div>
 
-            {/* Info Note */}
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+            {/* All Events Permission */}
+            <div className="flex items-start justify-between p-5 border-2 rounded-lg hover:border-orange-300 transition-colors bg-white">
+              <div className="flex items-start gap-4 flex-1">
+                <div className="p-2 bg-orange-50 rounded-lg">
+                  <CalendarCheck className="w-5 h-5 text-orange-600" />
+                </div>
+                <div className="flex-1">
+                  <h4 className="font-semibold text-base mb-1">All Events</h4>
+                  <p className="text-sm text-gray-600 leading-relaxed">Allow users to view all booked events and location bookings</p>
+                </div>
+              </div>
+              <div className="flex items-center ml-4">
+                <input
+                  type="checkbox"
+                  id="allEvents"
+                  checked={departmentPermissions.permissions.allEvents}
+                  onChange={(e) => setDepartmentPermissions(prev => ({
+                    ...prev,
+                    permissions: {
+                      ...prev.permissions,
+                      allEvents: e.target.checked
+                    }
+                  }))}
+                  className="w-5 h-5 text-red-600 bg-gray-100 border-gray-300 rounded focus:ring-red-500 cursor-pointer"
+                />
+              </div>
+            </div>
+
+            {/* Tagged Departments Permission */}
+            <div className="flex items-start justify-between p-5 border-2 rounded-lg hover:border-teal-300 transition-colors bg-white">
+              <div className="flex items-start gap-4 flex-1">
+                <div className="p-2 bg-teal-50 rounded-lg">
+                  <Building2 className="w-5 h-5 text-teal-600" />
+                </div>
+                <div className="flex-1">
+                  <h4 className="font-semibold text-base mb-1">Tagged Departments</h4>
+                  <p className="text-sm text-gray-600 leading-relaxed">Allow users to view and manage tagged department requirements</p>
+                </div>
+              </div>
+              <div className="flex items-center ml-4">
+                <input
+                  type="checkbox"
+                  id="taggedDepartments"
+                  checked={departmentPermissions.permissions.taggedDepartments}
+                  onChange={(e) => setDepartmentPermissions(prev => ({
+                    ...prev,
+                    permissions: {
+                      ...prev.permissions,
+                      taggedDepartments: e.target.checked
+                    }
+                  }))}
+                  className="w-5 h-5 text-red-600 bg-gray-100 border-gray-300 rounded focus:ring-red-500 cursor-pointer"
+                />
+              </div>
+            </div>
+
+            {/* Info Note - Spans both columns */}
+            <div className="md:col-span-2 bg-blue-50 border border-blue-200 rounded-lg p-3">
               <p className="text-sm text-blue-800">
                 <strong>Note:</strong> Changes will apply to all users in the {selectedDepartment} department. 
                 Users may need to refresh their browser to see the updated sidebar.

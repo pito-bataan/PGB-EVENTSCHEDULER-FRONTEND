@@ -106,7 +106,7 @@ interface Event {
   taggedDepartments: string[];
   departmentRequirements: any;
   requestorDepartment?: string;
-  status: 'draft' | 'submitted' | 'approved' | 'rejected' | 'completed';
+  status: 'draft' | 'submitted' | 'approved' | 'rejected' | 'completed' | 'cancelled';
   submittedAt?: string;
   createdAt: string;
   updatedAt: string;
@@ -133,6 +133,8 @@ const AllEventsPage: React.FC = () => {
   const [showPdfOptions, setShowPdfOptions] = useState(false);
   const [showPdfPreview, setShowPdfPreview] = useState(false);
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string>('');
+  const [showStatusDialog, setShowStatusDialog] = useState(false);
+  const [statusAction, setStatusAction] = useState<'approve' | 'disapprove' | null>(null);
 
   // Fetch all events
   const fetchAllEvents = async () => {
@@ -246,6 +248,13 @@ const AllEventsPage: React.FC = () => {
           label: 'Completed',
           className: 'bg-purple-100 text-purple-700'
         };
+      case 'cancelled':
+        return { 
+          variant: 'secondary' as const, 
+          icon: <XCircle className="w-3 h-3" />, 
+          label: 'Cancelled',
+          className: 'bg-gray-100 text-gray-700'
+        };
       default:
         return { 
           variant: 'secondary' as const, 
@@ -264,6 +273,59 @@ const AllEventsPage: React.FC = () => {
     const ampm = hour >= 12 ? 'PM' : 'AM';
     const displayHour = hour % 12 || 12;
     return `${displayHour}:${minutes} ${ampm}`;
+  };
+
+  // Check if all requirements are confirmed
+  const areAllRequirementsConfirmed = (event: Event): boolean => {
+    if (!event.departmentRequirements) return true;
+    
+    const allRequirements: any[] = [];
+    Object.values(event.departmentRequirements).forEach((deptReqs: any) => {
+      if (Array.isArray(deptReqs)) {
+        allRequirements.push(...deptReqs);
+      }
+    });
+    
+    if (allRequirements.length === 0) return true;
+    
+    return allRequirements.every(req => req.status === 'confirmed');
+  };
+
+  // Handle status change
+  const handleStatusChange = async (newStatus: 'approved' | 'rejected' | 'cancelled') => {
+    if (!selectedEvent) return;
+    
+    try {
+      const token = localStorage.getItem('authToken');
+      
+      const response = await axios.patch(
+        `${API_BASE_URL}/events/${selectedEvent._id}/status`,
+        { status: newStatus },
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      
+      if (response.data.success) {
+        const statusText = newStatus === 'approved' ? 'approved' : newStatus === 'rejected' ? 'rejected' : 'cancelled';
+        toast.success(`Event ${statusText} successfully!`);
+        setShowStatusDialog(false);
+        setStatusAction(null);
+        fetchAllEvents(); // Refresh the list
+      }
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || `Failed to update event status`);
+    }
+  };
+
+  // Open status dialog
+  const openStatusDialog = (event: Event, action: 'approve' | 'disapprove') => {
+    setSelectedEvent(event);
+    setStatusAction(action);
+    setShowStatusDialog(true);
   };
 
   // Handle checkbox selection
@@ -803,6 +865,22 @@ const AllEventsPage: React.FC = () => {
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex items-center gap-2 justify-end">
+                              {/* Status Button - Show for submitted, approved, rejected, and cancelled */}
+                              {(event.status === 'submitted' || event.status === 'approved' || event.status === 'rejected' || event.status === 'cancelled') && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="gap-1"
+                                  onClick={() => {
+                                    setSelectedEvent(event);
+                                    setShowStatusDialog(true);
+                                  }}
+                                >
+                                  <CheckCircle className="w-3 h-3" />
+                                  Status
+                                </Button>
+                              )}
+                              
                               <Dialog>
                                 <DialogTrigger asChild>
                                   <Button
@@ -1307,6 +1385,131 @@ const AllEventsPage: React.FC = () => {
               Download PDF
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Status Change Dialog */}
+      <Dialog open={showStatusDialog} onOpenChange={setShowStatusDialog}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Change Event Status</DialogTitle>
+            <DialogDescription>
+              {selectedEvent && (
+                <span className="text-sm">
+                  <span className="font-medium text-gray-900">{selectedEvent.eventTitle}</span>
+                  <span className="mx-2">•</span>
+                  <span>Current Status: </span>
+                  <Badge className={getStatusInfo(selectedEvent.status).className}>
+                    {getStatusInfo(selectedEvent.status).label}
+                  </Badge>
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedEvent && (
+            <div className="space-y-4">
+              {/* Requirements List */}
+              <div className="border rounded-lg overflow-hidden flex flex-col">
+                <div className="p-4 border-b bg-muted/50">
+                  <h4 className="text-sm font-semibold">Requirements Overview</h4>
+                </div>
+                <div className="p-4 max-h-[400px] overflow-y-auto">
+                  {(() => {
+                    const allRequirements: any[] = [];
+                    if (selectedEvent.departmentRequirements) {
+                      Object.entries(selectedEvent.departmentRequirements).forEach(([dept, reqs]: [string, any]) => {
+                        if (Array.isArray(reqs)) {
+                          reqs.forEach(req => {
+                            allRequirements.push({ ...req, department: dept });
+                          });
+                        }
+                      });
+                    }
+                    
+                    if (allRequirements.length === 0) {
+                      return (
+                        <div className="text-center py-12">
+                          <p className="text-sm text-muted-foreground">No requirements for this event</p>
+                        </div>
+                      );
+                    }
+                    
+                    const confirmedCount = allRequirements.filter(req => req.status === 'confirmed').length;
+                    const pendingCount = allRequirements.filter(req => req.status === 'pending' || !req.status).length;
+                    
+                    return (
+                      <div className="space-y-4">
+                        {/* Summary */}
+                        <div className="flex items-center gap-4 text-sm">
+                          <span className="text-muted-foreground">Total: <strong>{allRequirements.length}</strong></span>
+                          <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                            Confirmed: {confirmedCount}
+                          </Badge>
+                          <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
+                            Pending: {pendingCount}
+                          </Badge>
+                        </div>
+                        
+                        {/* Requirements List */}
+                        <div className="space-y-2">
+                          {allRequirements.map((req, index) => (
+                            <div key={index} className="p-3 border rounded-lg hover:bg-muted/50 transition-colors">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <Badge variant="secondary" className="text-xs">
+                                      {req.department}
+                                    </Badge>
+                                    <Badge 
+                                      variant={req.status === 'confirmed' ? 'default' : 'outline'}
+                                      className={`text-xs ${
+                                        req.status === 'confirmed' 
+                                          ? 'bg-green-100 text-green-800 border-green-200' 
+                                          : 'bg-orange-100 text-orange-800 border-orange-200'
+                                      }`}
+                                    >
+                                      {req.status === 'confirmed' ? 'Confirmed' : 'Pending'}
+                                    </Badge>
+                                  </div>
+                                  <p className="text-sm font-medium">{req.name}</p>
+                                  {req.quantity && (
+                                    <p className="text-xs text-muted-foreground mt-1">Quantity: {req.quantity}</p>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+              
+              {/* Action Buttons */}
+              <div className="grid grid-cols-3 gap-2 pt-2 border-t">
+                <Button
+                  className="bg-green-600 text-white hover:bg-green-700"
+                  onClick={() => handleStatusChange('approved')}
+                >
+                  Approve Event
+                </Button>
+                <Button
+                  className="bg-red-600 text-white hover:bg-red-700"
+                  onClick={() => handleStatusChange('rejected')}
+                >
+                  Reject Event
+                </Button>
+                <Button
+                  className="bg-yellow-500 text-white hover:bg-yellow-600"
+                  onClick={() => handleStatusChange('cancelled')}
+                >
+                  Cancel Event
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

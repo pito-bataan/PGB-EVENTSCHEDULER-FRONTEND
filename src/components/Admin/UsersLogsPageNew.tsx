@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { useUserLogsStore } from '@/stores/userLogsStore';
 import { format } from 'date-fns';
 import {
@@ -26,14 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from '@/components/ui/pagination';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Activity,
   Search,
@@ -47,9 +40,7 @@ import {
   X,
   Loader2,
   MapPin,
-  Building2,
-  ChevronLeft,
-  ChevronRight
+  Building2
 } from 'lucide-react';
 
 const UsersLogsPage: React.FC = () => {
@@ -70,36 +61,18 @@ const UsersLogsPage: React.FC = () => {
     setDateFilter,
     clearFilters,
     getFilteredLogs,
-    getStats,
-    initializeSocketListeners
+    getStats
   } = useUserLogsStore();
 
-  // Pagination state
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 12;
-
-  // Fetch logs and initialize Socket.IO on mount
+  // Fetch logs on mount
   useEffect(() => {
     fetchLoginLogs();
     fetchEventLogs();
-    initializeSocketListeners();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [fetchLoginLogs, fetchEventLogs]);
 
   const filteredLogs = getFilteredLogs();
   const stats = getStats();
   const loading = loginLogsLoading || eventLogsLoading;
-  
-  // Pagination calculations
-  const totalPages = Math.ceil(filteredLogs.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const paginatedLogs = filteredLogs.slice(startIndex, endIndex);
-  
-  // Reset to page 1 when filters change
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchQuery, actionFilter, departmentFilter, dateFilter]);
 
   // Get unique departments
   const departments = Array.from(new Set([
@@ -297,20 +270,19 @@ const UsersLogsPage: React.FC = () => {
                 <p className="text-gray-600">Try adjusting your search criteria or filters.</p>
               </div>
             ) : (
-              <>
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Type</TableHead>
-                        <TableHead>User / Event</TableHead>
-                        <TableHead>Department</TableHead>
-                        <TableHead>Details</TableHead>
-                        <TableHead>Date & Time</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {paginatedLogs.map((log, index) => {
+              <ScrollArea className="h-[600px]">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Type</TableHead>
+                      <TableHead>User / Event</TableHead>
+                      <TableHead>Department</TableHead>
+                      <TableHead>Details</TableHead>
+                      <TableHead>Date & Time</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredLogs.map((log, index) => {
                       const isLoginLog = 'username' in log;
                       
                       return (
@@ -362,7 +334,7 @@ const UsersLogsPage: React.FC = () => {
                           <TableCell>
                             <div className="flex items-center gap-1 text-sm text-gray-600">
                               <Clock className="w-3 h-3" />
-                              {format(new Date(isLoginLog ? log.loginTime : log.submittedAt), 'MMM dd, yyyy hh:mm a')}
+                              {format(new Date(isLoginLog ? log.loginTime : log.submittedAt), 'MMM dd, yyyy HH:mm')}
                             </div>
                           </TableCell>
                         </TableRow>
@@ -370,58 +342,7 @@ const UsersLogsPage: React.FC = () => {
                     })}
                   </TableBody>
                 </Table>
-              </div>
-
-              {/* Pagination */}
-              {totalPages > 1 && (
-                <div className="flex items-center justify-between mt-4 pt-4 border-t">
-                  <p className="text-sm text-gray-600">
-                    Showing {startIndex + 1} to {Math.min(endIndex, filteredLogs.length)} of {filteredLogs.length} logs
-                  </p>
-                  <Pagination>
-                    <PaginationContent>
-                      <PaginationItem>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                          disabled={currentPage === 1}
-                          className="gap-1"
-                        >
-                          <ChevronLeft className="w-4 h-4" />
-                          Previous
-                        </Button>
-                      </PaginationItem>
-                      
-                      {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                        <PaginationItem key={page}>
-                          <PaginationLink
-                            onClick={() => setCurrentPage(page)}
-                            isActive={currentPage === page}
-                            className="cursor-pointer"
-                          >
-                            {page}
-                          </PaginationLink>
-                        </PaginationItem>
-                      ))}
-                      
-                      <PaginationItem>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                          disabled={currentPage === totalPages}
-                          className="gap-1"
-                        >
-                          Next
-                          <ChevronRight className="w-4 h-4" />
-                        </Button>
-                      </PaginationItem>
-                    </PaginationContent>
-                  </Pagination>
-                </div>
-              )}
-            </>
+              </ScrollArea>
             )}
           </CardContent>
         </Card>

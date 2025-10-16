@@ -4,6 +4,7 @@ import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import EventCountBadge from '@/components/ui/event-count-badge';
 import { useUnreadMessages } from '@/hooks/useUnreadMessages';
+import { useMessagesStore } from '@/stores/messagesStore';
 import { 
   Calendar, 
   CalendarDays,
@@ -14,7 +15,8 @@ import {
   LogOut,
   LayoutDashboard,
   CalendarPlus,
-  PanelLeft
+  PanelLeft,
+  CalendarCheck
 } from 'lucide-react';
 
 interface UsersSidebarProps {
@@ -56,13 +58,18 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
   const [permissions, setPermissions] = useState({
     myRequirements: false,
     manageLocation: false,
-    myCalendar: false
+    myCalendar: false,
+    allEvents: false,
+    taggedDepartments: false
   });
   const navigate = useNavigate();
   const location = useLocation();
 
   // Event count state for My Calendar badge
   const [eventCount, setEventCount] = useState(0);
+  
+  // Location event count state for Manage Location badge
+  const [locationEventCount, setLocationEventCount] = useState(0);
   
   // Fetch event count for My Calendar badge
   useEffect(() => {
@@ -95,9 +102,182 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
     }
   }, [currentUser.department]);
 
-  // Re-enable global unread messages hook for real-time badge updates
-  const validUserId = currentUser.id !== "unknown" ? currentUser.id : undefined;
-  const { totalUnreadCount: totalUnreadMessages, isLoading: unreadLoading } = useUnreadMessages(validUserId);
+  // Fetch location event count for Manage Location badge
+  useEffect(() => {
+    const fetchLocationEventCount = async () => {
+      try {
+        const token = localStorage.getItem('authToken');
+        if (!token) return;
+        
+        const response = await axios.get(`${API_BASE_URL}/events`, {
+          headers: getAuthHeaders()
+        });
+        
+        if (response.data.success) {
+          const events = response.data.data || [];
+          // Count all events that have location bookings (submitted or approved status)
+          const locationBookedEvents = events.filter((event: any) => 
+            event.location && 
+            event.location.trim() !== '' &&
+            (event.status === 'submitted' || event.status === 'approved')
+          );
+          setLocationEventCount(locationBookedEvents.length);
+        }
+      } catch (error) {
+        // Keep default count if fetch fails
+        setLocationEventCount(0);
+      }
+    };
+    
+    if (currentUser.department && currentUser.department !== "Department") {
+      fetchLocationEventCount();
+    }
+  }, [currentUser.department]);
+
+  // Real-time refresh functions
+  const refreshEventCounts = async () => {
+    try {
+      const token = localStorage.getItem('authToken');
+      if (!token) return;
+      
+      const response = await axios.get(`${API_BASE_URL}/events`, {
+        headers: getAuthHeaders()
+      });
+      
+      if (response.data.success) {
+        const events = response.data.data || [];
+        
+        // Update My Calendar count
+        const departmentEvents = events.filter((event: any) => 
+          event.taggedDepartments?.includes(currentUser.department) ||
+          event.requestorDepartment === currentUser.department
+        );
+        setEventCount(departmentEvents.length);
+        
+        // Update Manage Location count
+        if (permissions.manageLocation) {
+          const locationBookedEvents = events.filter((event: any) => 
+            event.location && 
+            event.location.trim() !== '' &&
+            (event.status === 'submitted' || event.status === 'approved')
+          );
+          setLocationEventCount(locationBookedEvents.length);
+        }
+      }
+    } catch (error) {
+      // Keep current counts if refresh fails
+    }
+  };
+
+  // Refresh counts when navigating or permissions change
+  useEffect(() => {
+    refreshEventCounts();
+  }, [location.pathname, permissions.manageLocation, permissions.myCalendar, currentUser.department]);
+
+  // Real-time polling every 15 seconds for live updates
+  useEffect(() => {
+    const interval = setInterval(() => {
+      refreshEventCounts();
+    }, 15000); // 15 seconds for more real-time feel
+
+    return () => clearInterval(interval);
+  }, [currentUser.department, permissions]);
+
+  // Refresh when window gains focus (user comes back to the app)
+  useEffect(() => {
+    const handleFocus = () => {
+      refreshEventCounts();
+    };
+
+    const handleStorageChange = (e: StorageEvent) => {
+      // Refresh counts when localStorage changes (cross-tab sync)
+      if (e.key === 'authToken' || e.key === 'userData') {
+        refreshEventCounts();
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('storage', handleStorageChange);
+    
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, [currentUser.department, permissions]);
+
+  // Use messages store for real-time unread counts
+  const { 
+    initializeUser: initializeMessagesUser, 
+    fetchEventConversations, 
+    getTotalUnreadCount,
+    currentUser: messagesCurrentUser 
+  } = useMessagesStore();
+  
+  // State for unread messages count
+  const [totalUnreadMessages, setTotalUnreadMessages] = useState(0);
+  const [unreadLoading, setUnreadLoading] = useState(false);
+
+  // Initialize messages store user
+  useEffect(() => {
+    if (currentUser.id !== "unknown") {
+      initializeMessagesUser();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser.id]); // REMOVED initializeMessagesUser to prevent infinite loop
+
+  // Get unread count from messages store with real-time updates
+  useEffect(() => {
+    const updateUnreadCount = () => {
+      const count = getTotalUnreadCount();
+      setTotalUnreadMessages(count);
+    };
+
+    // Update immediately
+    updateUnreadCount();
+
+    // Set up interval to check for updates (reduced frequency)
+    const interval = setInterval(updateUnreadCount, 15000); // Check every 15 seconds to reduce API calls
+
+    // Listen for custom events for immediate updates
+    const handleUnreadUpdate = () => {
+      updateUnreadCount();
+      // console.log('🔔 Sidebar: Immediate unread count update');
+    };
+
+    const handleMessageRead = () => {
+      updateUnreadCount(); // INSTANT update - no delays
+    };
+
+    const handleNewMessage = () => {
+      updateUnreadCount(); // INSTANT update - no delays
+    };
+
+    // Add event listeners
+    window.addEventListener('unreadMessagesUpdated', handleUnreadUpdate);
+    window.addEventListener('messagesReadGlobal', handleMessageRead);
+    window.addEventListener('newMessageReceived', handleNewMessage);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('unreadMessagesUpdated', handleUnreadUpdate);
+      window.removeEventListener('messagesReadGlobal', handleMessageRead);
+      window.removeEventListener('newMessageReceived', handleNewMessage);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // REMOVED getTotalUnreadCount to prevent infinite loop - function is stable from Zustand
+
+  // Fetch conversations when user changes or navigates
+  useEffect(() => {
+    if (currentUser.department && currentUser.department !== "Department") {
+      fetchEventConversations(true); // Force refresh
+      // Also update unread count immediately after fetching
+      setTimeout(() => {
+        const count = getTotalUnreadCount();
+        setTotalUnreadMessages(count);
+      }, 1000);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser.department, location.pathname]); // REMOVED fetchEventConversations and getTotalUnreadCount to prevent infinite loop
   
 
 
@@ -143,7 +323,6 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
 
     const middleItems = [
       { icon: MessageSquare, label: 'Messages', href: '/users/messages' },
-      { icon: Building2, label: 'Tagged Departments', href: '/users/tagged-departments' },
     ];
 
     const conditionalItems = [];
@@ -161,6 +340,16 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
     // Add Manage Location if permitted
     if (permissions.manageLocation) {
       conditionalItems.push({ icon: MapPin, label: 'Manage Location', href: '/users/manage-location' });
+    }
+    
+    // Add All Events if permitted
+    if (permissions.allEvents) {
+      conditionalItems.push({ icon: CalendarCheck, label: 'All Events', href: '/users/all-events' });
+    }
+    
+    // Add Tagged Departments if permitted
+    if (permissions.taggedDepartments) {
+      conditionalItems.push({ icon: Building2, label: 'Tagged Departments', href: '/users/tagged-departments' });
     }
 
     return [...baseItems, ...middleItems, ...conditionalItems];
@@ -222,6 +411,7 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
           const isActive = location.pathname === item.href;
           const isMyCalendar = item.label === 'My Calendar';
           const isMessages = item.label === 'Messages';
+          const isManageLocation = item.label === 'Manage Location';
           const totalEventCount = isMyCalendar ? eventCount : 0;
           
 
@@ -252,19 +442,22 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
               
               {/* Event Count Badge for My Calendar */}
               {isMyCalendar && totalEventCount > 0 && !isCollapsed && (
-                <EventCountBadge 
-                  count={totalEventCount}
-                  variant="destructive"
-                  size="sm"
-                  position="top-right"
-                  className="absolute -top-1 -right-1"
-                />
+                <div className="absolute -top-1 -right-1 bg-red-500 text-white text-xs px-1.5 py-0.5 min-w-[20px] h-5 flex items-center justify-center rounded-full">
+                  {totalEventCount > 99 ? '99+' : totalEventCount}
+                </div>
               )}
 
               {/* Unread Messages Badge for Messages */}
               {isMessages && totalUnreadMessages > 0 && !isCollapsed && !unreadLoading && (
                 <div className="absolute -top-1 -right-1 bg-red-500 text-white text-xs px-1.5 py-0.5 min-w-[20px] h-5 flex items-center justify-center rounded-full">
                   {totalUnreadMessages > 99 ? '99+' : totalUnreadMessages}
+                </div>
+              )}
+
+              {/* Location Event Count Badge for Manage Location */}
+              {isManageLocation && locationEventCount > 0 && !isCollapsed && (
+                <div className="absolute -top-1 -right-1 bg-red-500 text-white text-xs px-1.5 py-0.5 min-w-[20px] h-5 flex items-center justify-center rounded-full">
+                  {locationEventCount > 99 ? '99+' : locationEventCount}
                 </div>
               )}
               

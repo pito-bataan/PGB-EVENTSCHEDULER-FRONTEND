@@ -253,10 +253,6 @@ const MyEventsPage: React.FC = () => {
           });
           
           setConflictingEvents(conflicts);
-          console.log(`🔍 Found ${conflicts.length} existing bookings for ${editFormData.location} on ${editFormData.startDate} (excluding current event)`);
-          conflicts.forEach((event: any) => {
-            console.log(`   📅 "${event.eventTitle}" - ${event.startTime} to ${event.endTime}`);
-          });
         }
       } else if (!showEditModal) {
         // Clear conflicts when modal is closed
@@ -283,10 +279,8 @@ const MyEventsPage: React.FC = () => {
 
       if (response.data.success) {
         setEvents(response.data.data);
-        console.log('✅ Events loaded:', response.data.data);
       }
     } catch (error) {
-      console.error('Error fetching events:', error);
       toast.error('Failed to load events', {
         description: 'Please try again later.'
       });
@@ -1594,31 +1588,15 @@ const MyEventsPage: React.FC = () => {
                             onClick={async () => {
                               try {
                                 const url = `${API_BASE_URL}/events/govfile/${selectedEventFiles.govFiles!.brieferTemplate!.filename}`;
-                                console.log('🔍 Attempting to open government file:', url);
                                 
                                 // Test if the file exists first
                                 const response = await fetch(url, { method: 'HEAD' });
                                 if (response.ok) {
                                   window.open(url, '_blank');
                                 } else {
-                                  console.error('❌ Government file not found:', response.status, response.statusText);
-                                  console.error('📁 Expected file path: uploads/events/' + selectedEventFiles.govFiles!.brieferTemplate!.filename);
-                                  console.error('📊 Database filename:', selectedEventFiles.govFiles!.brieferTemplate!.filename);
-                                  
-                                  // Try to check if backend is running
-                                  try {
-                                    const backendTest = await fetch(`${API_BASE_URL}/events/my`, { method: 'HEAD' });
-                                    if (backendTest.ok) {
-                                      toast.error(`File not found on server: ${selectedEventFiles.govFiles!.brieferTemplate!.originalName}`);
-                                    } else {
-                                      toast.error('Backend server not responding');
-                                    }
-                                  } catch {
-                                    toast.error('Backend server is not running');
-                                  }
+                                  toast.error(`File not found on server: ${selectedEventFiles.govFiles!.brieferTemplate!.originalName}`);
                                 }
                               } catch (error) {
-                                console.error('❌ Error accessing government file:', error);
                                 toast.error('Failed to access government file');
                               }
                             }}
@@ -1633,18 +1611,15 @@ const MyEventsPage: React.FC = () => {
                             onClick={async () => {
                               try {
                                 const url = `${API_BASE_URL}/events/govfile/${selectedEventFiles.govFiles!.brieferTemplate!.filename}?download=true`;
-                                console.log('📋 Attempting to download government file:', url);
                                 
                                 // Test if the file exists first
                                 const response = await fetch(url.replace('?download=true', ''), { method: 'HEAD' });
                                 if (response.ok) {
                                   window.open(url, '_blank');
                                 } else {
-                                  console.error('❌ Government file not found for download:', response.status, response.statusText);
                                   toast.error(`File not found: ${selectedEventFiles.govFiles!.brieferTemplate!.originalName}`);
                                 }
                               } catch (error) {
-                                console.error('❌ Error downloading government file:', error);
                                 toast.error('Failed to download government file');
                               }
                             }}

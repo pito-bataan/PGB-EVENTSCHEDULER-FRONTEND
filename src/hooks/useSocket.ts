@@ -4,6 +4,8 @@ import { io, Socket } from 'socket.io-client';
 // Global socket instance to prevent multiple connections
 let globalSocket: Socket | null = null;
 let isConnecting = false; // Prevent multiple simultaneous connection attempts
+let joinedUserRooms = new Set<string>(); // Track joined user rooms globally
+let globalListenersInitialized = false; // Track if global listeners are set up
 
 export const useSocket = (userId?: string) => {
   const socketRef = useRef<Socket | null>(null);
@@ -78,14 +80,20 @@ export const useSocket = (userId?: string) => {
       });
     }
 
-    // Always try to join user room if connected and userId provided
-    if (userId && socket.connected) {
-      socket.emit('join-user-room', userId);
-    } else if (userId) {
-      // If not connected yet, wait for connection
-      socket.once('connect', () => {
+    // Only join user room if not already joined and userId provided
+    if (userId && !joinedUserRooms.has(userId)) {
+      if (socket.connected) {
         socket.emit('join-user-room', userId);
-      });
+        joinedUserRooms.add(userId);
+      } else {
+        // If not connected yet, wait for connection
+        socket.once('connect', () => {
+          if (!joinedUserRooms.has(userId)) {
+            socket.emit('join-user-room', userId);
+            joinedUserRooms.add(userId);
+          }
+        });
+      }
     }
 
     // Cleanup on unmount
@@ -96,15 +104,33 @@ export const useSocket = (userId?: string) => {
   }, [userId]);
 
   // Re-enabled Socket.IO functions with proper error handling
+  // Track joined rooms to prevent duplicate joins
+  const joinedRoomsRef = useRef<Set<string>>(new Set());
+  
   const joinConversation = (conversationId: string) => {
-    if (socketRef.current && socketRef.current.connected) {
-      socketRef.current.emit('join-conversation', conversationId);
+    const socket = socketRef.current || globalSocket;
+    
+    if (socket && socket.connected) {
+      // Only join if not already joined
+      if (!joinedRoomsRef.current.has(conversationId)) {
+        socket.emit('join-conversation', conversationId);
+        joinedRoomsRef.current.add(conversationId);
+      }
+    } else if (socket) {
+      // Wait for connection and then join
+      socket.once('connect', () => {
+        if (!joinedRoomsRef.current.has(conversationId)) {
+          socket.emit('join-conversation', conversationId);
+          joinedRoomsRef.current.add(conversationId);
+        }
+      });
     }
   };
 
   const leaveConversation = (conversationId: string) => {
     if (socketRef.current && socketRef.current.connected) {
       socketRef.current.emit('leave-conversation', conversationId);
+      joinedRoomsRef.current.delete(conversationId); // Remove from tracking
     }
   };
 
@@ -139,6 +165,96 @@ export const useSocket = (userId?: string) => {
   const offMessagesRead = () => {
     if (socketRef.current) {
       socketRef.current.off('messages-read');
+    }
+  };
+
+  // Message delivery status events
+  const onMessageDelivered = (callback: (data: any) => void) => {
+    if (socketRef.current && socketRef.current.connected) {
+      socketRef.current.on('message-delivered', callback);
+    } else if (socketRef.current) {
+      socketRef.current.once('connect', () => {
+        socketRef.current!.on('message-delivered', callback);
+      });
+    }
+  };
+
+  const offMessageDelivered = () => {
+    if (socketRef.current) {
+      socketRef.current.off('message-delivered');
+    }
+  };
+
+  // Message seen status events
+  const onMessageSeen = (callback: (data: any) => void) => {
+    if (socketRef.current && socketRef.current.connected) {
+      socketRef.current.on('message-seen', callback);
+    } else if (socketRef.current) {
+      socketRef.current.once('connect', () => {
+        socketRef.current!.on('message-seen', callback);
+      });
+    }
+  };
+
+  const offMessageSeen = () => {
+    if (socketRef.current) {
+      socketRef.current.off('message-seen');
+    }
+  };
+
+  // Typing indicator events
+  const onUserTyping = (callback: (data: any) => void) => {
+    if (socketRef.current && socketRef.current.connected) {
+      socketRef.current.on('user-typing', callback);
+    } else if (socketRef.current) {
+      socketRef.current.once('connect', () => {
+        socketRef.current!.on('user-typing', callback);
+      });
+    }
+  };
+
+  const offUserTyping = () => {
+    if (socketRef.current) {
+      socketRef.current.off('user-typing');
+    }
+  };
+
+  const emitTyping = (conversationId: string, isTyping: boolean) => {
+    if (socketRef.current && socketRef.current.connected) {
+      socketRef.current.emit('typing', { conversationId, isTyping });
+    }
+  };
+
+  // Online status events
+  const onUserOnline = (callback: (data: any) => void) => {
+    if (socketRef.current && socketRef.current.connected) {
+      socketRef.current.on('user-online', callback);
+    } else if (socketRef.current) {
+      socketRef.current.once('connect', () => {
+        socketRef.current!.on('user-online', callback);
+      });
+    }
+  };
+
+  const offUserOnline = () => {
+    if (socketRef.current) {
+      socketRef.current.off('user-online');
+    }
+  };
+
+  const onUserOffline = (callback: (data: any) => void) => {
+    if (socketRef.current && socketRef.current.connected) {
+      socketRef.current.on('user-offline', callback);
+    } else if (socketRef.current) {
+      socketRef.current.once('connect', () => {
+        socketRef.current!.on('user-offline', callback);
+      });
+    }
+  };
+
+  const offUserOffline = () => {
+    if (socketRef.current) {
+      socketRef.current.off('user-offline');
     }
   };
 
@@ -228,6 +344,17 @@ export const useSocket = (userId?: string) => {
     offNewMessage,
     onMessagesRead,
     offMessagesRead,
+    onMessageDelivered,
+    offMessageDelivered,
+    onMessageSeen,
+    offMessageSeen,
+    onUserTyping,
+    offUserTyping,
+    emitTyping,
+    onUserOnline,
+    offUserOnline,
+    onUserOffline,
+    offUserOffline,
     onNewNotification,
     offNewNotification,
     onNotificationRead,
@@ -236,3 +363,70 @@ export const useSocket = (userId?: string) => {
     offStatusUpdate
   };
 };
+
+// Global function to initialize message listeners (works across all pages)
+export const initializeGlobalMessageListeners = (addNewMessage: (conversationId: string, message: any) => void, getTotalUnreadCount: () => number) => {
+  if (globalListenersInitialized || !globalSocket) {
+    return;
+  }
+  
+  // Remove any existing listeners to prevent duplicates
+  globalSocket.removeAllListeners('new-message');
+  
+  // Set up global message listener (SINGLE instance)
+  globalSocket.on('new-message', (data: any) => {
+    const { message, conversationId } = data;
+    
+    if (!message || !conversationId) {
+      console.error('❌ [GLOBAL] Invalid message data received:', data);
+      return;
+    }
+    
+    // Add message using Zustand store (with duplicate protection)
+    // The store will handle badge updates internally
+    addNewMessage(conversationId, message);
+  });
+  
+  globalListenersInitialized = true;
+};
+
+// Track joined event rooms globally to prevent duplicates
+let joinedEventRooms = new Set<string>();
+
+// Global function to join all event rooms (works across all pages)
+export const joinAllEventRooms = (conversations: any[]) => {
+  if (!globalSocket || !globalSocket.connected) {
+    if (globalSocket) {
+      globalSocket.once('connect', () => {
+        joinAllEventRooms(conversations);
+      });
+    }
+    return;
+  }
+  
+  // Filter out already joined rooms to prevent spam
+  const newRooms = conversations.filter(conv => {
+    const eventRoomId = conv.eventId || conv.id;
+    return !joinedEventRooms.has(eventRoomId);
+  });
+  
+  if (newRooms.length === 0) {
+    return;
+  }
+  
+  newRooms.forEach(conv => {
+    const eventRoomId = conv.eventId || conv.id;
+    globalSocket!.emit('join-conversation', eventRoomId);
+    joinedEventRooms.add(eventRoomId); // Track joined room
+  });
+};
+
+// Function to reset global state (useful for cleanup)
+export const resetGlobalSocketState = () => {
+  joinedUserRooms.clear();
+  joinedEventRooms.clear();
+  globalListenersInitialized = false;
+};
+
+// Function to get global socket instance
+export const getGlobalSocket = () => globalSocket;

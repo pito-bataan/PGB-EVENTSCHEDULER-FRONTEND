@@ -11,9 +11,11 @@ import MyRequirementsPage from './components/Users/MyRequirementsPage'
 import ManageLocationPage from './components/Users/ManageLocationPage'
 import MessagesPage from './components/Users/MessagesPage'
 import TaggedDepartmentPage from './components/Users/TaggedDepartmentPage'
+import UserAllEventsPage from './components/Users/AllEventsPage'
 import AdminMainLayout from './components/Admin/AdminMainLayout'
 import AdminDashboard from './components/Admin/AdminDashboard'
 import AllEventsPage from './components/Admin/AllEventsPage'
+import AdminCalendarPage from './components/Admin/CalendarPage'
 import UsersManagement from './components/Admin/UsersManagement'
 import UsersLogsPage from './components/Admin/UsersLogsPage'
 import DepartmentsManagement from './components/Admin/DepartmentsManagement'
@@ -51,7 +53,7 @@ function App() {
                 <Route path="my-requirements" element={<MyRequirementsPage />} />
                 <Route path="manage-location" element={<ManageLocationPage />} />
                 <Route path="calendar" element={<div className="p-6"><h1 className="text-2xl font-bold">Calendar</h1><p>Coming soon...</p></div>} />
-                <Route path="all-events" element={<div className="p-6"><h1 className="text-2xl font-bold">All Events</h1><p>Coming soon...</p></div>} />
+                <Route path="all-events" element={<UserAllEventsPage />} />
                 <Route path="messages" element={<MessagesPage />} />
                 <Route path="tagged-departments" element={<TaggedDepartmentPage />} />
                 <Route path="" element={<Navigate to="dashboard" replace />} />
@@ -65,7 +67,7 @@ function App() {
               <Routes>
                 <Route path="dashboard" element={<AdminDashboard />} />
                 <Route path="all-events" element={<AllEventsPage />} />
-                <Route path="calendar" element={<div className="p-6"><h1 className="text-2xl font-bold">Calendar</h1><p>Coming soon...</p></div>} />
+                <Route path="calendar" element={<AdminCalendarPage />} />
                 <Route path="users" element={<UsersManagement />} />
                 <Route path="users-logs" element={<UsersLogsPage />} />
                 <Route path="departments" element={<DepartmentsManagement />} />

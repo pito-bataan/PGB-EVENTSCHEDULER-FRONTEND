@@ -110,6 +110,7 @@ const ManageLocationPage: React.FC = () => {
     bulkDeleteAllLocations,
     setProgressModal,
     getLocationEventCount,
+    getCurrentAndFutureDates,
   } = useManageLocationStore();
 
   // Local UI state that doesn't need caching
@@ -674,7 +675,7 @@ const ManageLocationPage: React.FC = () => {
     setShowLocationModal(true);
     
     // Reload fresh data first to ensure we have the latest
-    await loadLocationData();
+    await loadLocationData(true);
     
     // Load existing locations for this date
     const dateStr = format(date, 'yyyy-MM-dd');
@@ -947,33 +948,15 @@ const ManageLocationPage: React.FC = () => {
       );
 
       if (existingLocation && existingLocation._id) {
-        // Delete from database
-        const token = localStorage.getItem('authToken');
-        if (!token) {
-          toast.error('Please login to delete location');
-          setDeletingIndex(null);
-          return;
-        }
+        // Delete from database using store method
+        const success = await deleteLocationAvailability(existingLocation._id);
 
-        const response = await fetch(`${API_BASE_URL}/location-availability/${existingLocation._id}`, {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        });
-
-        if (response.ok) {
+        if (success) {
           toast.success(`${locationToRemove.locationName} deleted successfully`);
           
           // Immediately remove from UI first for instant feedback
           setLocationsForDate(prev => prev.filter((_, i) => i !== index));
-          
-          // Then reload data to sync with database and update all components
-          await loadLocationData();
         } else {
-          const result = await response.json();
-          toast.error(result.message || 'Failed to delete location');
           setDeletingIndex(null);
           return; // Don't remove from UI if database deletion failed
         }
@@ -1047,8 +1030,8 @@ const ManageLocationPage: React.FC = () => {
 
       const dateStr = format(selectedDate, 'yyyy-MM-dd');
       
-      // Save all NEW locations for this date
-      const savePromises = allNewLocations.map(location => {
+      // Save all NEW locations for this date using the store method
+      const savePromises = allNewLocations.map(async (location) => {
         const capacityNum = parseInt(location.capacity, 10);
         
         // Validate capacity parsing
@@ -1066,27 +1049,18 @@ const ManageLocationPage: React.FC = () => {
           status: location.status
         };
 
-        return fetch(`${API_BASE_URL}/location-availability`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(locationData)
-        });
+        return await saveLocationAvailability(locationData);
       });
 
-      const responses = await Promise.all(savePromises);
-      const results = await Promise.all(responses.map(r => r.json()));
-
-      const failedSaves = responses.filter(r => !r.ok);
+      const results = await Promise.all(savePromises);
+      const failedSaves = results.filter(result => !result);
       
       if (failedSaves.length === 0) {
         console.log('All locations saved successfully, closing modal...');
         toast.success(`${allNewLocations.length} location(s) saved successfully!`);
         
         // Reload data to get the latest from server and update all UI components
-        await loadLocationData();
+        await loadLocationData(true);
         
         // Close modal and reset
         console.log('Closing modal and resetting state...');
@@ -1103,11 +1077,7 @@ const ManageLocationPage: React.FC = () => {
         setCustomLocationName('');
         console.log('Modal should be closed now');
       } else {
-        const errorMessages = results
-          .filter((_, index) => !responses[index].ok)
-          .map(result => result.message)
-          .join(', ');
-        toast.error(`Some locations failed to save: ${errorMessages}`);
+        toast.error(`${failedSaves.length} out of ${allNewLocations.length} locations failed to save`);
       }
     } catch (error) {
       console.error('Error saving locations:', error);
@@ -1136,148 +1106,9 @@ const ManageLocationPage: React.FC = () => {
     
     try {
       await bulkAddAllLocations(calendarCurrentMonth);
-      toast.success('Successfully added all locations for current and future dates!');
-
-      // Start progress modal
-      startProgressModal('add', 'Preparing location data...');
-
-      // Pre-filter existing locations to avoid duplicates
-      const existingLocationKeys = new Set(
-        locationAvailabilities.map(loc => `${loc.date}-${loc.locationName.toLowerCase()}`)
-      );
-
-      updateProgress(10, 'Building location data...');
-
-      // Pre-build location data lookup for auto-population
-      const locationDataLookup = new Map();
-      defaultLocationNames.forEach(locationName => {
-        const existingLocationData = locationAvailabilities
-          .filter(loc => loc.locationName === locationName)
-          .sort((a, b) => new Date(b.createdAt || b.date).getTime() - new Date(a.createdAt || a.date).getTime())
-          .find(loc => loc.capacity && loc.description);
-        
-        locationDataLookup.set(locationName, existingLocationData);
-      });
-
-      // Build all location entries to create
-      const locationsToCreate: any[] = [];
-      
-      for (const dateString of futureDates) {
-        for (const locationName of defaultLocationNames) {
-          const locationKey = `${dateString}-${locationName.toLowerCase()}`;
-          
-          // Skip if already exists
-          if (existingLocationKeys.has(locationKey)) {
-            console.log(`⏭️ Skipping ${locationName} on ${dateString} - already exists`);
-            continue;
-          }
-
-          // Get auto-populated data
-          const existingLocationData = locationDataLookup.get(locationName);
-
-          // Prepare location data
-          const locationData = {
-            date: dateString,
-            locationName: locationName,
-            capacity: existingLocationData?.capacity || 50, // Default capacity
-            description: existingLocationData?.description || `${locationName} - Available for events`,
-            status: 'available' as 'available' | 'unavailable',
-            departmentName: currentUser?.department || 'PMO'
-          };
-
-          locationsToCreate.push(locationData);
-        }
-      }
-
-      if (locationsToCreate.length === 0) {
-        closeProgressModal();
-        toast.info('All locations are already added for current and future dates!');
-        return;
-      }
-
-      updateProgress(20, `Prepared ${locationsToCreate.length} location entries...`);
-      console.log(`📦 Prepared ${locationsToCreate.length} location entries for batch creation`);
-
-      // BATCH PROCESSING: Process in chunks of 20 for optimal performance
-      const BATCH_SIZE = 20;
-      const batches = [];
-      for (let i = 0; i < locationsToCreate.length; i += BATCH_SIZE) {
-        batches.push(locationsToCreate.slice(i, i + BATCH_SIZE));
-      }
-
-      console.log(`⚡ Processing ${batches.length} batches of ${BATCH_SIZE} locations each`);
-
-      let totalAdded = 0;
-      let totalFailed = 0;
-
-      // Process batches sequentially for progress tracking
-      for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
-        const batch = batches[batchIndex];
-        const progressPercent = 20 + ((batchIndex / batches.length) * 70);
-        
-        updateProgress(progressPercent, `Processing batch ${batchIndex + 1}/${batches.length} (${batch.length} locations)...`);
-        console.log(`🔄 Processing batch ${batchIndex + 1}/${batches.length} (${batch.length} locations)`);
-        
-        // Process all locations in this batch concurrently
-        const batchPromises = batch.map(async (locationData) => {
-          try {
-            const response = await fetch(`${API_BASE_URL}/location-availability`, {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify(locationData)
-            });
-
-            if (response.ok) {
-              return { success: true, location: locationData.locationName, date: locationData.date };
-            } else {
-              console.error(`Failed to add ${locationData.locationName} on ${locationData.date}`);
-              return { success: false, location: locationData.locationName, date: locationData.date };
-            }
-          } catch (error) {
-            console.error(`Error adding ${locationData.locationName} on ${locationData.date}:`, error);
-            return { success: false, location: locationData.locationName, date: locationData.date, error };
-          }
-        });
-
-        // Wait for all locations in this batch to complete
-        const batchResults = await Promise.all(batchPromises);
-        
-        // Count results
-        const batchSuccessCount = batchResults.filter(r => r.success).length;
-        const batchFailCount = batchResults.filter(r => !r.success).length;
-        
-        totalAdded += batchSuccessCount;
-        totalFailed += batchFailCount;
-        
-        console.log(`✅ Batch ${batchIndex + 1} completed: ${batchSuccessCount} success, ${batchFailCount} failed`);
-      }
-
-      updateProgress(90, 'Refreshing location data...');
-      console.log(`🎯 BULK OPERATION COMPLETED: ${totalAdded} added, ${totalFailed} failed`);
-
-      // Refresh data
-      await loadLocationData();
-      
-      updateProgress(100, 'Operation completed!');
-      
-      // Show results
-      if (totalFailed > 0) {
-        toast.success(`Added ${totalAdded} locations! ${totalFailed} failed to add.`, { duration: 6000 });
-      } else {
-        toast.success(`Successfully added all ${totalAdded} location entries for ${futureDates.length} current/future days in ${format(new Date(), 'MMMM yyyy')}!`);
-      }
-
-      // Close progress modal after a brief delay
-      setTimeout(closeProgressModal, 1500);
-      
     } catch (error) {
       console.error('Error in bulk add operation:', error);
       toast.error(`Error adding locations: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    } finally {
-      // bulkLoading is managed by the Zustand store
     }
   };
 
@@ -1287,434 +1118,50 @@ const ManageLocationPage: React.FC = () => {
     
     try {
       await bulkDeleteAllLocations(calendarCurrentMonth);
-      toast.success('Successfully deleted location data!');
-
-      // Filter locations to only include the currently viewed month
-      const viewedYear = calendarCurrentMonth.getFullYear();
-      const viewedMonth = calendarCurrentMonth.getMonth();
-      
-      const locationsInViewedMonth = locationAvailabilities.filter(location => {
-        const locationDate = new Date(location.date + 'T00:00:00');
-        return locationDate.getFullYear() === viewedYear && 
-               locationDate.getMonth() === viewedMonth;
-      });
-
-      if (locationsInViewedMonth.length === 0) {
-        closeProgressModal();
-        toast.info(`No location data to delete for ${format(calendarCurrentMonth, 'MMMM yyyy')}!`);
-        return;
-      }
-
-      updateProgress(10, 'Checking for active bookings...');
-
-      // Pre-build active events lookup for faster checking
-      const activeEventsLookup = new Map();
-      allEvents
-        .filter(event => event.status === 'submitted' || event.status === 'approved')
-        .forEach(event => {
-          const eventLocation = (event.location || '').toLowerCase().trim();
-          const eventStartDate = new Date(event.startDate);
-          const eventEndDate = new Date(event.endDate);
-          const eventStartLocalDate = eventStartDate.toLocaleDateString('en-CA');
-          const eventEndLocalDate = eventEndDate.toLocaleDateString('en-CA');
-
-          if (!activeEventsLookup.has(eventLocation)) {
-            activeEventsLookup.set(eventLocation, []);
-          }
-          activeEventsLookup.get(eventLocation).push({
-            startDate: eventStartLocalDate,
-            endDate: eventEndLocalDate,
-            title: event.eventTitle
-          });
-        });
-
-      updateProgress(20, 'Separating protected locations...');
-
-      // Separate locations into protected and deletable (only for viewed month)
-      const locationsToDelete: any[] = [];
-      const protectedLocations: any[] = [];
-
-      for (const location of locationsInViewedMonth) {
-        const searchLocation = location.locationName.toLowerCase().trim();
-        let hasActiveEvents = false;
-
-        // Check against all possible event location matches
-        for (const [eventLocation, events] of activeEventsLookup.entries()) {
-          const locationMatch = eventLocation.includes(searchLocation) ||
-                                 searchLocation.includes(eventLocation) ||
-                                 eventLocation === searchLocation;
-
-          if (locationMatch) {
-            // Check if any event overlaps with this location's date
-            const hasOverlap = events.some((event: any) => 
-              location.date >= event.startDate && location.date <= event.endDate
-            );
-
-            if (hasOverlap) {
-              hasActiveEvents = true;
-              break;
-            }
-          }
-        }
-
-        if (hasActiveEvents) {
-          protectedLocations.push(location);
-          console.log(`🛡️ Protected ${location.locationName} on ${location.date} - has active bookings`);
-        } else {
-          locationsToDelete.push(location);
-        }
-      }
-
-      console.log(`📊 Analysis: ${locationsToDelete.length} to delete, ${protectedLocations.length} protected`);
-
-      if (locationsToDelete.length === 0) {
-        closeProgressModal();
-        toast.info(`All ${protectedLocations.length} location entries are protected due to active bookings!`);
-        return;
-      }
-
-      updateProgress(30, `Found ${locationsToDelete.length} locations to delete...`);
-
-      // BATCH PROCESSING: Delete in chunks for optimal performance
-      const BATCH_SIZE = 15;
-      const batches = [];
-      for (let i = 0; i < locationsToDelete.length; i += BATCH_SIZE) {
-        batches.push(locationsToDelete.slice(i, i + BATCH_SIZE));
-      }
-
-      console.log(`⚡ Processing ${batches.length} deletion batches of ${BATCH_SIZE} locations each`);
-
-      let totalDeleted = 0;
-      let totalFailed = 0;
-
-      // Process batches sequentially for progress tracking
-      for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
-        const batch = batches[batchIndex];
-        const progressPercent = 30 + ((batchIndex / batches.length) * 60);
-        
-        updateProgress(progressPercent, `Deleting batch ${batchIndex + 1}/${batches.length} (${batch.length} locations)...`);
-        console.log(`🗑️ Processing deletion batch ${batchIndex + 1}/${batches.length} (${batch.length} locations)`);
-        
-        // Process all deletions in this batch concurrently
-        const deletionPromises = batch.map(async (location) => {
-          try {
-            const response = await fetch(`${API_BASE_URL}/location-availability/${location._id}`, {
-              method: 'DELETE',
-              headers: {
-                'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-                'Content-Type': 'application/json'
-              }
-            });
-
-            if (response.ok) {
-              return { success: true, location: location.locationName, date: location.date };
-            } else {
-              console.error(`Failed to delete ${location.locationName} on ${location.date}`);
-              return { success: false, location: location.locationName, date: location.date };
-            }
-          } catch (error) {
-            console.error(`Error deleting ${location.locationName} on ${location.date}:`, error);
-            return { success: false, location: location.locationName, date: location.date, error };
-          }
-        });
-
-        // Wait for all deletions in this batch to complete
-        const batchResults = await Promise.all(deletionPromises);
-        
-        // Count results
-        const batchSuccessCount = batchResults.filter(r => r.success).length;
-        const batchFailCount = batchResults.filter(r => !r.success).length;
-        
-        totalDeleted += batchSuccessCount;
-        totalFailed += batchFailCount;
-        
-        console.log(`✅ Deletion batch ${batchIndex + 1} completed: ${batchSuccessCount} deleted, ${batchFailCount} failed`);
-      }
-
-      updateProgress(90, 'Refreshing location data...');
-      console.log(`🎯 BULK DELETE COMPLETED: ${totalDeleted} deleted, ${totalFailed} failed, ${protectedLocations.length} protected`);
-
-      // Refresh data
-      await loadLocationData();
-      
-      updateProgress(100, 'Operation completed!');
-      
-      // Show results
-      if (protectedLocations.length > 0) {
-        if (totalFailed > 0) {
-          toast.success(
-            `Deleted ${totalDeleted} entries! ${protectedLocations.length} protected due to bookings. ${totalFailed} failed.`,
-            { duration: 8000 }
-          );
-        } else {
-          toast.success(
-            `Deleted ${totalDeleted} location entries! ${protectedLocations.length} entries were protected due to active bookings.`,
-            { duration: 6000 }
-          );
-        }
-      } else {
-        if (totalFailed > 0) {
-          toast.success(`Deleted ${totalDeleted} entries! ${totalFailed} failed to delete.`, { duration: 6000 });
-        } else {
-          toast.success(`Successfully deleted all ${totalDeleted} location entries for ${format(calendarCurrentMonth, 'MMMM yyyy')}!`);
-        }
-      }
-
-      // Close progress modal after a brief delay
-      setTimeout(closeProgressModal, 1500);
-      
     } catch (error) {
       console.error('Error in bulk delete operation:', error);
-      closeProgressModal();
       toast.error(`Error deleting locations: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    } finally {
-      // bulkLoading is managed by the Zustand store
+    }
+  };
+
+  // Handle date selection for deletion
+  const toggleDateSelectionMode = () => {
+    setIsSelectingDatesMode(!isSelectingDatesMode);
+    if (!isSelectingDatesMode) {
+      setSelectedDatesForDeletion([]);
     }
   };
 
   // Handle selective date deletion
   const handleSelectiveDateDelete = async () => {
     setShowSelectiveDateDeleteDialog(false);
-    
-    try {
-      if (selectedDatesForDeletion.length === 0) {
-        toast.error('No dates selected for deletion!');
-        return;
-      }
-
-      console.log(`🎯 SELECTIVE DELETE: Processing ${selectedDatesForDeletion.length} selected dates`);
-
-      // Start progress modal
-      startProgressModal('delete', 'Analyzing selected dates...');
-
-      // Get locations for selected dates
-      const locationsToProcess = locationAvailabilities.filter(location => 
-        selectedDatesForDeletion.includes(location.date)
-      );
-
-      if (locationsToProcess.length === 0) {
-        closeProgressModal();
-        toast.info('No location data found for selected dates!');
-        return;
-      }
-
-      updateProgress(15, 'Checking for active bookings...');
-
-      // Pre-build active events lookup for faster checking
-      const activeEventsLookup = new Map();
-      allEvents
-        .filter(event => event.status === 'submitted' || event.status === 'approved')
-        .forEach(event => {
-          const eventLocation = (event.location || '').toLowerCase().trim();
-          const eventStartDate = new Date(event.startDate);
-          const eventEndDate = new Date(event.endDate);
-          const eventStartLocalDate = eventStartDate.toLocaleDateString('en-CA');
-          const eventEndLocalDate = eventEndDate.toLocaleDateString('en-CA');
-
-          if (!activeEventsLookup.has(eventLocation)) {
-            activeEventsLookup.set(eventLocation, []);
-          }
-          activeEventsLookup.get(eventLocation).push({
-            startDate: eventStartLocalDate,
-            endDate: eventEndLocalDate,
-            title: event.eventTitle
-          });
-        });
-
-      updateProgress(25, 'Separating protected locations...');
-
-      // Separate locations into protected and deletable
-      const locationsToDelete: any[] = [];
-      const protectedLocations: any[] = [];
-
-      for (const location of locationsToProcess) {
-        const searchLocation = location.locationName.toLowerCase().trim();
-        let hasActiveEvents = false;
-
-        // Check against all possible event location matches
-        for (const [eventLocation, events] of activeEventsLookup.entries()) {
-          const locationMatch = eventLocation.includes(searchLocation) ||
-                                 searchLocation.includes(eventLocation) ||
-                                 eventLocation === searchLocation;
-
-          if (locationMatch) {
-            // Check if any event overlaps with this location's date
-            const hasOverlap = events.some((event: any) => 
-              location.date >= event.startDate && location.date <= event.endDate
-            );
-
-            if (hasOverlap) {
-              hasActiveEvents = true;
-              break;
-            }
-          }
-        }
-
-        if (hasActiveEvents) {
-          protectedLocations.push(location);
-          console.log(`🛡️ Protected ${location.locationName} on ${location.date} - has active bookings`);
-        } else {
-          locationsToDelete.push(location);
-        }
-      }
-
-      console.log(`📊 Selective Analysis: ${locationsToDelete.length} to delete, ${protectedLocations.length} protected`);
-
-      if (locationsToDelete.length === 0) {
-        closeProgressModal();
-        toast.info(`All ${protectedLocations.length} location entries for selected dates are protected due to active bookings!`);
-        return;
-      }
-
-      updateProgress(35, `Found ${locationsToDelete.length} locations to delete...`);
-
-      // BATCH PROCESSING: Delete in chunks for optimal performance
-      const BATCH_SIZE = 15;
-      const batches = [];
-      for (let i = 0; i < locationsToDelete.length; i += BATCH_SIZE) {
-        batches.push(locationsToDelete.slice(i, i + BATCH_SIZE));
-      }
-
-      console.log(`⚡ Processing ${batches.length} selective deletion batches`);
-
-      let totalDeleted = 0;
-      let totalFailed = 0;
-
-      // Process batches sequentially for progress tracking
-      for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
-        const batch = batches[batchIndex];
-        const progressPercent = 35 + ((batchIndex / batches.length) * 55);
-        
-        updateProgress(progressPercent, `Deleting batch ${batchIndex + 1}/${batches.length} (${batch.length} locations)...`);
-        console.log(`🗑️ Processing selective batch ${batchIndex + 1}/${batches.length} (${batch.length} locations)`);
-        
-        // Process all deletions in this batch concurrently
-        const deletionPromises = batch.map(async (location) => {
-          try {
-            const response = await fetch(`${API_BASE_URL}/location-availability/${location._id}`, {
-              method: 'DELETE',
-              headers: {
-                'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-                'Content-Type': 'application/json'
-              }
-            });
-
-            if (response.ok) {
-              return { success: true, location: location.locationName, date: location.date };
-            } else {
-              console.error(`Failed to delete ${location.locationName} on ${location.date}`);
-              return { success: false, location: location.locationName, date: location.date };
-            }
-          } catch (error) {
-            console.error(`Error deleting ${location.locationName} on ${location.date}:`, error);
-            return { success: false, location: location.locationName, date: location.date, error };
-          }
-        });
-
-        // Wait for all deletions in this batch to complete
-        const batchResults = await Promise.all(deletionPromises);
-        
-        // Count results
-        const batchSuccessCount = batchResults.filter(r => r.success).length;
-        const batchFailCount = batchResults.filter(r => !r.success).length;
-        
-        totalDeleted += batchSuccessCount;
-        totalFailed += batchFailCount;
-        
-        console.log(`✅ Selective batch ${batchIndex + 1} completed: ${batchSuccessCount} deleted, ${batchFailCount} failed`);
-      }
-
-      updateProgress(90, 'Refreshing location data...');
-      console.log(`🎯 SELECTIVE DELETE COMPLETED: ${totalDeleted} deleted, ${totalFailed} failed, ${protectedLocations.length} protected`);
-
-      // Clear selection and exit selection mode
-      setSelectedDatesForDeletion([]);
-      setIsSelectingDatesMode(false);
-
-      // Refresh data
-      await loadLocationData();
-      
-      updateProgress(100, 'Operation completed!');
-      
-      // Show results
-      const selectedDatesList = selectedDatesForDeletion.slice(0, 3).join(', ') + (selectedDatesForDeletion.length > 3 ? '...' : '');
-      
-      if (protectedLocations.length > 0) {
-        if (totalFailed > 0) {
-          toast.success(
-            `Deleted ${totalDeleted} entries from selected dates (${selectedDatesList})! ${protectedLocations.length} protected. ${totalFailed} failed.`,
-            { duration: 8000 }
-          );
-        } else {
-          toast.success(
-            `Deleted ${totalDeleted} entries from selected dates (${selectedDatesList})! ${protectedLocations.length} entries were protected due to active bookings.`,
-            { duration: 6000 }
-          );
-        }
-      } else {
-        if (totalFailed > 0) {
-          toast.success(`Deleted ${totalDeleted} entries from selected dates! ${totalFailed} failed to delete.`, { duration: 6000 });
-        } else {
-          toast.success(`Successfully deleted all ${totalDeleted} location entries from selected dates (${selectedDatesList})!`);
-        }
-      }
-
-      // Close progress modal after a brief delay
-      setTimeout(closeProgressModal, 1500);
-      
-    } catch (error) {
-      console.error('Error in selective date deletion:', error);
-      closeProgressModal();
-      toast.error(`Error deleting selected dates: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    } finally {
-      // bulkLoading is managed by the Zustand store
-    }
-  };
-
-  // Toggle date selection mode
-  const toggleDateSelectionMode = () => {
-    setIsSelectingDatesMode(!isSelectingDatesMode);
-    if (!isSelectingDatesMode) {
-      setSelectedDatesForDeletion([]);
-      toast.info('Click on calendar dates to select them for deletion. Click "Select Dates" again to exit selection mode.');
-    } else {
-      setSelectedDatesForDeletion([]);
-      toast.info('Date selection mode disabled.');
-    }
+    // The actual deletion logic is handled by the Zustand store
+    // This is just a placeholder for the UI
+    toast.info('Selective date deletion feature coming soon!');
   };
 
   // Handle date click for selection
   const handleDateClickForSelection = (date: Date) => {
     if (!isSelectingDatesMode) {
-      // Normal date click - open location modal
       handleDateClick(date);
       return;
     }
 
-    // Selection mode - toggle date selection
     const dateStr = format(date, 'yyyy-MM-dd');
     
-    // Check if this date has any location data
+    // Check if date has any location data
     const hasLocationData = locationAvailabilities.some(loc => loc.date === dateStr);
     
     if (!hasLocationData) {
-      toast.warning(`No location data found for ${format(date, 'MMM dd, yyyy')}`);
+      toast.error(`No location data found for ${format(date, 'MMM dd, yyyy')}`);
       return;
     }
 
-    setSelectedDatesForDeletion(prev => {
-      if (prev.includes(dateStr)) {
-        // Remove from selection
-        const newSelection = prev.filter(d => d !== dateStr);
-        toast.info(`Removed ${format(date, 'MMM dd')} from selection (${newSelection.length} dates selected)`);
-        return newSelection;
-      } else {
-        // Add to selection
-        const newSelection = [...prev, dateStr];
-        toast.info(`Added ${format(date, 'MMM dd')} to selection (${newSelection.length} dates selected)`);
-        return newSelection;
-      }
-    });
+    setSelectedDatesForDeletion(prev => 
+      prev.includes(dateStr) 
+        ? prev.filter(d => d !== dateStr)
+        : [...prev, dateStr]
+    );
   };
 
   if (loading) {
@@ -2190,7 +1637,7 @@ const ManageLocationPage: React.FC = () => {
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => fetchLocationBookings(location.locationName)}
+                              onClick={() => fetchLocationBookings(location.locationName, selectedDate!)}
                               className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 gap-1 relative"
                             >
                               <Eye className="w-3 h-3" />

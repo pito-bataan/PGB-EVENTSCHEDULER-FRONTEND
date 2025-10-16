@@ -120,11 +120,9 @@ export const useTaggedDepartmentsStore = create<TaggedDepartmentsState>()(
         
         // Check cache (unless forced)
         if (!force && state.lastFetched && (now - state.lastFetched) < state.CACHE_DURATION) {
-          console.log('🎯 Using cached tagged events data');
           return;
         }
         
-        console.log('🔄 Fetching fresh tagged events data...');
         set({ loading: true });
         
         try {
@@ -180,9 +178,7 @@ export const useTaggedDepartmentsStore = create<TaggedDepartmentsState>()(
               lastFetched: now,
               loading: false
             });
-            console.log('✅ Tagged events data cached successfully');
           } else {
-            console.error('Unexpected API response structure:', data);
             set({ events: [], loading: false });
           }
         } catch (error) {
@@ -223,7 +219,6 @@ export const useTaggedDepartmentsStore = create<TaggedDepartmentsState>()(
       
       updateRequirementStatus: async (eventId: string, requirementId: string, status: string) => {
         try {
-          console.log('🔄 Updating requirement status:', { eventId, requirementId, status });
           const token = localStorage.getItem('authToken');
           
           if (!token) {
@@ -253,17 +248,14 @@ export const useTaggedDepartmentsStore = create<TaggedDepartmentsState>()(
 
           // Refresh the events list to get updated data
           await get().fetchTaggedEvents(true);
-          console.log('✅ Requirement status updated successfully');
           
         } catch (error) {
-          console.error('Error updating requirement status:', error);
           throw error;
         }
       },
       
       updateRequirementNotes: async (eventId: string, requirementId: string, notes: string) => {
         try {
-          console.log('🔄 Updating requirement notes:', { eventId, requirementId, notes });
           const token = localStorage.getItem('authToken');
           
           if (!token) {
@@ -294,10 +286,8 @@ export const useTaggedDepartmentsStore = create<TaggedDepartmentsState>()(
 
           // Refresh the events list to get updated data
           await get().fetchTaggedEvents(true);
-          console.log('✅ Requirement notes updated successfully');
           
         } catch (error) {
-          console.error('Error updating requirement notes:', error);
           throw error;
         }
       },

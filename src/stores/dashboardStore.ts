@@ -103,11 +103,9 @@ export const useDashboardStore = create<DashboardState>()(
         
         // Check cache (unless forced)
         if (!force && state.lastFetched && (now - state.lastFetched) < state.CACHE_DURATION) {
-          console.log('🎯 Using cached dashboard data');
           return;
         }
         
-        console.log('🔄 Fetching fresh dashboard data...');
         set({ loading: true });
         
         try {
@@ -253,10 +251,8 @@ export const useDashboardStore = create<DashboardState>()(
               loading: false
             });
             
-            console.log('✅ Dashboard data cached successfully');
           }
         } catch (error) {
-          console.error('❌ Error fetching dashboard data:', error);
           set({ loading: false });
         }
       },
@@ -329,7 +325,6 @@ export const useDashboardStore = create<DashboardState>()(
         // Force refresh dashboard data
         const state = get();
         await state.fetchDashboardData(userId, true);
-        console.log('🔄 Notifications refreshed');
       },
       
       // Getters

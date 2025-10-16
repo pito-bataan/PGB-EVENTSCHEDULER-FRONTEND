@@ -161,18 +161,82 @@ const MessagesPage: React.FC = () => {
     sendFile,
     addNewMessage,
     updateMessageReadStatus,
+    updateMessageDeliveryStatus,
+    updateMessageSeenStatus,
+    fetchEventConversations,
+    fetchAllConversationData,
+    getTotalUnreadCount,
     getFilteredConversations,
     getEventUnreadCount,
     getLatestMessage,
-    getSelectedConversation
+    getSelectedConversation,
+    fixStuckMessages
   } = useMessagesStore();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const currentRoomRef = useRef<string | null>(null);
 
-  // Re-enable Socket.IO for real-time messaging
-  const { joinConversation, leaveConversation, onNewMessage, offNewMessage, onMessagesRead, offMessagesRead } = useSocket(currentUser?.id);
+  // Enhanced Socket.IO for full real-time messaging
+  const { 
+    socket,
+    joinConversation, 
+    leaveConversation, 
+    onNewMessage, 
+    offNewMessage, 
+    onMessagesRead, 
+    offMessagesRead,
+    onMessageDelivered,
+    offMessageDelivered,
+    onMessageSeen,
+    offMessageSeen,
+    onUserTyping,
+    offUserTyping,
+    emitTyping,
+    onUserOnline,
+    offUserOnline,
+    onUserOffline,
+    offUserOffline
+  } = useSocket(currentUser?.id);
+
+  // Get selected conversation data from store (moved up to fix scope issue)
+  const { conversation: selectedConv, user: selectedUser } = getSelectedConversation();
+  const selectedUserId = selectedConversation?.split('-')[1];
+  const conversationMessages = selectedConversation ? messages[selectedConversation] || [] : [];
+
+  // Socket connection status
+  const [socketConnected, setSocketConnected] = useState(false);
+  
+  useEffect(() => {
+    if (socket) {
+      const handleConnect = () => {
+        setSocketConnected(true);
+        
+        // Retry joining current conversation room when connection is established
+        if (selectedConversation && selectedConv) {
+          const eventRoomId = selectedConv.eventId || selectedConv.id;
+          joinConversation(eventRoomId);
+          currentRoomRef.current = eventRoomId;
+        }
+      };
+      
+      const handleDisconnect = () => {
+        setSocketConnected(false);
+        currentRoomRef.current = null; // Clear current room on disconnect
+      };
+      
+      socket.on('connect', handleConnect);
+      socket.on('disconnect', handleDisconnect);
+      
+      // Set initial state
+      setSocketConnected(socket.connected);
+      
+      return () => {
+        socket.off('connect', handleConnect);
+        socket.off('disconnect', handleDisconnect);
+      };
+    }
+  }, [socket, selectedConversation, selectedConv, joinConversation]);
 
   // Temporarily disable global unread messages hook to prevent duplicate API calls
   // const { totalUnreadCount: globalUnreadCount } = useUnreadMessages(currentUser?.id);
@@ -182,7 +246,44 @@ const MessagesPage: React.FC = () => {
   // Initialize user and fetch conversations using Zustand store
   useEffect(() => {
     initializeUser();
-  }, [initializeUser]);
+    
+    // Restore selected conversation from localStorage (for page refresh)
+    const savedConversation = localStorage.getItem('selectedConversation');
+    if (savedConversation) {
+      setSelectedConversation(savedConversation);
+    }
+    
+    // Fix any stuck messages after initialization
+    setTimeout(() => {
+      fixStuckMessages();
+    }, 2000);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // REMOVED initializeUser and fixStuckMessages to prevent infinite loop - only run once on mount
+
+  // CRITICAL: Clear selected conversation when user leaves MessagesPage
+  // This ensures badge counts update properly when user is on other pages
+  // BUT keep it in localStorage for page refresh support
+  useEffect(() => {
+    return () => {
+      setSelectedConversation(null, true); // true = skip localStorage update
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // REMOVED setSelectedConversation to prevent re-runs - only cleanup on unmount
+
+  // Note: Auto-joining event rooms is now handled globally in messagesStore
+  // This ensures users receive messages even when not on the MessagesPage
+
+  // Periodic refresh DISABLED - relying on Socket.IO for real-time updates
+  // useEffect(() => {
+  //   if (!currentUser?.id) return;
+
+  //   const refreshInterval = setInterval(() => {
+  //     console.log('🔄 Periodic refresh: Fetching latest conversation data');
+  //     fetchAllConversationData(true); // Force refresh
+  //   }, 30000); // Reduced to every 30 seconds to prevent spam
+
+  //   return () => clearInterval(refreshInterval);
+  // }, [currentUser?.id, fetchAllConversationData]);
 
   // This function is now handled by the Zustand store
 
@@ -197,11 +298,6 @@ const MessagesPage: React.FC = () => {
   // Event unread counts are now handled by the Zustand store
 
   // Note: Total unread count is now calculated globally by useUnreadMessages hook
-
-  // Get selected conversation data from store
-  const { conversation: selectedConv, user: selectedUser } = getSelectedConversation();
-  const selectedUserId = selectedConversation?.split('-')[1];
-  const conversationMessages = selectedConversation ? messages[selectedConversation] || [] : [];
   
 
   // This function is now handled by the Zustand store
@@ -212,20 +308,9 @@ const MessagesPage: React.FC = () => {
 
   // Conversation selection is now handled by the Zustand store
 
-  // Set up real-time message listener
-  useEffect(() => {
-    onNewMessage((data: any) => {
-      const { message, conversationId } = data;
-      
-      // Add message using Zustand store
-      addNewMessage(conversationId, message);
-    });
-
-    // Cleanup listener on unmount
-    return () => {
-      offNewMessage();
-    };
-  }, [onNewMessage, offNewMessage, addNewMessage]);
+  // CRITICAL: All message listeners are now handled globally in messagesStore
+  // Local listeners have been removed to prevent duplicate message processing
+  // This ensures clean real-time messaging across all pages without conflicts
 
   // Set up real-time seen status listener
   useEffect(() => {
@@ -242,40 +327,101 @@ const MessagesPage: React.FC = () => {
     };
   }, [onMessagesRead, offMessagesRead, updateMessageReadStatus]);
 
+  // Set up real-time delivery status listener
+  useEffect(() => {
+    onMessageDelivered((data: any) => {
+      const { messageId, isDelivered } = data;
+      
+      // Update message delivery status
+      updateMessageDeliveryStatus(messageId, isDelivered);
+    });
+
+    return () => {
+      offMessageDelivered();
+    };
+  }, [onMessageDelivered, offMessageDelivered, updateMessageDeliveryStatus]);
+
+  // Set up real-time seen status listener
+  useEffect(() => {
+    onMessageSeen((data: any) => {
+      const { messageId, isRead, readAt } = data;
+      
+      // Update message seen status
+      updateMessageSeenStatus(messageId, isRead, readAt);
+    });
+
+    return () => {
+      offMessageSeen();
+    };
+  }, [onMessageSeen, offMessageSeen, updateMessageSeenStatus]);
+
+  // Set up typing indicator listeners
+  const [typingUsers, setTypingUsers] = useState<Set<string>>(new Set());
+  
+  useEffect(() => {
+    onUserTyping((data: any) => {
+      const { userId, isTyping, conversationId } = data;
+      
+      // Only show typing for current conversation
+      if (conversationId === selectedConversation) {
+        setTypingUsers(prev => {
+          const newSet = new Set(prev);
+          if (isTyping) {
+            newSet.add(userId);
+          } else {
+            newSet.delete(userId);
+          }
+          return newSet;
+        });
+      }
+    });
+
+    return () => {
+      offUserTyping();
+    };
+  }, [onUserTyping, offUserTyping, selectedConversation]);
+
+  // Handle typing indicator when user types
+  const handleTyping = () => {
+    if (selectedConversation) {
+      emitTyping(selectedConversation, true);
+      
+      // Stop typing after 3 seconds of inactivity
+      setTimeout(() => {
+        emitTyping(selectedConversation, false);
+      }, 3000);
+    }
+  };
+
   // Conversation data fetching is now handled by the Zustand store
 
   // Note: Badge count is now handled globally by useUnreadMessages hook
 
-  // Join/leave conversation rooms when selection changes (with proper tracking)
+  // Enhanced room joining with connection checking
   useEffect(() => {
-    if (selectedConversation && selectedConv && selectedUserId) {
-      const conversationRoomId = `${selectedConv.eventId || selectedConv.id}-${currentUser?.id}-${selectedUserId}`;
+    if (selectedConversation && selectedConv && socketConnected) {
+      const eventRoomId = selectedConv.eventId || selectedConv.id;
       
-      // Only join if we're not already in this room
-      if (currentRoomRef.current !== conversationRoomId) {
+      // Only join if we're not already in this room and socket is connected
+      if (currentRoomRef.current !== eventRoomId) {
         // Leave previous room if exists
         if (currentRoomRef.current) {
           leaveConversation(currentRoomRef.current);
         }
         
-        // Join new room with debouncing
-        const timeoutId = setTimeout(() => {
-          joinConversation(conversationRoomId);
-          currentRoomRef.current = conversationRoomId;
-        }, 200);
-        
-        return () => {
-          clearTimeout(timeoutId);
-        };
+        // Join the event room only when socket is connected
+        joinConversation(eventRoomId);
+        currentRoomRef.current = eventRoomId;
       }
     } else {
+
       // No conversation selected, leave current room
       if (currentRoomRef.current) {
         leaveConversation(currentRoomRef.current);
         currentRoomRef.current = null;
       }
     }
-  }, [selectedConversation, selectedConv, selectedUserId, currentUser?.id, joinConversation, leaveConversation]);
+  }, [selectedConversation, selectedConv, socketConnected, joinConversation, leaveConversation]);
 
   // Handle file selection
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -632,6 +778,11 @@ const MessagesPage: React.FC = () => {
                     <p className="text-xs text-gray-500">
                       {selectedUser?.department} • {selectedUser?.isOnline ? 'Online' : 'Offline'}
                     </p>
+                    {/* Socket Connection Status */}
+                    <p className="text-xs flex items-center gap-1">
+                      <span className={`w-2 h-2 rounded-full ${socketConnected ? 'bg-green-500' : 'bg-red-500'}`}></span>
+                      {socketConnected ? 'Connected' : 'Disconnected'}
+                    </p>
                   </div>
                 </div>
                 
@@ -906,14 +1057,19 @@ const MessagesPage: React.FC = () => {
                           {isOwnMessage && (
                             <div className="flex items-center gap-1">
                               {message.isRead ? (
-                                <div className="flex items-center gap-1 text-blue-600" title="Seen">
+                                <div className="flex items-center gap-1 text-blue-600" title={`Seen ${message.readAt ? format(new Date(message.readAt), 'HH:mm') : ''}`}>
                                   <CheckCheck className="w-3 h-3" />
                                   <span className="text-xs">Seen</span>
                                 </div>
-                              ) : (
-                                <div className="flex items-center gap-1 text-gray-400" title="Delivered">
-                                  <Check className="w-3 h-3" />
+                              ) : message.isDelivered ? (
+                                <div className="flex items-center gap-1 text-gray-500" title={`Delivered ${message.deliveredAt ? format(new Date(message.deliveredAt), 'HH:mm') : ''}`}>
+                                  <CheckCheck className="w-3 h-3" />
                                   <span className="text-xs">Delivered</span>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-1 text-gray-400" title="Sending...">
+                                  <Check className="w-3 h-3" />
+                                  <span className="text-xs">Sending</span>
                                 </div>
                               )}
                             </div>
@@ -924,6 +1080,27 @@ const MessagesPage: React.FC = () => {
                   );
                 })
               )}
+
+              {/* Typing Indicator */}
+              {typingUsers.size > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 10 }}
+                  className="flex items-center gap-2 p-3 text-gray-500 text-sm"
+                >
+                  <div className="flex gap-1">
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                  </div>
+                  <span>
+                    {typingUsers.size === 1 ? 'Someone is typing...' : `${typingUsers.size} people are typing...`}
+                  </span>
+                </motion.div>
+              )}
+
+              {/* Scroll to bottom marker */}
               <div ref={messagesEndRef} />
             </div>
 
@@ -952,7 +1129,10 @@ const MessagesPage: React.FC = () => {
                   <Input
                     placeholder="Type a message..."
                     value={newMessage}
-                    onChange={(e) => setNewMessage(e.target.value)}
+                    onChange={(e) => {
+                      setNewMessage(e.target.value);
+                      handleTyping(); // Trigger typing indicator
+                    }}
                     onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
                     className="pr-10"
                   />

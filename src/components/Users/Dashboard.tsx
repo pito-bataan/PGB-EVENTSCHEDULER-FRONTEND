@@ -294,12 +294,12 @@ const Dashboard: React.FC = () => {
     
     // Set up periodic refresh for real-time updates
     const refreshInterval = setInterval(() => {
-      console.log('🔄 Auto-refreshing notifications...');
       fetchDashboardData(userId, true); // Force refresh
     }, 30000); // Refresh every 30 seconds
     
     return () => clearInterval(refreshInterval);
-  }, [userId, fetchDashboardData, fetchReadNotifications]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]); // REMOVED fetchDashboardData and fetchReadNotifications to prevent infinite loop
 
   // Listen for global notification events from GlobalNotificationSystem (DISABLED - was causing loops)
   // useEffect(() => {
@@ -333,8 +333,6 @@ const Dashboard: React.FC = () => {
     const handleNotificationRead = (data: any) => {
       if (data.userId === userId) {
         // Update read status if it's for current user - this will be handled by the store
-        console.log('Notification read event received:', data);
-        
         // Dispatch global event for read status update
         window.dispatchEvent(new CustomEvent('notificationUpdate', { 
           detail: { type: 'read', data } 
@@ -349,7 +347,8 @@ const Dashboard: React.FC = () => {
     return () => {
       offNotificationRead();
     };
-  }, [onNotificationRead, offNotificationRead]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]); // REMOVED onNotificationRead and offNotificationRead to prevent infinite loop
 
   // Real-time status update listener (REMOVED - was causing infinite loops)
   // useEffect(() => {
@@ -455,7 +454,6 @@ const Dashboard: React.FC = () => {
                       notifications.map((notification) => {
                         const IconComponent = notification.icon;
                         const isRead = readNotifications.has(notification.id);
-                        console.log(`Notification ${notification.id}: isRead=${isRead}, readSet size=${readNotifications.size}`);
                         return (
                           <div 
                             key={notification.id} 

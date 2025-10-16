@@ -22,6 +22,9 @@ interface Message {
   messageType: 'text' | 'image' | 'file';
   timestamp: string;
   isRead: boolean;
+  isDelivered?: boolean;
+  deliveredAt?: string;
+  readAt?: string;
   attachments?: {
     fileName: string;
     filePath: string;
@@ -65,8 +68,12 @@ interface MessagesState {
   conversationDataFetched: Set<string>;
   CACHE_DURATION: number;
   
+  // Socket.IO Management
+  socketListenersInitialized: boolean;
+  
   // Actions
   initializeUser: () => void;
+  initializeSocketListeners: () => void;
   fetchEventConversations: (force?: boolean) => Promise<void>;
   fetchConversationData: (conversationId: string, force?: boolean) => Promise<void>;
   fetchAllConversationData: (force?: boolean) => Promise<void>;
@@ -75,7 +82,7 @@ interface MessagesState {
   sendFile: (eventId: string, receiverId: string, file: File, content?: string) => Promise<boolean>;
   
   // UI Actions
-  setSelectedConversation: (conversationId: string | null) => void;
+  setSelectedConversation: (conversationId: string | null, skipLocalStorage?: boolean) => void;
   setNewMessage: (message: string) => void;
   setSearchQuery: (query: string) => void;
   toggleEventExpansion: (eventId: string) => void;
@@ -84,13 +91,17 @@ interface MessagesState {
   // Real-time updates
   addNewMessage: (conversationId: string, message: Message) => void;
   updateMessageReadStatus: (eventId: string, readerId: string) => void;
+  updateMessageDeliveryStatus: (messageId: string, isDelivered: boolean) => void;
+  updateMessageSeenStatus: (messageId: string, isRead: boolean, readAt?: string) => void;
   updateUnreadCount: (conversationId: string, count: number) => void;
   
   // Getters
   getFilteredConversations: () => Conversation[];
   getEventUnreadCount: (eventId: string) => number;
+  getTotalUnreadCount: () => number;
   getLatestMessage: (conversationId: string) => Message | null;
   getSelectedConversation: () => { conversation: Conversation | null; user: User | null };
+  fixStuckMessages: () => void;
   
   // Cache management
   clearCache: () => void;
@@ -114,6 +125,7 @@ export const useMessagesStore = create<MessagesState>()(
       lastFetched: null,
       conversationDataFetched: new Set<string>(),
       CACHE_DURATION: 5 * 60 * 1000, // 5 minutes cache
+      socketListenersInitialized: false,
       
       // Initialize current user from localStorage
       initializeUser: () => {
@@ -131,10 +143,29 @@ export const useMessagesStore = create<MessagesState>()(
             
             // Auto-fetch conversations after setting user
             get().fetchEventConversations();
+            
+            // Initialize global Socket.IO listeners
+            get().initializeSocketListeners();
           } catch (error) {
             console.error('Error parsing user data:', error);
           }
         }
+      },
+      
+      // Initialize global Socket.IO listeners (works across all pages)
+      initializeSocketListeners: () => {
+        const state = get();
+        if (state.socketListenersInitialized) return;
+        
+        // Import the global listeners function
+        import('../hooks/useSocket').then(({ initializeGlobalMessageListeners }) => {
+          // Initialize global message listeners with store methods
+          initializeGlobalMessageListeners(
+            get().addNewMessage,
+            get().getTotalUnreadCount
+          );
+          set({ socketListenersInitialized: true });
+        });
       },
       
       // Fetch events and create conversations with caching
@@ -144,11 +175,11 @@ export const useMessagesStore = create<MessagesState>()(
         
         // Check cache (unless forced)
         if (!force && state.lastFetched && (now - state.lastFetched) < state.CACHE_DURATION) {
-          console.log('🎯 Using cached conversations data');
+          // console.log('🎯 Using cached conversations data');
           return;
         }
         
-        console.log('🔄 Fetching fresh conversations data...');
+        // console.log('🔄 Fetching fresh conversations data...');
         set({ loading: true });
         
         try {
@@ -290,7 +321,12 @@ export const useMessagesStore = create<MessagesState>()(
             loading: false
           });
           
-          console.log('✅ Conversations data cached successfully');
+          // console.log('✅ Conversations data cached successfully');
+          
+          // Auto-join all event rooms globally (works across all pages)
+          import('../hooks/useSocket').then(({ joinAllEventRooms }) => {
+            joinAllEventRooms(conversations);
+          });
           
           // Auto-fetch conversation data for all conversations
           get().fetchAllConversationData();
@@ -307,7 +343,7 @@ export const useMessagesStore = create<MessagesState>()(
         
         // Check if data is already fetched and not stale
         if (!force && state.conversationDataFetched.has(conversationId) && !state.isConversationDataStale(conversationId)) {
-          console.log(`🎯 Using cached data for conversation ${conversationId}`);
+          // console.log(`🎯 Using cached data for conversation ${conversationId}`);
           return;
         }
         
@@ -368,7 +404,7 @@ export const useMessagesStore = create<MessagesState>()(
         const state = get();
         if (!state.currentUser || state.conversations.length === 0) return;
         
-        console.log('🔄 Fetching all conversation data...');
+        // console.log('🔄 Fetching all conversation data...');
         
         const conversationIds: string[] = [];
         state.conversations.forEach(conv => {
@@ -385,7 +421,7 @@ export const useMessagesStore = create<MessagesState>()(
           conversationIds.map(id => get().fetchConversationData(id, force))
         );
         
-        console.log('✅ All conversation data fetched');
+        // console.log('✅ All conversation data fetched');
       },
       
       // Mark conversation as read
@@ -395,12 +431,23 @@ export const useMessagesStore = create<MessagesState>()(
         const currentUnreadCount = state.unreadCounts[conversationId] || 0;
         
         // Optimistically update UI
-        set({
-          unreadCounts: {
-            ...state.unreadCounts,
-            [conversationId]: 0
-          }
-        });
+        const newUnreadCounts = {
+          ...state.unreadCounts,
+          [conversationId]: 0
+        };
+        
+        set({ unreadCounts: newUnreadCounts });
+        
+        // Calculate new total immediately
+        const newTotal = Object.values(newUnreadCounts).reduce((sum, count) => sum + count, 0);
+        
+        // INSTANT badge update dispatch
+        window.dispatchEvent(new CustomEvent('unreadMessagesUpdated', { 
+          detail: { count: newTotal } 
+        }));
+        
+        // Update localStorage for cross-component sync
+        localStorage.setItem('totalUnreadMessages', newTotal.toString());
         
         try {
           const token = localStorage.getItem('authToken');
@@ -427,22 +474,34 @@ export const useMessagesStore = create<MessagesState>()(
             }
           } else {
             // Rollback on failure
-            set({
-              unreadCounts: {
-                ...state.unreadCounts,
-                [conversationId]: currentUnreadCount
-              }
-            });
+            const rolledBackCounts = {
+              ...state.unreadCounts,
+              [conversationId]: currentUnreadCount
+            };
+            set({ unreadCounts: rolledBackCounts });
+            
+            // Dispatch rollback badge update
+            const rolledBackTotal = Object.values(rolledBackCounts).reduce((sum, count) => sum + count, 0);
+            window.dispatchEvent(new CustomEvent('unreadMessagesUpdated', { 
+              detail: { count: rolledBackTotal } 
+            }));
+            localStorage.setItem('totalUnreadMessages', rolledBackTotal.toString());
           }
         } catch (error) {
           console.error('❌ Error marking conversation as read:', error);
           // Rollback on error
-          set({
-            unreadCounts: {
-              ...state.unreadCounts,
-              [conversationId]: currentUnreadCount
-            }
-          });
+          const rolledBackCounts = {
+            ...state.unreadCounts,
+            [conversationId]: currentUnreadCount
+          };
+          set({ unreadCounts: rolledBackCounts });
+          
+          // Dispatch rollback badge update
+          const rolledBackTotal = Object.values(rolledBackCounts).reduce((sum, count) => sum + count, 0);
+          window.dispatchEvent(new CustomEvent('unreadMessagesUpdated', { 
+            detail: { count: rolledBackTotal } 
+          }));
+          localStorage.setItem('totalUnreadMessages', rolledBackTotal.toString());
         }
       },
       
@@ -468,8 +527,23 @@ export const useMessagesStore = create<MessagesState>()(
             const messageData = await response.json();
             const conversationId = `${eventId}-${receiverId}`;
             
-            // Add message to local state
-            get().addNewMessage(conversationId, messageData.data);
+            // Ensure message has delivery status - FORCE DELIVERED IMMEDIATELY
+            const messageWithStatus = {
+              ...messageData.data,
+              isDelivered: true,
+              deliveredAt: new Date().toISOString(),
+              isRead: false
+            };
+            
+            // Add message to local state with delivery status
+            get().addNewMessage(conversationId, messageWithStatus);
+            
+            // SINGLE event dispatch for message sent
+            setTimeout(() => {
+              window.dispatchEvent(new CustomEvent('messageSent', { 
+                detail: { conversationId, message: messageWithStatus } 
+              }));
+            }, 10);
             return true;
           }
           return false;
@@ -503,8 +577,16 @@ export const useMessagesStore = create<MessagesState>()(
             const messageData = await response.json();
             const conversationId = `${eventId}-${receiverId}`;
             
-            // Add message to local state
-            get().addNewMessage(conversationId, messageData.data);
+            // Ensure file message has delivery status
+            const messageWithStatus = {
+              ...messageData.data,
+              isDelivered: true,
+              deliveredAt: new Date().toISOString(),
+              isRead: false
+            };
+            
+            // Add message to local state with delivery status
+            get().addNewMessage(conversationId, messageWithStatus);
             return true;
           }
           return false;
@@ -517,8 +599,17 @@ export const useMessagesStore = create<MessagesState>()(
       },
       
       // UI Actions
-      setSelectedConversation: (conversationId: string | null) => {
+      setSelectedConversation: (conversationId: string | null, skipLocalStorage = false) => {
         set({ selectedConversation: conversationId });
+        
+        // Save to localStorage to persist across page refreshes (unless explicitly skipped)
+        if (!skipLocalStorage) {
+          if (conversationId) {
+            localStorage.setItem('selectedConversation', conversationId);
+          } else {
+            localStorage.removeItem('selectedConversation');
+          }
+        }
         
         // Auto-fetch conversation data when selected
         if (conversationId) {
@@ -558,21 +649,57 @@ export const useMessagesStore = create<MessagesState>()(
       // Real-time updates
       addNewMessage: (conversationId: string, message: Message) => {
         const state = get();
+        
+        // CRITICAL: Check for duplicate messages to prevent processing the same message multiple times
+        const existingMessages = state.messages[conversationId] || [];
+        const isDuplicate = existingMessages.some(existingMsg => existingMsg._id === message._id);
+        
+        if (isDuplicate) {
+          return; // Exit early to prevent duplicate processing
+        }
+        
+        // Ensure message has at least delivery status if it's from current user
+        const currentUser = state.currentUser;
+        const isOwnMessage = message.senderId === currentUser?.id || 
+                            (typeof message.senderId === 'object' && message.senderId._id === currentUser?.id);
+        
+        const messageWithStatus = isOwnMessage ? {
+          ...message,
+          isDelivered: message.isDelivered !== undefined ? message.isDelivered : true,
+          deliveredAt: message.deliveredAt || new Date().toISOString()
+        } : message;
+        
         set({
           messages: {
             ...state.messages,
-            [conversationId]: [...(state.messages[conversationId] || []), message]
+            [conversationId]: [...existingMessages, messageWithStatus]
           }
         });
         
-        // Update unread count if not in current conversation
-        if (conversationId !== state.selectedConversation) {
-          set({
-            unreadCounts: {
-              ...state.unreadCounts,
-              [conversationId]: (state.unreadCounts[conversationId] || 0) + 1
-            }
-          });
+        // Update unread count if not in current conversation and not own message
+        if (conversationId !== state.selectedConversation && !isOwnMessage) {
+          const newUnreadCounts = {
+            ...state.unreadCounts,
+            [conversationId]: (state.unreadCounts[conversationId] || 0) + 1
+          };
+          
+          set({ unreadCounts: newUnreadCounts });
+          
+          // Calculate new total immediately
+          const newTotal = Object.values(newUnreadCounts).reduce((sum, count) => sum + count, 0);
+          
+          // INSTANT badge update dispatch - NO delays for real-time updates
+          window.dispatchEvent(new CustomEvent('unreadMessagesUpdated', { 
+            detail: { count: newTotal } 
+          }));
+          
+          // Also update localStorage for cross-component sync
+          localStorage.setItem('totalUnreadMessages', newTotal.toString());
+        }
+        
+        // Auto-mark as delivered immediately for own messages
+        if (isOwnMessage && !messageWithStatus.isDelivered) {
+          get().updateMessageDeliveryStatus(messageWithStatus._id, true);
         }
       },
       
@@ -594,6 +721,46 @@ export const useMessagesStore = create<MessagesState>()(
         set({ messages: updatedMessages });
       },
       
+      updateMessageDeliveryStatus: (messageId: string, isDelivered: boolean) => {
+        const state = get();
+        const updatedMessages = { ...state.messages };
+        
+        Object.keys(updatedMessages).forEach(convId => {
+          updatedMessages[convId] = updatedMessages[convId].map(message => {
+            if (message._id === messageId) {
+              return { 
+                ...message, 
+                isDelivered, 
+                deliveredAt: isDelivered ? new Date().toISOString() : message.deliveredAt 
+              };
+            }
+            return message;
+          });
+        });
+        
+        set({ messages: updatedMessages });
+      },
+
+      updateMessageSeenStatus: (messageId: string, isRead: boolean, readAt?: string) => {
+        const state = get();
+        const updatedMessages = { ...state.messages };
+        
+        Object.keys(updatedMessages).forEach(convId => {
+          updatedMessages[convId] = updatedMessages[convId].map(message => {
+            if (message._id === messageId) {
+              return { 
+                ...message, 
+                isRead, 
+                readAt: isRead ? (readAt || new Date().toISOString()) : message.readAt 
+              };
+            }
+            return message;
+          });
+        });
+        
+        set({ messages: updatedMessages });
+      },
+
       updateUnreadCount: (conversationId: string, count: number) => {
         const state = get();
         set({
@@ -637,6 +804,18 @@ export const useMessagesStore = create<MessagesState>()(
         
         return total;
       },
+
+      getTotalUnreadCount: () => {
+        const state = get();
+        let total = 0;
+        
+        // Sum all unread counts across all conversations
+        Object.values(state.unreadCounts).forEach(count => {
+          total += count || 0;
+        });
+        
+        return total;
+      },
       
       getLatestMessage: (conversationId: string) => {
         const state = get();
@@ -659,6 +838,35 @@ export const useMessagesStore = create<MessagesState>()(
         });
         
         return { conversation: conversation || null, user: user || null };
+      },
+
+      fixStuckMessages: () => {
+        const state = get();
+        const updatedMessages = { ...state.messages };
+        let hasUpdates = false;
+        
+        Object.keys(updatedMessages).forEach(convId => {
+          updatedMessages[convId] = updatedMessages[convId].map(message => {
+            const currentUser = state.currentUser;
+            const isOwnMessage = message.senderId === currentUser?.id || 
+                                (typeof message.senderId === 'object' && message.senderId._id === currentUser?.id);
+            
+            // Fix messages that are stuck without delivery status
+            if (isOwnMessage && message.isDelivered === undefined) {
+              hasUpdates = true;
+              return {
+                ...message,
+                isDelivered: true,
+                deliveredAt: new Date().toISOString()
+              };
+            }
+            return message;
+          });
+        });
+        
+        if (hasUpdates) {
+          set({ messages: updatedMessages });
+        }
       },
       
       // Cache management
