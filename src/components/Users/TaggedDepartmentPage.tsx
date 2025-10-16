@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
+import { useTaggedDepartmentsStore } from '@/stores/taggedDepartmentsStore';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -98,151 +99,44 @@ interface ApiResponse {
 }
 
 const TaggedDepartmentPage: React.FC = () => {
-  const [events, setEvents] = useState<Event[]>([]);
-  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [showNotesMap, setShowNotesMap] = useState<Record<string, boolean>>({});
-  const [notesMap, setNotesMap] = useState<Record<string, string>>({});
-  const [currentUserDepartment, setCurrentUserDepartment] = useState<string>('');
-  const [activeEventTab, setActiveEventTab] = useState<'ongoing' | 'completed'>('ongoing');
-  const [statusDialog, setStatusDialog] = useState<{
-    isOpen: boolean;
-    eventId: string;
-    requirementId: string;
-    status: string;
-  }>({
-    isOpen: false,
-    eventId: '',
-    requirementId: '',
-    status: ''
-  });
+  // Zustand store - replaces all useState calls above!
+  const {
+    events,
+    selectedEvent,
+    loading,
+    showNotesMap,
+    notesMap,
+    currentUserDepartment,
+    activeEventTab,
+    statusDialog,
+    fetchTaggedEvents,
+    setSelectedEvent,
+    setActiveEventTab,
+    setShowNotes,
+    setNotes,
+    setStatusDialog,
+    updateRequirementStatus,
+    updateRequirementNotes,
+    getOngoingEvents,
+    getCompletedEvents,
+    getRequirementCounts
+  } = useTaggedDepartmentsStore();
 
   useEffect(() => {
-    // Get current user's department from localStorage
-    const userData = localStorage.getItem('userData');
-    if (userData) {
-      try {
-        const user = JSON.parse(userData);
-        setCurrentUserDepartment(user.department || user.departmentName || '');
-      } catch (error) {
-        console.error('Error parsing user data:', error);
-      }
-    }
-
-    const fetchTaggedEvents = async () => {
-      try {
-        setLoading(true);
-        const token = localStorage.getItem('authToken');
-        
-        if (!token) {
-          toast.error('Please log in to view tagged events');
-          return;
-        }
-
-        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/events/tagged`, {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          }
-        });
-
-        if (response.status === 403) {
-          toast.error('You do not have permission to view tagged events');
-          return;
-        }
-
-        if (response.status === 401) {
-          toast.error('Session expired. Please log in again');
-          return;
-        }
-
-        if (!response.ok) {
-          throw new Error('Failed to fetch tagged events');
-        }
-
-        const data: ApiResponse = await response.json();
-        if (data.success && Array.isArray(data.data)) {
-          setEvents(data.data);
-        } else {
-          console.error('Unexpected API response structure:', data);
-          setEvents([]);
-          toast.error('Invalid data format received from server');
-        }
-      } catch (error) {
-        console.error('Error fetching tagged events:', error);
-        if (error instanceof Error) {
-          toast.error(error.message);
-        } else {
-          toast.error('Failed to fetch tagged events. Please try again later.');
-        }
-      } finally {
-        setLoading(false);
-      }
-    };
-
+    // Fetch tagged events using Zustand store
     fetchTaggedEvents();
-  }, []);
+  }, [fetchTaggedEvents]);
 
   const handleRequirementStatusChange = async (eventId: string, requirementId: string, status: string) => {
     try {
-      console.log('🔄 Updating requirement status:', { eventId, requirementId, status });
-      const token = localStorage.getItem('authToken');
-      
-      if (!token) {
-        toast.error('Please log in to update requirements');
-        return;
+      await updateRequirementStatus(eventId, requirementId, status);
+      // Update selected event with new data
+      const updatedEvent = events.find(event => event._id === eventId);
+      if (updatedEvent) {
+        setSelectedEvent(updatedEvent);
       }
-
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/events/${eventId}/requirements/${requirementId}/status`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ status })
-      });
-
-      console.log('📋 Status update response status:', response.status);
-
-      if (response.status === 403) {
-        toast.error('You do not have permission to update this requirement');
-        return;
-      }
-
-      if (response.status === 401) {
-        toast.error('Session expired. Please log in again');
-        return;
-      }
-
-      if (!response.ok) {
-        throw new Error('Failed to update requirement status');
-      }
-
-      // Refresh the events list to get updated data
-      const updatedResponse = await fetch(`${import.meta.env.VITE_API_URL}/api/events/tagged`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      
-      if (updatedResponse.ok) {
-        const updatedData: ApiResponse = await updatedResponse.json();
-        if (updatedData.success && Array.isArray(updatedData.data)) {
-          setEvents(updatedData.data);
-          // Update selected event with new data
-          const updatedEvent = updatedData.data.find(event => event._id === eventId);
-          if (updatedEvent) {
-            setSelectedEvent(updatedEvent);
-          }
-          toast.success('Requirement status updated successfully');
-        } else {
-          console.error('Unexpected API response structure:', updatedData);
-          toast.error('Invalid data format received from server');
-        }
-      }
+      toast.success('Requirement status updated successfully');
     } catch (error) {
-      console.error('Error updating requirement status:', error);
       if (error instanceof Error) {
         toast.error(error.message);
       } else {
@@ -310,7 +204,7 @@ const TaggedDepartmentPage: React.FC = () => {
         console.log('Refresh data response:', updatedData);
         
         if (updatedData.success && Array.isArray(updatedData.data)) {
-          setEvents(updatedData.data);
+          // Events will be updated by the store's fetchTaggedEvents method
           // Update selected event with new data
           const updatedEvent = updatedData.data.find(event => event._id === eventId);
           if (updatedEvent) {
@@ -324,17 +218,11 @@ const TaggedDepartmentPage: React.FC = () => {
               
             if (requirement) {
               console.log('Found requirement after update:', requirement);
-              setNotesMap(prev => ({
-                ...prev,
-                [requirementId]: requirement.departmentNotes || note
-              }));
+              setNotes(requirementId, requirement.departmentNotes || note);
             } else {
               // Fallback: if requirement not found, use the note we just saved
               console.log('Requirement not found, using fallback note');
-              setNotesMap(prev => ({
-                ...prev,
-                [requirementId]: note
-              }));
+              setNotes(requirementId, note);
             }
           }
           toast.success('Notes updated successfully');
@@ -345,10 +233,7 @@ const TaggedDepartmentPage: React.FC = () => {
       } else {
         // If refresh fails, still update local state with the note
         console.log('Refresh failed, updating local state only');
-        setNotesMap(prev => ({
-          ...prev,
-          [requirementId]: note
-        }));
+        setNotes(requirementId, note);
         toast.success('Notes updated successfully');
       }
     } catch (error) {
@@ -388,34 +273,13 @@ const TaggedDepartmentPage: React.FC = () => {
     return requirement.status || 'pending';
   };
 
-  // Helper function to get requirement counts by status (filtered by current user's department)
-  const getRequirementCounts = (event: Event) => {
-    // Only get requirements for the current user's department
-    const userDepartmentRequirements = event.departmentRequirements[currentUserDepartment] || [];
-    const counts = {
-      all: userDepartmentRequirements.length,
-      confirmed: 0,
-      pending: 0,
-      declined: 0,
-      partially_fulfill: 0,
-      in_preparation: 0
-    };
-
-    userDepartmentRequirements.forEach(req => {
-      const status = getRequirementStatus(req);
-      if (counts.hasOwnProperty(status)) {
-        counts[status as keyof typeof counts]++;
-      }
-    });
-
-    return counts;
-  };
+  // This function is now handled by the Zustand store
 
   // Status update dialog
   const statusDialogContent = (
     <AlertDialog 
       open={statusDialog.isOpen} 
-      onOpenChange={(open) => !open && setStatusDialog(prev => ({ ...prev, isOpen: false }))}
+      onOpenChange={(open) => !open && setStatusDialog({ ...statusDialog, isOpen: false })}
     >
       <AlertDialogContent className="bg-white">
         <AlertDialogHeader>
@@ -429,7 +293,7 @@ const TaggedDepartmentPage: React.FC = () => {
           <AlertDialogAction
             onClick={() => {
               handleRequirementStatusChange(statusDialog.eventId, statusDialog.requirementId, statusDialog.status);
-              setStatusDialog(prev => ({ ...prev, isOpen: false }));
+              setStatusDialog({ ...statusDialog, isOpen: false });
             }}
           >
             Confirm
@@ -513,13 +377,7 @@ const TaggedDepartmentPage: React.FC = () => {
                     </div>
                   ) : (
                     <AnimatePresence>
-                      {events
-                        .filter(event => {
-                          const userDeptReqs = event.departmentRequirements[currentUserDepartment] || [];
-                          const confirmedCount = userDeptReqs.filter(r => getRequirementStatus(r) === 'confirmed').length;
-                          const totalCount = userDeptReqs.length;
-                          return totalCount === 0 || confirmedCount < totalCount;
-                        })
+                      {getOngoingEvents()
                         .map((event) => (
                     <motion.div
                     key={event._id}
@@ -915,16 +773,10 @@ const TaggedDepartmentPage: React.FC = () => {
                                       variant={showNotesMap[req.id] ? "secondary" : "outline"}
                                       size="sm"
                                       onClick={() => {
-                                        setShowNotesMap(prev => ({
-                                          ...prev,
-                                          [req.id]: !prev[req.id]
-                                        }));
+                                        setShowNotes(req.id, !showNotesMap[req.id]);
                                         if (!showNotesMap[req.id]) {
                                           const currentNote = req.departmentNotes || notesMap[req.id] || '';
-                                          setNotesMap(prev => ({
-                                            ...prev,
-                                            [req.id]: currentNote
-                                          }));
+                                          setNotes(req.id, currentNote);
                                         }
                                       }}
                                       className="h-8 px-3 text-xs gap-1"
@@ -973,10 +825,7 @@ const TaggedDepartmentPage: React.FC = () => {
                                             placeholder="Add your department's notes about this requirement..."
                                             value={notesMap[req.id] || ''}
                                             onChange={(e) => {
-                                              setNotesMap(prev => ({
-                                                ...prev,
-                                                [req.id]: e.target.value
-                                              }));
+                                              setNotes(req.id, e.target.value);
                                             }}
                                             className="resize-none min-h-[100px] border-green-200 focus:border-green-400"
                                           />
@@ -985,14 +834,8 @@ const TaggedDepartmentPage: React.FC = () => {
                                               variant="outline"
                                               size="sm"
                                               onClick={() => {
-                                                setNotesMap(prev => ({
-                                                  ...prev,
-                                                  [req.id]: req.departmentNotes || ''
-                                                }));
-                                                setShowNotesMap(prev => ({
-                                                  ...prev,
-                                                  [req.id]: false
-                                                }));
+                                                setNotes(req.id, req.departmentNotes || '');
+                                                setShowNotes(req.id, false);
                                               }}
                                               className="gap-1"
                                             >
@@ -1003,10 +846,7 @@ const TaggedDepartmentPage: React.FC = () => {
                                               size="sm"
                                               onClick={() => {
                                                 handleNoteUpdate(selectedEvent._id, req.id, notesMap[req.id] || '');
-                                                setShowNotesMap(prev => ({
-                                                  ...prev,
-                                                  [req.id]: false
-                                                }));
+                                                setShowNotes(req.id, false);
                                               }}
                                               className="gap-1 bg-green-600 hover:bg-green-700"
                                             >
@@ -1170,16 +1010,10 @@ const TaggedDepartmentPage: React.FC = () => {
                                                 variant={showNotesMap[req.id] ? "secondary" : "outline"}
                                                 size="sm"
                                                 onClick={() => {
-                                                  setShowNotesMap(prev => ({
-                                                    ...prev,
-                                                    [req.id]: !prev[req.id]
-                                                  }));
+                                                  setShowNotes(req.id, !showNotesMap[req.id]);
                                                   if (!showNotesMap[req.id]) {
                                                     const currentNote = req.departmentNotes || notesMap[req.id] || '';
-                                                    setNotesMap(prev => ({
-                                                      ...prev,
-                                                      [req.id]: currentNote
-                                                    }));
+                                                    setNotes(req.id, currentNote);
                                                   }
                                                 }}
                                                 className="h-8 px-3 text-xs gap-1"
@@ -1228,10 +1062,7 @@ const TaggedDepartmentPage: React.FC = () => {
                                                       placeholder="Add your department's notes about this requirement..."
                                                       value={notesMap[req.id] || ''}
                                                       onChange={(e) => {
-                                                        setNotesMap(prev => ({
-                                                          ...prev,
-                                                          [req.id]: e.target.value
-                                                        }));
+                                                        setNotes(req.id, e.target.value);
                                                       }}
                                                       className="resize-none min-h-[100px] border-green-200 focus:border-green-400"
                                                     />
@@ -1240,14 +1071,8 @@ const TaggedDepartmentPage: React.FC = () => {
                                                         variant="outline"
                                                         size="sm"
                                                         onClick={() => {
-                                                          setNotesMap(prev => ({
-                                                            ...prev,
-                                                            [req.id]: req.departmentNotes || ''
-                                                          }));
-                                                          setShowNotesMap(prev => ({
-                                                            ...prev,
-                                                            [req.id]: false
-                                                          }));
+                                                          setNotes(req.id, req.departmentNotes || '');
+                                                          setShowNotes(req.id, false);
                                                         }}
                                                         className="gap-1"
                                                       >
@@ -1258,10 +1083,7 @@ const TaggedDepartmentPage: React.FC = () => {
                                                         size="sm"
                                                         onClick={() => {
                                                           handleNoteUpdate(selectedEvent._id, req.id, notesMap[req.id] || '');
-                                                          setShowNotesMap(prev => ({
-                                                            ...prev,
-                                                            [req.id]: false
-                                                          }));
+                                                          setShowNotes(req.id, false);
                                                         }}
                                                         className="gap-1 bg-green-600 hover:bg-green-700"
                                                       >

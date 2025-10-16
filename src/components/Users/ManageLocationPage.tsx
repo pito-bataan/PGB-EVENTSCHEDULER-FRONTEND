@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useManageLocationStore } from '@/stores/manageLocationStore';
 import { motion } from 'framer-motion';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -83,10 +84,35 @@ interface LocationBooking {
 
 
 const ManageLocationPage: React.FC = () => {
-  const [loading, setLoading] = useState(true);
-  const [currentUser, setCurrentUser] = useState<any>(null);
-  const [locationAvailabilities, setLocationAvailabilities] = useState<LocationAvailability[]>([]);
-  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
+  // Zustand store - replaces all useState calls above!
+  const {
+    currentUser,
+    locationAvailabilities,
+    calendarEvents,
+    allEvents,
+    eventCounts,
+    locationBookings,
+    loading,
+    bulkLoading,
+    loadingBookings,
+    loadingEventDetails,
+    showProgressModal,
+    progressValue,
+    progressText,
+    progressOperation,
+    initializeUser,
+    loadLocationData,
+    loadAllEventsAndCounts,
+    fetchLocationBookings,
+    saveLocationAvailability,
+    deleteLocationAvailability,
+    bulkAddAllLocations,
+    bulkDeleteAllLocations,
+    setProgressModal,
+    getLocationEventCount,
+  } = useManageLocationStore();
+
+  // Local UI state that doesn't need caching
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [showLocationModal, setShowLocationModal] = useState(false);
   const [formData, setFormData] = useState({
@@ -98,11 +124,9 @@ const ManageLocationPage: React.FC = () => {
   const [isAutoPopulated, setIsAutoPopulated] = useState(false);
   const [showCustomLocationInput, setShowCustomLocationInput] = useState(false);
   const [customLocationName, setCustomLocationName] = useState('');
-  // Date filtering states
   const [showDateFilter, setShowDateFilter] = useState(false);
   const [selectedFilterDates, setSelectedFilterDates] = useState<string[]>([]);
   const [filteredLocationData, setFilteredLocationData] = useState<LocationAvailability[]>([]);
-  
   const [locationsForDate, setLocationsForDate] = useState<Array<{
     locationName: string;
     capacity: string;
@@ -110,27 +134,13 @@ const ManageLocationPage: React.FC = () => {
     status: 'available' | 'unavailable';
   }>>([]);
   const [deletingIndex, setDeletingIndex] = useState<number | null>(null);
-  const [locationBookings, setLocationBookings] = useState<{[key: string]: LocationBooking[]}>({});
-  const [loadingBookings, setLoadingBookings] = useState<{[key: string]: boolean}>({});
-  const [allEvents, setAllEvents] = useState<any[]>([]);
-  const [eventCounts, setEventCounts] = useState<{[key: string]: number}>({});
-  const [loadingEventDetails, setLoadingEventDetails] = useState(false);
   const [showPdfPreview, setShowPdfPreview] = useState(false);
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string>('');
-  const [bulkLoading, setBulkLoading] = useState(false);
   const [showBulkDeleteDialog, setShowBulkDeleteDialog] = useState(false);
   const [showBulkAvailableDialog, setShowBulkAvailableDialog] = useState(false);
   const [showSelectiveDateDeleteDialog, setShowSelectiveDateDeleteDialog] = useState(false);
   const [selectedDatesForDeletion, setSelectedDatesForDeletion] = useState<string[]>([]);
   const [isSelectingDatesMode, setIsSelectingDatesMode] = useState(false);
-
-  // Progress Modal States
-  const [showProgressModal, setShowProgressModal] = useState(false);
-  const [progressValue, setProgressValue] = useState(0);
-  const [progressText, setProgressText] = useState('');
-  const [progressOperation, setProgressOperation] = useState<'add' | 'delete' | ''>('');
-
-  // Calendar Month State - tracks which month user is currently viewing
   const [calendarCurrentMonth, setCalendarCurrentMonth] = useState(new Date());
   
   // Default location names
@@ -152,23 +162,10 @@ const ManageLocationPage: React.FC = () => {
     'Pavillion'
   ];
 
-  // Get current user
+  // Initialize user and fetch data using Zustand store
   useEffect(() => {
-    const userData = localStorage.getItem('userData');
-    if (userData) {
-      try {
-        const user = JSON.parse(userData);
-        setCurrentUser(user);
-        loadLocationData();
-        loadAllEventsAndCounts();
-      } catch (error) {
-        console.error('Error parsing user data:', error);
-        setLoading(false);
-      }
-    } else {
-      setLoading(false);
-    }
-  }, []);
+    initializeUser();
+  }, [initializeUser]);
 
   // Filter location data based on selected dates
   useEffect(() => {
@@ -196,191 +193,7 @@ const ManageLocationPage: React.FC = () => {
     setSelectedFilterDates([]);
   };
 
-  // Function to load all events and calculate event counts for calendar badges
-  const loadAllEventsAndCounts = async () => {
-    try {
-      const token = localStorage.getItem('authToken');
-      if (!token) return;
-
-      const response = await fetch(`${API_BASE_URL}/events`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        const events = data.data || [];
-        setAllEvents(events);
-
-        // Calculate event counts per date
-        const counts: {[key: string]: number} = {};
-        
-        events.forEach((event: any) => {
-          if (event.status === 'submitted' || event.status === 'approved') {
-            // Convert UTC dates to local timezone
-            const eventStartDate = new Date(event.startDate);
-            const eventEndDate = new Date(event.endDate);
-            
-            // Get the local date in YYYY-MM-DD format
-            const eventStartLocalDate = eventStartDate.toLocaleDateString('en-CA');
-            const eventEndLocalDate = eventEndDate.toLocaleDateString('en-CA');
-            
-            // Count events for each date in the range
-            const startDate = new Date(eventStartLocalDate);
-            const endDate = new Date(eventEndLocalDate);
-            
-            for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
-              const dateKey = d.toLocaleDateString('en-CA');
-              counts[dateKey] = (counts[dateKey] || 0) + 1;
-            }
-          }
-        });
-
-        setEventCounts(counts);
-      }
-    } catch (error) {
-      console.error('Error loading events for counts:', error);
-    }
-  };
-
-  // Function to get event count for a specific location and date
-  const getLocationEventCount = (locationName: string, dateStr: string): number => {
-    return allEvents.filter((event: any) => {
-      // Check location match
-      const eventLocation = (event.location || '').toLowerCase().trim();
-      const searchLocation = locationName.toLowerCase().trim();
-      const locationMatch = eventLocation.includes(searchLocation) || 
-                           searchLocation.includes(eventLocation) ||
-                           eventLocation === searchLocation;
-      
-      // Check date match
-      const eventStartDate = new Date(event.startDate);
-      const eventEndDate = new Date(event.endDate);
-      const eventStartLocalDate = eventStartDate.toLocaleDateString('en-CA');
-      const eventEndLocalDate = eventEndDate.toLocaleDateString('en-CA');
-      const dateMatch = dateStr >= eventStartLocalDate && dateStr <= eventEndLocalDate;
-      
-      // Check status
-      const statusMatch = event.status === 'submitted' || event.status === 'approved';
-      
-      return locationMatch && dateMatch && statusMatch;
-    }).length;
-  };
-
-  // Function to fetch bookings for a specific location on the selected date
-  const fetchLocationBookings = async (locationName: string) => {
-    if (!selectedDate) return;
-    
-    const locationKey = `${locationName}-${format(selectedDate, 'yyyy-MM-dd')}`;
-    
-    // Don't fetch if already loading or already have data
-    if (loadingBookings[locationKey] || locationBookings[locationKey]) {
-      return;
-    }
-    
-    setLoadingBookings(prev => ({ ...prev, [locationKey]: true }));
-    
-    try {
-      const token = localStorage.getItem('authToken');
-      if (!token) {
-        setLoadingBookings(prev => ({ ...prev, [locationKey]: false }));
-        return;
-      }
-
-      const response = await fetch(`${API_BASE_URL}/events`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        const events = data.data || [];
-        
-        // Filter events for this specific location and date
-        const dateStr = format(selectedDate, 'yyyy-MM-dd');
-        console.log(`🔍 Fetching bookings for location: "${locationName}" on date: ${dateStr}`);
-        console.log(`📊 Total events found: ${events.length}`);
-        
-        // Debug: Show all events for this date regardless of location
-        const allEventsForDate = events.filter((event: any) => {
-          // Convert UTC dates to local timezone for proper comparison
-          const eventStartDate = new Date(event.startDate);
-          const eventEndDate = new Date(event.endDate);
-          
-          // Get the local date in Asia/Manila timezone
-          const eventStartLocalDate = eventStartDate.toLocaleDateString('en-CA'); // YYYY-MM-DD format
-          const eventEndLocalDate = eventEndDate.toLocaleDateString('en-CA');
-          
-          return dateStr >= eventStartLocalDate && dateStr <= eventEndLocalDate;
-        });
-        
-        console.log(`📅 ALL events for ${dateStr} (${allEventsForDate.length} total):`);
-        allEventsForDate.forEach((event: any, index: number) => {
-          console.log(`   ${index + 1}. "${event.eventTitle}" at "${event.location}" (Status: ${event.status})`);
-        });
-        
-        const locationEvents = events.filter((event: any) => {
-          // Check if event location matches (case-insensitive and flexible matching)
-          const eventLocation = (event.location || '').toLowerCase().trim();
-          const searchLocation = locationName.toLowerCase().trim();
-          
-          const eventLocationMatch = eventLocation.includes(searchLocation) || 
-                                    searchLocation.includes(eventLocation) ||
-                                    eventLocation === searchLocation;
-          
-          // Check if event date range includes the selected date (handle timezone properly)
-          const eventStartDate = new Date(event.startDate);
-          const eventEndDate = new Date(event.endDate);
-          
-          // Get the local date in Asia/Manila timezone
-          const eventStartLocalDate = eventStartDate.toLocaleDateString('en-CA'); // YYYY-MM-DD format
-          const eventEndLocalDate = eventEndDate.toLocaleDateString('en-CA');
-          
-          const isInDateRange = dateStr >= eventStartLocalDate && dateStr <= eventEndLocalDate;
-          
-          console.log(`🎯 Event: "${event.eventTitle}"`);
-          console.log(`   Location: "${event.location}" | Match: ${eventLocationMatch}`);
-          console.log(`   Date Range: ${eventStartDate} to ${eventEndDate} | In Range: ${isInDateRange}`);
-          console.log(`   Status: ${event.status} | Valid Status: ${event.status === 'submitted' || event.status === 'approved'}`);
-          
-          const matches = eventLocationMatch && isInDateRange && 
-                         (event.status === 'submitted' || event.status === 'approved');
-          console.log(`   ✅ Final Match: ${matches}`);
-          
-          return matches;
-        });
-        
-        console.log(`📋 Filtered events for ${locationName}: ${locationEvents.length} events`);
-        locationEvents.forEach((event: any, index: number) => {
-          console.log(`   ${index + 1}. ${event.eventTitle} at ${event.location}`);
-        });
-
-        // Map to booking format
-        const bookings: LocationBooking[] = locationEvents.map((event: any) => ({
-          eventId: event._id,
-          eventTitle: event.eventTitle,
-          requestor: event.requestor,
-          requestorDepartment: event.requestorDepartment,
-          startTime: event.startTime,
-          endTime: event.endTime,
-          participants: event.participants,
-          vip: event.vip,
-          vvip: event.vvip,
-          status: event.status
-        }));
-
-        setLocationBookings(prev => ({ ...prev, [locationKey]: bookings }));
-      }
-    } catch (error) {
-      console.error('Error fetching location bookings:', error);
-    } finally {
-      setLoadingBookings(prev => ({ ...prev, [locationKey]: false }));
-    }
-  };
+  // This function is now handled by the Zustand store
 
   // Format time to 12-hour AM/PM format
   const formatTime12Hour = (time: string): string => {
@@ -404,7 +217,7 @@ const ManageLocationPage: React.FC = () => {
 
   // Generate PDF preview for specific event (instead of showing modal)
   const generateEventPdfPreview = async (eventId: string) => {
-    setLoadingEventDetails(true);
+    // Note: loadingEventDetails is managed by the store but no setter is exposed
     try {
       const token = localStorage.getItem('authToken');
       if (!token) {
@@ -432,7 +245,7 @@ const ManageLocationPage: React.FC = () => {
       console.error('Error fetching event details:', error);
       toast.error('Failed to fetch event details');
     } finally {
-      setLoadingEventDetails(false);
+      // Note: loadingEventDetails state is managed by the store
     }
   };
 
@@ -854,45 +667,7 @@ const ManageLocationPage: React.FC = () => {
     }
   };
 
-  const loadLocationData = async () => {
-    try {
-      const token = localStorage.getItem('authToken');
-      if (!token) {
-        setLoading(false);
-        return;
-      }
-
-      const response = await fetch(`${API_BASE_URL}/location-availability`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        const locations = data.data || [];
-        setLocationAvailabilities(locations);
-
-        // Convert to calendar events
-        const events: CalendarEvent[] = locations.map((location: LocationAvailability) => ({
-          id: location._id!,
-          date: location.date,
-          title: `${location.locationName} (${location.status})`,
-          type: location.status === 'available' ? 'available' : 'unavailable',
-          notes: `Capacity: ${location.capacity} | ${location.description}`
-        }));
-
-        setCalendarEvents(events);
-      } else {
-        console.error('Failed to fetch location data');
-      }
-    } catch (error) {
-      console.error('Error loading location data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // loadLocationData is now handled by the Zustand store
 
   const handleDateClick = async (date: Date) => {
     setSelectedDate(date);
@@ -1340,57 +1115,28 @@ const ManageLocationPage: React.FC = () => {
     }
   };
 
-  // Get current and future dates in currently viewed month (no past dates)
-  const getCurrentAndFutureDates = (): string[] => {
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()); // Reset time to start of day
-    
-    // Use the calendar's currently viewed month instead of system month
-    const viewedYear = calendarCurrentMonth.getFullYear();
-    const viewedMonth = calendarCurrentMonth.getMonth();
-    
-    const dates: string[] = [];
-    const daysInMonth = new Date(viewedYear, viewedMonth + 1, 0).getDate();
-    
-    // Only get dates for the currently viewed month in calendar
-    for (let day = 1; day <= daysInMonth; day++) {
-      const date = new Date(viewedYear, viewedMonth, day);
-      // Only include current and future dates (no past dates)
-      if (date >= today) {
-        dates.push(format(date, 'yyyy-MM-dd'));
-      }
-    }
-    
-    return dates;
-  };
+  // getCurrentAndFutureDates is now handled by the Zustand store
 
-  // Progress Modal Helper Functions
+  // Progress Modal Helper Functions (using Zustand store)
   const startProgressModal = (operation: 'add' | 'delete', initialText: string) => {
-    setProgressOperation(operation);
-    setProgressValue(0);
-    setProgressText(initialText);
-    setShowProgressModal(true);
+    setProgressModal(true, operation, 0, initialText);
   };
 
   const updateProgress = (value: number, text: string) => {
-    setProgressValue(value);
-    setProgressText(text);
+    setProgressModal(true, progressOperation, value, text);
   };
 
   const closeProgressModal = () => {
-    setShowProgressModal(false);
-    setProgressValue(0);
-    setProgressText('');
-    setProgressOperation('');
+    setProgressModal(false);
   };
 
-  // Bulk add all locations as available for current and future dates (OPTIMIZED)
+  // Bulk add all locations using Zustand store
   const handleBulkAddAllLocations = async () => {
     setShowBulkAvailableDialog(false);
     
     try {
-      const futureDates = getCurrentAndFutureDates();
-      console.log(`🚀 OPTIMIZED: Bulk adding all ${defaultLocationNames.length} locations for ${futureDates.length} current/future days`);
+      await bulkAddAllLocations(calendarCurrentMonth);
+      toast.success('Successfully added all locations for current and future dates!');
 
       // Start progress modal
       startProgressModal('add', 'Preparing location data...');
@@ -1531,19 +1277,17 @@ const ManageLocationPage: React.FC = () => {
       console.error('Error in bulk add operation:', error);
       toast.error(`Error adding locations: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
-      setBulkLoading(false);
+      // bulkLoading is managed by the Zustand store
     }
   };
 
-  // Bulk delete all location data for current month (with booking protection) - OPTIMIZED
+  // Bulk delete all locations using Zustand store
   const handleBulkDeleteAllLocations = async () => {
     setShowBulkDeleteDialog(false);
     
     try {
-      console.log(`🚀 OPTIMIZED: Bulk deleting location data for ${format(calendarCurrentMonth, 'MMMM yyyy')}`);
-
-      // Start progress modal
-      startProgressModal('delete', 'Analyzing location data...');
+      await bulkDeleteAllLocations(calendarCurrentMonth);
+      toast.success('Successfully deleted location data!');
 
       // Filter locations to only include the currently viewed month
       const viewedYear = calendarCurrentMonth.getFullYear();
@@ -1724,7 +1468,7 @@ const ManageLocationPage: React.FC = () => {
       closeProgressModal();
       toast.error(`Error deleting locations: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
-      setBulkLoading(false);
+      // bulkLoading is managed by the Zustand store
     }
   };
 
@@ -1923,7 +1667,7 @@ const ManageLocationPage: React.FC = () => {
       closeProgressModal();
       toast.error(`Error deleting selected dates: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
-      setBulkLoading(false);
+      // bulkLoading is managed by the Zustand store
     }
   };
 

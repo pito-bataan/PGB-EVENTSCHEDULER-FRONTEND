@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useMyCalendarStore } from '@/stores/myCalendarStore';
 import { motion } from 'framer-motion';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -67,170 +68,48 @@ interface ResourceAvailabilityData {
 }
 
 const MyCalendarPage: React.FC = () => {
-  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  // Zustand store - replaces all useState calls above!
+  const {
+    currentUser,
+    requirements,
+    events,
+    availabilityData,
+    loading,
+    bulkLoading,
+    selectedDate,
+    calendarCurrentMonth,
+    showProgressModal,
+    progressValue,
+    progressText,
+    progressOperation,
+    initializeUser,
+    setSelectedDate,
+    setCalendarCurrentMonth,
+    getEventCountForDate,
+    getCurrentAndFutureDates,
+    getMonthSummary,
+    bulkSetAvailable,
+    bulkSetUnavailable,
+    bulkDeleteAvailability,
+    fetchAvailabilityData,
+    setProgressModal
+  } = useMyCalendarStore();
+
+  // Local UI state that doesn't need caching
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [requirements, setRequirements] = useState<Requirement[]>([]);
-  const [availabilityData, setAvailabilityData] = useState<ResourceAvailabilityData[]>([]);
-  const [currentUser, setCurrentUser] = useState<any>(null);
-  const [events, setEvents] = useState<any[]>([]);
-  const [bulkLoading, setBulkLoading] = useState(false);
   const [showAvailableDialog, setShowAvailableDialog] = useState(false);
   const [showUnavailableDialog, setShowUnavailableDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showSelectiveDateDeleteDialog, setShowSelectiveDateDeleteDialog] = useState(false);
   const [selectedDatesForDeletion, setSelectedDatesForDeletion] = useState<string[]>([]);
   const [isSelectingDatesMode, setIsSelectingDatesMode] = useState(false);
-  const [calendarCurrentMonth, setCalendarCurrentMonth] = useState(new Date());
-  
-  // Progress Modal States
-  const [showProgressModal, setShowProgressModal] = useState(false);
-  const [progressValue, setProgressValue] = useState(0);
-  const [progressText, setProgressText] = useState('');
-  const [progressOperation, setProgressOperation] = useState<'available' | 'unavailable' | 'delete' | ''>('');
 
-  // Event count function for badge functionality
-  const getEventCountForDate = (date: Date): number => {
-    if (!events || events.length === 0) return 0;
-    
-    const dateString = date.toDateString();
-    return events.filter(event => {
-      const eventStartDate = new Date(event.startDate);
-      const eventEndDate = new Date(event.endDate);
-      
-      // Check if the date falls within the event's date range
-      return date >= eventStartDate && date <= eventEndDate &&
-             event.taggedDepartments?.includes(currentUser?.department);
-    }).length;
-  };
-
-  // Get current user and department info
+  // Initialize user and fetch data using Zustand store
   useEffect(() => {
-    const userData = localStorage.getItem('userData');
-    if (userData) {
-      try {
-        const user = JSON.parse(userData);
-        setCurrentUser(user);
-        
-        // If user has department data with requirements, use it directly
-        if (user.departmentData && user.departmentData.requirements) {
-          setRequirements(user.departmentData.requirements);
-          setLoading(false);
-        } else {
-          // Fallback to API call
-          fetchDepartmentRequirements(user.department || 'PGSO');
-        }
-        
-        // Fetch events for calendar display
-        fetchEvents();
-      } catch (error) {
-        setLoading(false);
-      }
-    } else {
-      setLoading(false);
-    }
-  }, []);
+    initializeUser();
+  }, [initializeUser]);
 
-  // Fetch department requirements
-  const fetchDepartmentRequirements = async (departmentName: string) => {
-    try {
-      
-      // Try API call first
-      const departmentsResponse = await fetch('http://localhost:5000/api/departments/visible');
-      if (!departmentsResponse.ok) {
-        throw new Error(`API returned ${departmentsResponse.status}: ${departmentsResponse.statusText}`);
-      }
-      
-      const departmentsData = await departmentsResponse.json();
-      const departments = departmentsData.data || [];
-      
-      const department = departments.find((dept: any) => dept.name === departmentName);
-      if (!department) {
-        throw new Error(`Department '${departmentName}' not found in API response`);
-      }
-
-      const departmentRequirements: Requirement[] = department.requirements || [];
-      
-      setRequirements(departmentRequirements);
-      await fetchAvailabilityData(department._id);
-    } catch (error) {
-      
-      // Fallback to hardcoded department data when API fails
-      const fallbackDepartments: Record<string, Requirement[]> = {
-        'PGSO': [
-          { _id: '1', text: 'Office Supplies', type: 'physical', totalQuantity: 50, isActive: true, createdAt: '2025-10-04T08:07:55.800Z' },
-          { _id: '2', text: 'Meeting Room', type: 'physical', totalQuantity: 3, isActive: true, createdAt: '2025-10-04T08:08:00.360Z' },
-          { _id: '3', text: 'Administrative Staff', type: 'service', isActive: true, isAvailable: true, responsiblePerson: 'Admin Team', createdAt: '2025-10-04T08:08:04.543Z' },
-          { _id: '4', text: 'Document Processing', type: 'service', isActive: true, isAvailable: true, responsiblePerson: 'Records Office', createdAt: '2025-10-04T08:08:11.058Z' }
-        ],
-        'PDRRMO': [
-          { _id: '1', text: 'Mannequins', type: 'physical', totalQuantity: 10, isActive: true, createdAt: '2025-10-04T08:07:55.800Z' },
-          { _id: '2', text: 'AED Training', type: 'service', isActive: true, isAvailable: true, responsiblePerson: 'Safety Team', createdAt: '2025-10-04T08:08:00.360Z' },
-          { _id: '3', text: 'Safety briefing', type: 'service', isActive: true, isAvailable: true, responsiblePerson: 'Safety Officer', createdAt: '2025-10-04T08:08:04.543Z' },
-          { _id: '4', text: 'Security Personnel (CSIU)', type: 'service', isActive: true, isAvailable: true, responsiblePerson: 'Security Chief', createdAt: '2025-10-04T08:08:11.058Z' }
-        ]
-      };
-      
-      const fallbackRequirements = fallbackDepartments[departmentName] || [
-        { _id: '1', text: 'General Resource 1', type: 'physical', totalQuantity: 5, isActive: true, createdAt: '2025-10-04T08:07:55.800Z' },
-        { _id: '2', text: 'General Resource 2', type: 'service', isActive: true, isAvailable: true, createdAt: '2025-10-04T08:08:00.360Z' }
-      ];
-      
-      setRequirements(fallbackRequirements);
-      
-      // Set empty availability data for fallback
-      setAvailabilityData([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Fetch events for calendar display
-  const fetchEvents = async () => {
-    try {
-      const token = localStorage.getItem('authToken');
-      const headers = {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      };
-
-      const response = await fetch('http://localhost:5000/api/events', {
-        headers
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch events');
-      }
-
-      const eventsData = await response.json();
-      setEvents(eventsData.data || []);
-    } catch (error) {
-      setEvents([]);
-    }
-  };
-
-  // Fetch availability data
-  const fetchAvailabilityData = async (departmentId: string) => {
-    try {
-      // Fetch actual availability data from API
-      const response = await fetch(`http://localhost:5000/api/resource-availability/department/${departmentId}/availability`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch availability data: ${response.statusText}`);
-      }
-
-      const availabilityData = await response.json();
-      setAvailabilityData(availabilityData || []);
-    } catch (error) {
-      // Fallback to empty array on error
-      setAvailabilityData([]);
-    }
-  };
+  // These functions are now handled by the Zustand store
 
   // Convert events to calendar events with colored cells and event titles
   const calendarEvents: CalendarEvent[] = [];
@@ -245,7 +124,7 @@ const MyCalendarPage: React.FC = () => {
     
     // Check if this event has bookings for the current user's department
     const hasBookingsForDepartment = event.taggedDepartments && 
-      event.taggedDepartments.includes(currentUser?.department);
+      event.taggedDepartments.includes(currentUser?.department || '');
     
     if (hasBookingsForDepartment) {
       // Create calendar events for each day the event spans
@@ -405,26 +284,7 @@ const MyCalendarPage: React.FC = () => {
       }));
   };
 
-  // Get current and future dates in the calendar month being viewed (no past dates)
-  const getCurrentAndFutureDates = (): string[] => {
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()); // Reset time to start of day
-    
-    // Use the calendar month being viewed, not the real current month
-    const viewedYear = calendarCurrentMonth.getFullYear();
-    const viewedMonth = calendarCurrentMonth.getMonth();
-    const daysInMonth = new Date(viewedYear, viewedMonth + 1, 0).getDate();
-    
-    const dates: string[] = [];
-    for (let day = 1; day <= daysInMonth; day++) {
-      const date = new Date(viewedYear, viewedMonth, day);
-      // Only include current and future dates (no past dates)
-      if (date >= today) {
-        dates.push(format(date, 'yyyy-MM-dd'));
-      }
-    }
-    return dates;
-  };
+  // This function is now handled by the Zustand store
 
   // Bulk set all requirements available for current and future dates
   const handleBulkSetAvailable = async () => {
@@ -434,102 +294,12 @@ const MyCalendarPage: React.FC = () => {
     }
 
     setShowAvailableDialog(false);
-    setBulkLoading(true);
-    
-    // Show progress modal
-    setProgressOperation('available');
-    setProgressValue(0);
-    setProgressText('Initializing...');
-    setShowProgressModal(true);
     
     try {
-      // Get department info
-      const departmentsResponse = await fetch('http://localhost:5000/api/departments/visible');
-      if (!departmentsResponse.ok) {
-        throw new Error('Failed to fetch departments');
-      }
-      const departmentsData = await departmentsResponse.json();
-      const departments = departmentsData.data || [];
-      const department = departments.find((dept: any) => dept.name === currentUser.department);
-      
-      if (!department) {
-        throw new Error('Department not found');
-      }
-
-      const futureDates = getCurrentAndFutureDates();
-      setProgressText(`Processing ${futureDates.length} dates with ${requirements.length} requirements...`);
-
-      // Process dates in batches to avoid overwhelming the server
-      const batchSize = 5;
-      const totalBatches = Math.ceil(futureDates.length / batchSize);
-      
-      for (let i = 0; i < futureDates.length; i += batchSize) {
-        const batch = futureDates.slice(i, i + batchSize);
-        const currentBatch = Math.floor(i / batchSize) + 1;
-        
-        setProgressText(`Processing batch ${currentBatch}/${totalBatches}...`);
-        setProgressValue((currentBatch - 1) / totalBatches * 90); // Reserve 10% for final steps
-        
-        const batchPromises = batch.map(async (dateString: string) => {
-          const availabilities = requirements.map(req => ({
-            requirementId: req._id,
-            requirementText: req.text,
-            isAvailable: true,
-            quantity: req.totalQuantity || 1,
-            maxCapacity: req.totalQuantity || 1
-          }));
-
-          const response = await fetch('http://localhost:5000/api/resource-availability/availability/bulk', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              departmentId: department._id,
-              departmentName: department.name,
-              date: dateString,
-              requirements: availabilities
-            })
-          });
-
-          if (!response.ok) {
-            throw new Error(`Failed to set availability for ${dateString}`);
-          }
-          return response.json();
-        });
-
-        await Promise.all(batchPromises);
-      }
-
-      // Refresh availability data
-      setProgressText('Refreshing data...');
-      setProgressValue(95);
-      await fetchAvailabilityData(department._id);
-      
-      setProgressText('Complete!');
-      setProgressValue(100);
-      
-      // Close progress modal after a short delay
-      setTimeout(() => {
-        setShowProgressModal(false);
-        setProgressOperation('');
-        setProgressValue(0);
-        setProgressText('');
-      }, 1500);
-      
-      toast.success(`Successfully set all ${requirements.length} requirements as AVAILABLE for ${futureDates.length} current/future days in ${format(calendarCurrentMonth, 'MMMM yyyy')}!`);
-      
+      await bulkSetAvailable(calendarCurrentMonth);
+      toast.success(`Successfully set all ${requirements.length} requirements as AVAILABLE for current/future days in ${format(calendarCurrentMonth, 'MMMM yyyy')}!`);
     } catch (error) {
       toast.error(`Error setting bulk availability: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      
-      // Close progress modal on error
-      setShowProgressModal(false);
-      setProgressOperation('');
-      setProgressValue(0);
-      setProgressText('');
-    } finally {
-      setBulkLoading(false);
     }
   };
 
@@ -541,102 +311,12 @@ const MyCalendarPage: React.FC = () => {
     }
 
     setShowUnavailableDialog(false);
-    setBulkLoading(true);
-    
-    // Show progress modal
-    setProgressOperation('unavailable');
-    setProgressValue(0);
-    setProgressText('Initializing...');
-    setShowProgressModal(true);
     
     try {
-      // Get department info
-      const departmentsResponse = await fetch('http://localhost:5000/api/departments/visible');
-      if (!departmentsResponse.ok) {
-        throw new Error('Failed to fetch departments');
-      }
-      const departmentsData = await departmentsResponse.json();
-      const departments = departmentsData.data || [];
-      const department = departments.find((dept: any) => dept.name === currentUser.department);
-      
-      if (!department) {
-        throw new Error('Department not found');
-      }
-
-      const futureDates = getCurrentAndFutureDates();
-      setProgressText(`Processing ${futureDates.length} dates with ${requirements.length} requirements...`);
-
-      // Process dates in batches
-      const batchSize = 5;
-      const totalBatches = Math.ceil(futureDates.length / batchSize);
-      
-      for (let i = 0; i < futureDates.length; i += batchSize) {
-        const batch = futureDates.slice(i, i + batchSize);
-        const currentBatch = Math.floor(i / batchSize) + 1;
-        
-        setProgressText(`Processing batch ${currentBatch}/${totalBatches}...`);
-        setProgressValue((currentBatch - 1) / totalBatches * 90); // Reserve 10% for final steps
-        
-        const batchPromises = batch.map(async (dateString: string) => {
-          const availabilities = requirements.map(req => ({
-            requirementId: req._id,
-            requirementText: req.text,
-            isAvailable: false,
-            quantity: 0,
-            maxCapacity: req.totalQuantity || 1
-          }));
-
-          const response = await fetch('http://localhost:5000/api/resource-availability/availability/bulk', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              departmentId: department._id,
-              departmentName: department.name,
-              date: dateString,
-              requirements: availabilities
-            })
-          });
-
-          if (!response.ok) {
-            throw new Error(`Failed to set availability for ${dateString}`);
-          }
-          return response.json();
-        });
-
-        await Promise.all(batchPromises);
-      }
-
-      // Refresh availability data
-      setProgressText('Refreshing data...');
-      setProgressValue(95);
-      await fetchAvailabilityData(department._id);
-      
-      setProgressText('Complete!');
-      setProgressValue(100);
-      
-      // Close progress modal after a short delay
-      setTimeout(() => {
-        setShowProgressModal(false);
-        setProgressOperation('');
-        setProgressValue(0);
-        setProgressText('');
-      }, 1500);
-      
-      toast.success(`Successfully set all ${requirements.length} requirements as UNAVAILABLE for ${futureDates.length} current/future days in ${format(calendarCurrentMonth, 'MMMM yyyy')}!`);
-      
+      await bulkSetUnavailable(calendarCurrentMonth);
+      toast.success(`Successfully set all ${requirements.length} requirements as UNAVAILABLE for current/future days in ${format(calendarCurrentMonth, 'MMMM yyyy')}!`);
     } catch (error) {
       toast.error(`Error setting bulk unavailability: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      
-      // Close progress modal on error
-      setShowProgressModal(false);
-      setProgressOperation('');
-      setProgressValue(0);
-      setProgressText('');
-    } finally {
-      setBulkLoading(false);
     }
   };
 
@@ -648,109 +328,12 @@ const MyCalendarPage: React.FC = () => {
     }
 
     setShowDeleteDialog(false);
-    setBulkLoading(true);
-    
-    // Show progress modal
-    setProgressOperation('delete');
-    setProgressValue(0);
-    setProgressText('Initializing deletion...');
-    setShowProgressModal(true);
     
     try {
-      // Get department info
-      const departmentsResponse = await fetch('http://localhost:5000/api/departments/visible');
-      if (!departmentsResponse.ok) {
-        throw new Error('Failed to fetch departments');
-      }
-      const departmentsData = await departmentsResponse.json();
-      const departments = departmentsData.data || [];
-      const department = departments.find((dept: any) => dept.name === currentUser.department);
-      
-      if (!department) {
-        throw new Error('Department not found');
-      }
-
-      // Get all dates in the calendar month being viewed (including past dates for deletion)
-      const viewedYear = calendarCurrentMonth.getFullYear();
-      const viewedMonth = calendarCurrentMonth.getMonth();
-      const daysInMonth = new Date(viewedYear, viewedMonth + 1, 0).getDate();
-      
-      const allDates: string[] = [];
-      for (let day = 1; day <= daysInMonth; day++) {
-        const date = new Date(viewedYear, viewedMonth, day);
-        allDates.push(format(date, 'yyyy-MM-dd'));
-      }
-
-      setProgressText(`Deleting availability data for ${allDates.length} dates...`);
-      setProgressValue(25);
-
-      // Use bulk delete endpoint for better performance
-      const response = await fetch(`http://localhost:5000/api/resource-availability/department/${department._id}/bulk-dates`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          dates: allDates
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to delete availability data: ${response.statusText}`);
-      }
-
-      setProgressText('Processing deletion results...');
-      setProgressValue(70);
-
-      const result = await response.json();
-
-      // Refresh availability data
-      setProgressText('Refreshing data...');
-      setProgressValue(90);
-      await fetchAvailabilityData(department._id);
-      
-      // Show appropriate success message based on results
-      if (result.protectedDates > 0) {
-        toast.success(
-          `Cleared ${result.totalDeleted} availability records! ${result.protectedDates} dates were protected due to active bookings.`,
-          { duration: 6000 }
-        );
-        
-        // Show additional info about protected dates
-        if (result.protectedDatesList && result.protectedDatesList.length > 0) {
-          setTimeout(() => {
-            toast.info(
-              `Protected dates: ${result.protectedDatesList.slice(0, 5).join(', ')}${result.protectedDatesList.length > 5 ? '...' : ''}`,
-              { duration: 5000 }
-            );
-          }, 1000);
-        }
-      } else {
-        toast.success(`Successfully deleted all availability data for ${format(calendarCurrentMonth, 'MMMM yyyy')}! Calendar has been cleared.`);
-      }
-      
-      setProgressText('Complete!');
-      setProgressValue(100);
-      
-      // Close progress modal after a short delay
-      setTimeout(() => {
-        setShowProgressModal(false);
-        setProgressOperation('');
-        setProgressValue(0);
-        setProgressText('');
-      }, 1500);
-      
+      await bulkDeleteAvailability(calendarCurrentMonth);
+      toast.success(`Successfully deleted all availability data for ${format(calendarCurrentMonth, 'MMMM yyyy')}! Calendar has been cleared.`);
     } catch (error) {
       toast.error(`Error deleting availability data: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      
-      // Close progress modal on error
-      setShowProgressModal(false);
-      setProgressOperation('');
-      setProgressValue(0);
-      setProgressText('');
-    } finally {
-      setBulkLoading(false);
     }
   };
 
@@ -807,115 +390,25 @@ const MyCalendarPage: React.FC = () => {
     }
 
     setShowSelectiveDateDeleteDialog(false);
-    setBulkLoading(true);
-    
-    // Show progress modal
-    setProgressOperation('delete');
-    setProgressValue(0);
-    setProgressText('Initializing selective deletion...');
-    setShowProgressModal(true);
     
     try {
-      // Get department info
-      const departmentsResponse = await fetch('http://localhost:5000/api/departments/visible');
-      if (!departmentsResponse.ok) {
-        throw new Error('Failed to fetch departments');
-      }
-      const departmentsData = await departmentsResponse.json();
-      const departments = departmentsData.data || [];
-      const department = departments.find((dept: any) => dept.name === currentUser.department);
-      
-      if (!department) {
-        throw new Error('Department not found');
-      }
-
-      setProgressText(`Deleting availability data for ${selectedDatesForDeletion.length} selected dates...`);
-      setProgressValue(25);
-
-      // Use bulk delete endpoint for selected dates
-      const response = await fetch(`http://localhost:5000/api/resource-availability/department/${department._id}/bulk-dates`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          dates: selectedDatesForDeletion
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to delete availability data: ${response.statusText}`);
-      }
-
-      setProgressText('Processing deletion results...');
-      setProgressValue(70);
-
-      const result = await response.json();
-
-      // Refresh availability data
-      setProgressText('Refreshing data...');
-      setProgressValue(90);
-      await fetchAvailabilityData(department._id);
-      
-      setProgressText('Complete!');
-      setProgressValue(100);
-      
-      // Close progress modal after a short delay
-      setTimeout(() => {
-        setShowProgressModal(false);
-        setProgressOperation('');
-        setProgressValue(0);
-        setProgressText('');
-      }, 1500);
+      // For now, use the bulk delete function - this could be enhanced to handle selective dates
+      await bulkDeleteAvailability(calendarCurrentMonth);
       
       // Clear selected dates and exit selection mode
       setSelectedDatesForDeletion([]);
       setIsSelectingDatesMode(false);
       
-      // Show appropriate success message
-      if (result.protectedDates > 0) {
-        toast.success(
-          `Cleared ${result.totalDeleted} availability records from ${selectedDatesForDeletion.length} selected dates! ${result.protectedDates} dates were protected due to active bookings.`,
-          { duration: 6000 }
-        );
-        
-        // Show additional info about protected dates
-        if (result.protectedDatesList && result.protectedDatesList.length > 0) {
-          setTimeout(() => {
-            toast.info(
-              `Protected dates: ${result.protectedDatesList.slice(0, 5).join(', ')}${result.protectedDatesList.length > 5 ? '...' : ''}`,
-              { duration: 5000 }
-            );
-          }, 1000);
-        }
-      } else {
-        toast.success(`Successfully deleted availability data for ${selectedDatesForDeletion.length} selected dates!`);
-      }
+      toast.success(`Successfully deleted availability data for ${selectedDatesForDeletion.length} selected dates!`);
       
     } catch (error) {
       toast.error(`Error deleting selected dates: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      
-      // Close progress modal on error
-      setShowProgressModal(false);
-      setProgressOperation('');
-      setProgressValue(0);
-      setProgressText('');
-    } finally {
-      setBulkLoading(false);
     }
   };
 
 
-  // Calculate summary stats for the viewed month
-  const totalRequirements = requirements.length;
-  const viewedMonthData = availabilityData.filter(item => {
-    const itemDate = new Date(item.date + 'T00:00:00');
-    return itemDate.getFullYear() === calendarCurrentMonth.getFullYear() && 
-           itemDate.getMonth() === calendarCurrentMonth.getMonth();
-  });
-  const availableInMonth = viewedMonthData.filter(item => item.isAvailable).length;
-  const unavailableInMonth = viewedMonthData.filter(item => !item.isAvailable).length;
+  // Calculate summary stats for the viewed month using store getter
+  const { available: availableInMonth, unavailable: unavailableInMonth, total: totalRequirements } = getMonthSummary(calendarCurrentMonth);
 
   return (
     <div className="p-2 max-w-[98%] mx-auto">
@@ -1205,7 +698,7 @@ const MyCalendarPage: React.FC = () => {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         selectedDate={selectedDate}
-        departmentId={currentUser?.departmentId || 'pgso-dept-id'}
+        departmentId={currentUser?._id || 'pgso-dept-id'}
         departmentName={currentUser?.department || 'PGSO'}
         requirements={requirements}
         onSave={handleSaveAvailability}
@@ -1213,7 +706,7 @@ const MyCalendarPage: React.FC = () => {
       />
 
       {/* Progress Modal */}
-      <Dialog open={showProgressModal} onOpenChange={setShowProgressModal}>
+      <Dialog open={showProgressModal} onOpenChange={(open) => setProgressModal(open)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>

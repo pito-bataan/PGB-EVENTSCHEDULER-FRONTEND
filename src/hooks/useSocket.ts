@@ -142,22 +142,28 @@ export const useSocket = (userId?: string) => {
     }
   };
 
-  // Notification event listeners
+  // Notification event listeners - Enhanced for reliability
   const onNewNotification = (callback: (data: any) => void) => {
-    // Use global socket if socketRef is not available
     const socket = socketRef.current || globalSocket;
     
-    if (socket && socket.connected) {
-      socket.on('new-notification', callback);
-    } else if (socket) {
-      socket.once('connect', () => {
+    if (socket) {
+      // Remove any existing listeners to prevent duplicates
+      socket.off('new-notification');
+      
+      if (socket.connected) {
         socket.on('new-notification', callback);
-      });
+      } else {
+        // Wait for connection and then add listener
+        socket.once('connect', () => {
+          socket.off('new-notification'); // Remove any duplicates
+          socket.on('new-notification', callback);
+        });
+      }
     } else {
-      // Retry after a short delay
+      // Retry after socket initialization
       setTimeout(() => {
         onNewNotification(callback);
-      }, 1000);
+      }, 500);
     }
   };
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import axios from 'axios';
 import { useSocket } from '@/hooks/useSocket';
+import { useDashboardStore } from '@/stores/dashboardStore';
 import { Toaster } from 'sonner';
 
 const API_BASE_URL = 'http://localhost:5000/api';
@@ -65,27 +66,41 @@ interface Notification {
 }
 
 const Dashboard: React.FC = () => {
+  // Zustand store - replaces all useState calls above!
+  const {
+    notifications,
+    upcomingEvents,
+    totalUserEvents,
+    totalSystemEvents,
+    requirementsOverview,
+    readNotifications,
+    loading,
+    fetchDashboardData,
+    fetchReadNotifications,
+    markNotificationAsRead,
+    getFilteredRequirements,
+    getUniqueEvents,
+    getUnreadCount,
+    refreshNotifications
+  } = useDashboardStore();
   
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [upcomingEvents, setUpcomingEvents] = useState<Event[]>([]);
-  const [totalUserEvents, setTotalUserEvents] = useState(0);
-  const [loading, setLoading] = useState(true);
+  // Only keep local UI state
   const [notificationOpen, setNotificationOpen] = useState(false);
-  const [readNotifications, setReadNotifications] = useState<Set<string>>(new Set());
-  const [totalSystemEvents, setTotalSystemEvents] = useState(0);
-  const [statusNotifications, setStatusNotifications] = useState<Notification[]>([]);
-  const [requirementsOverview, setRequirementsOverview] = useState<any[]>([]);
   const [selectedEventFilter, setSelectedEventFilter] = useState<string>('all');
   
-  // Get current user data
-  const currentUser = JSON.parse(localStorage.getItem('userData') || '{}');
-  const userId = currentUser._id || currentUser.id || 'unknown';
+  // Get current user data (memoized to prevent re-renders)
+  const currentUser = useMemo(() => {
+    return JSON.parse(localStorage.getItem('userData') || '{}');
+  }, []);
   
-  // Debug: Log current user info
-  console.log('🔍 Dashboard - Current User:', { userId, currentUser });
+  const userId = useMemo(() => {
+    return currentUser._id || currentUser.id || 'unknown';
+  }, [currentUser]);
+  
+  // User data loaded and memoized
   
   // Initialize Socket.IO for real-time read status updates only (popups handled by GlobalNotificationSystem)
-  const { onNotificationRead, offNotificationRead, onStatusUpdate, offStatusUpdate } = useSocket(userId);
+  const { onNotificationRead, offNotificationRead } = useSocket(userId);
 
   // Helper function to format time
   const formatTime = (time: string) => {
@@ -95,6 +110,21 @@ const Dashboard: React.FC = () => {
     const ampm = hour >= 12 ? 'PM' : 'AM';
     const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
     return `${displayHour}:${minutes} ${ampm}`;
+  };
+
+  // Helper function to make event title bold in status notifications
+  const renderMessageWithBoldEventTitle = (message: string) => {
+    // Pattern: 'for event "Event Title"'
+    const eventTitleRegex = /(for event ")([^"]+)(")/g;
+    const parts = message.split(eventTitleRegex);
+    
+    return parts.map((part, index) => {
+      // If this part is an event title (every 4th part starting from index 2)
+      if (index > 0 && (index - 2) % 4 === 0) {
+        return <span key={index} className="font-bold">{part}</span>;
+      }
+      return part;
+    });
   };
 
   // Helper function to calculate days until event
@@ -235,125 +265,8 @@ const Dashboard: React.FC = () => {
     return btoa(contentString); // Simple base64 encoding as fingerprint
   };
 
-  // Generate status notifications from requirements data (like upcoming notifications)
-  const generateStatusNotificationsFromData = (requirements: any[]) => {
-    console.log('🔍 Generating status notifications from requirements:', requirements);
-    const statusNotifications: Notification[] = [];
-    
-    requirements.forEach((req, index) => {
-      console.log(`🔍 Processing requirement ${index}:`, { name: req.name, status: req.status, department: req.department });
-      
-      // Only create notifications for non-pending status
-      if (req.status && req.status !== 'pending') {
-        console.log(`✅ Creating notification for ${req.name} with status ${req.status}`);
-        
-        // Create content fingerprint for change detection
-        const contentFingerprint = createNotificationFingerprint(req);
-        const notificationId = `status-${req.eventId}-${req.id}-${contentFingerprint}`;
-        
-        const notification = {
-          id: notificationId,
-          baseId: `status-${req.eventId}-${req.id}`, // Base ID without fingerprint
-          title: "Status Updated",
-          message: `${req.name} status: "${req.status}" by ${req.department}`,
-          type: "status",
-          category: "status",
-          time: req.lastUpdated ? new Date(req.lastUpdated).toLocaleString() : 'Recently',
-          read: false, // Always start as unread, will be checked against NotificationRead
-          icon: AlertCircle,
-          iconColor: getStatusColor(req.status),
-          eventId: req.eventId,
-          requirementId: req.id,
-          departmentNotes: req.departmentNotes || '',
-          contentFingerprint: contentFingerprint
-        };
-        statusNotifications.push(notification);
-      } else {
-        console.log(`❌ Skipping ${req.name} - status: ${req.status}`);
-      }
-    });
-    
-    console.log('📝 Generated status notifications:', statusNotifications);
-    setStatusNotifications(statusNotifications);
-    return statusNotifications;
-  };
 
-  // Fetch requirements overview for all user events
-  const fetchRequirementsOverview = async () => {
-    try {
-      console.log('🔍 Fetching requirements overview for user:', userId);
-      const token = localStorage.getItem('authToken');
-      const headers = {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      };
 
-      // Fetch user's events to get requirements status
-      const response = await axios.get(`${API_BASE_URL}/events/my`, { headers });
-      
-      if (response.data.success) {
-        const userEvents = response.data.data || [];
-        console.log('📋 User events for requirements:', userEvents);
-        
-        // Extract all requirements from all events
-        const allRequirements: any[] = [];
-        
-        userEvents.forEach((event: any) => {
-          if (event.departmentRequirements) {
-            Object.entries(event.departmentRequirements).forEach(([department, requirements]) => {
-              (requirements as any[]).forEach((req: any) => {
-                allRequirements.push({
-                  id: req.id,
-                  name: req.name,
-                  status: req.status || 'pending',
-                  department: department,
-                  eventTitle: event.eventTitle,
-                  eventId: event._id,
-                  departmentNotes: req.departmentNotes || '',
-                  lastUpdated: req.lastUpdated,
-                  quantity: req.quantity,
-                  totalQuantity: req.totalQuantity
-                });
-              });
-            });
-          }
-        });
-        
-        console.log('📋 All requirements overview:', allRequirements);
-        setRequirementsOverview(allRequirements);
-        
-        // Debug: Check if requirements are being set
-        console.log('📋 Requirements overview state updated:', allRequirements.length);
-        
-        // Return the requirements so they can be used immediately
-        return allRequirements;
-      }
-    } catch (error: any) {
-      console.error('Error fetching requirements overview:', error);
-    }
-  };
-
-  // Get unique events from requirements
-  const getUniqueEvents = () => {
-    const uniqueEvents = new Map();
-    requirementsOverview.forEach(req => {
-      if (!uniqueEvents.has(req.eventId)) {
-        uniqueEvents.set(req.eventId, {
-          id: req.eventId,
-          title: req.eventTitle
-        });
-      }
-    });
-    return Array.from(uniqueEvents.values());
-  };
-
-  // Filter requirements by selected event
-  const getFilteredRequirements = () => {
-    if (selectedEventFilter === 'all') {
-      return requirementsOverview;
-    }
-    return requirementsOverview.filter(req => req.eventId === selectedEventFilter);
-  };
 
   // Helper function to get status color
   const getStatusColor = (status: string) => {
@@ -367,175 +280,46 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  // Fetch events and generate notifications
-  const fetchEventsAndNotifications = async () => {
-    try {
-      setLoading(true);
-      const token = localStorage.getItem('authToken');
-      const headers = {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      };
-
-      // Fetch user's own events only
-      const userResponse = await axios.get(`${API_BASE_URL}/events/my`, { headers });
-
-      if (userResponse.data.success) {
-        const userEvents = userResponse.data.data || [];
-        
-        // Set total user events count
-        setTotalUserEvents(userEvents.length);
-        
-        // Filter upcoming events (next 30 days) - only user's own events
-        const now = new Date();
-        const thirtyDaysFromNow = new Date();
-        thirtyDaysFromNow.setDate(now.getDate() + 30);
-        
-        const upcoming = userEvents.filter((event: Event) => {
-          const eventDate = new Date(event.startDate);
-          return eventDate >= now && eventDate <= thirtyDaysFromNow && 
-                 (event.status === 'approved' || event.status === 'submitted');
-        });
-        
-        setUpcomingEvents(upcoming);
-        
-        // For notifications and total system events count, fetch all events
-        const allEventsResponse = await axios.get(`${API_BASE_URL}/events`, { headers });
-        if (allEventsResponse.data.success) {
-          const allEvents = allEventsResponse.data.data || [];
-          
-          // Set total system events count (all events in the system)
-          setTotalSystemEvents(allEvents.length);
-          
-          const allUpcoming = allEvents.filter((event: Event) => {
-            const eventDate = new Date(event.startDate);
-            return eventDate >= now && eventDate <= thirtyDaysFromNow && 
-                   (event.status === 'approved' || event.status === 'submitted');
-          });
-          
-          // Generate notifications from all upcoming events (including tagged ones)
-          const generatedNotifications = generateUpcomingEventNotifications(allUpcoming);
-          
-          // Fetch requirements overview first (needed for status generation)
-          const fetchedRequirements = await fetchRequirementsOverview() || [];
-          
-          // Generate status notifications from requirements data using fetched data
-          const statusNotifications = generateStatusNotificationsFromData(fetchedRequirements);
-          
-          // Combine all notifications
-          const allNotifications = [...generatedNotifications, ...statusNotifications];
-          console.log('🔍 Combined all notifications:', allNotifications);
-          
-          // Set final notifications array
-          setNotifications(allNotifications);
-          console.log('🔍 Final notifications array set:', allNotifications);
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching events:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Load read notifications from database
-  const loadReadNotifications = async () => {
-    try {
-      const token = localStorage.getItem('authToken');
-      const response = await axios.get(`${API_BASE_URL}/notifications/read-status`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      
-      if (response.data.success) {
-        setReadNotifications(new Set(response.data.data));
-      }
-    } catch (error) {
-      // Fallback to localStorage for backward compatibility
-      const savedReadNotifications = localStorage.getItem(`readNotifications_${userId}`);
-      if (savedReadNotifications) {
-        setReadNotifications(new Set(JSON.parse(savedReadNotifications)));
-      }
-    }
-  };
-
-  // Mark notification as read in database
-  const markNotificationAsRead = async (notificationId: string) => {
-    try {
-      // Find the notification to get its details
-      const notification = notifications.find(n => n.id === notificationId);
-      if (!notification) {
-        return;
-      }
-
-      // Optimistically update UI
-      const newReadSet = new Set(readNotifications);
-      newReadSet.add(notificationId);
-      setReadNotifications(newReadSet);
-
-      // Save to database
-      const token = localStorage.getItem('authToken');
-      const response = await axios.post(`${API_BASE_URL}/notifications/mark-read`, {
-        notificationId,
-        eventId: notification.eventId,
-        notificationType: notification.type,
-        category: notification.category
-      }, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      if (response.data.success) {
-        
-        // Dispatch global event for immediate UI updates
-        window.dispatchEvent(new CustomEvent('notificationUpdate', { 
-          detail: { type: 'read', notificationId, userId } 
-        }));
-      } else {
-        // Rollback on failure
-        const rollbackSet = new Set(readNotifications);
-        rollbackSet.delete(notificationId);
-        setReadNotifications(rollbackSet);
-      }
-    } catch (error) {
-      // Rollback on error
-      const rollbackSet = new Set(readNotifications);
-      rollbackSet.delete(notificationId);
-      setReadNotifications(rollbackSet);
-    }
-  };
-
-  // Get unread notification count
-  const getUnreadCount = (notificationsList: Notification[]) => {
-    return notificationsList.filter(n => !readNotifications.has(n.id)).length;
-  };
 
 
 
 
-  // Fetch data on component mount
+
+
+
+  // Fetch data on component mount using Zustand
   useEffect(() => {
-    fetchEventsAndNotifications();
-    loadReadNotifications();
-  }, []);
-
-  // Listen for global notification events from GlobalNotificationSystem
-  useEffect(() => {
-    const handleGlobalNotificationUpdate = (event: any) => {
-      if (event.detail.type === 'new') {
-        // Refresh notifications when new notification arrives
-        setTimeout(() => {
-          fetchEventsAndNotifications().then(() => {
-            loadReadNotifications();
-          });
-        }, 500);
-      }
-    };
-
-    window.addEventListener('notificationUpdate', handleGlobalNotificationUpdate);
+    fetchDashboardData(userId);
+    fetchReadNotifications(userId);
     
-    return () => {
-      window.removeEventListener('notificationUpdate', handleGlobalNotificationUpdate);
-    };
-  }, []);
+    // Set up periodic refresh for real-time updates
+    const refreshInterval = setInterval(() => {
+      console.log('🔄 Auto-refreshing notifications...');
+      fetchDashboardData(userId, true); // Force refresh
+    }, 30000); // Refresh every 30 seconds
+    
+    return () => clearInterval(refreshInterval);
+  }, [userId, fetchDashboardData, fetchReadNotifications]);
+
+  // Listen for global notification events from GlobalNotificationSystem (DISABLED - was causing loops)
+  // useEffect(() => {
+  //   const handleGlobalNotificationUpdate = (event: any) => {
+  //     if (event.detail.type === 'new') {
+  //       // Refresh notifications when new notification arrives
+  //       setTimeout(() => {
+  //         fetchEventsAndNotifications().then(() => {
+  //           loadReadNotifications();
+  //         });
+  //       }, 500);
+  //     }
+  //   };
+
+  //   window.addEventListener('notificationUpdate', handleGlobalNotificationUpdate);
+    
+  //   return () => {
+  //     window.removeEventListener('notificationUpdate', handleGlobalNotificationUpdate);
+  //   };
+  // }, [fetchEventsAndNotifications, loadReadNotifications]);
 
   
   // Real-time notification read status listener (new notifications handled by GlobalNotificationSystem)
@@ -548,12 +332,8 @@ const Dashboard: React.FC = () => {
     // Listen for notification read events (from other devices/sessions)
     const handleNotificationRead = (data: any) => {
       if (data.userId === userId) {
-        // Update read status if it's for current user
-        setReadNotifications(prev => {
-          const newSet = new Set(prev);
-          newSet.add(data.notificationId);
-          return newSet;
-        });
+        // Update read status if it's for current user - this will be handled by the store
+        console.log('Notification read event received:', data);
         
         // Dispatch global event for read status update
         window.dispatchEvent(new CustomEvent('notificationUpdate', { 
@@ -571,43 +351,25 @@ const Dashboard: React.FC = () => {
     };
   }, [onNotificationRead, offNotificationRead]);
 
-  // Real-time status update listener
-  useEffect(() => {
-    if (!onStatusUpdate) {
-      return;
-    }
+  // Real-time status update listener (REMOVED - was causing infinite loops)
+  // useEffect(() => {
+  //   if (!onStatusUpdate) {
+  //     return;
+  //   }
 
-    const handleStatusUpdate = (data: any) => {
-      // Check if this status update is for the current user's event
-      if (data.requestorId === userId) {
-        // Create new status notification
-        const newNotification = {
-          id: `status-${data._id || Date.now()}`,
-          title: "Requirement Status Updated",
-          message: `${data.requirementName} status changed to "${data.newStatus}" by ${data.departmentName}`,
-          type: "status",
-          category: "status",
-          time: new Date().toLocaleString(),
-          read: false,
-          icon: AlertCircle,
-          iconColor: getStatusColor(data.newStatus),
-          eventId: data.eventId,
-          requirementId: data.requirementId,
-          departmentNotes: data.departmentNotes
-        };
+  //   const handleStatusUpdate = (statusData: any) => {
+  //     // Refresh notifications when status update is received
+  //     fetchEventsAndNotifications();
+  //   };
 
-        // Add to notifications
-        setNotifications(prev => [newNotification, ...prev]);
-        setStatusNotifications(prev => [newNotification, ...prev]);
-      }
-    };
+  //   onStatusUpdate(handleStatusUpdate);
 
-    onStatusUpdate(handleStatusUpdate);
-
-    return () => {
-      offStatusUpdate();
-    };
-  }, [onStatusUpdate, offStatusUpdate, userId]);
+  //   return () => {
+  //     if (offStatusUpdate) {
+  //       offStatusUpdate();
+  //     }
+  //   };
+  // }, [onStatusUpdate, offStatusUpdate, fetchEventsAndNotifications]);
 
   return (
   <div className="space-y-6">
@@ -623,7 +385,7 @@ const Dashboard: React.FC = () => {
         <DropdownMenuTrigger asChild>
           <Button variant="outline" size="icon" className="relative">
             <Bell className="h-5 w-5" />
-            {getUnreadCount(notifications) > 0 && (
+            {getUnreadCount() > 0 && (
               <span className="absolute -top-1 -right-1 h-3 w-3 bg-red-500 rounded-full"></span>
             )}
           </Button>
@@ -639,37 +401,37 @@ const Dashboard: React.FC = () => {
           </div>
           
           <Tabs defaultValue="all" className="w-full">
-            <div className="px-3 pt-2">
-              <TabsList className="grid w-full grid-cols-4 h-9 gap-1">
+            <div className="px-3 py-2 border-b">
+              <TabsList className="grid w-full grid-cols-4 h-8">
                 <TabsTrigger value="all" className="text-xs relative px-2">
                   All
-                  {getUnreadCount(notifications) > 0 && (
+                  {getUnreadCount() > 0 && (
                     <Badge variant="destructive" className="ml-1 h-3 min-w-3 text-[10px] px-1">
-                      {getUnreadCount(notifications)}
+                      {getUnreadCount()}
                     </Badge>
                   )}
                 </TabsTrigger>
                 <TabsTrigger value="upcoming" className="text-xs relative px-2">
                   Upcoming
-                  {getUnreadCount(notifications.filter(n => n.category === 'upcoming')) > 0 && (
+                  {getUnreadCount('upcoming') > 0 && (
                     <Badge variant="destructive" className="ml-1 h-3 min-w-3 text-[10px] px-1">
-                      {getUnreadCount(notifications.filter(n => n.category === 'upcoming'))}
+                      {getUnreadCount('upcoming')}
                     </Badge>
                   )}
                 </TabsTrigger>
                 <TabsTrigger value="tagged" className="text-xs relative px-2">
                   Tagged
-                  {getUnreadCount(notifications.filter(n => n.category === 'tagged')) > 0 && (
+                  {getUnreadCount('tagged') > 0 && (
                     <Badge variant="destructive" className="ml-1 h-3 min-w-3 text-[10px] px-1">
-                      {getUnreadCount(notifications.filter(n => n.category === 'tagged'))}
+                      {getUnreadCount('tagged')}
                     </Badge>
                   )}
                 </TabsTrigger>
                 <TabsTrigger value="status" className="text-xs relative px-2">
                   Status
-                  {getUnreadCount(notifications.filter(n => n.category === 'status')) > 0 && (
+                  {getUnreadCount('status') > 0 && (
                     <Badge variant="destructive" className="ml-1 h-3 min-w-3 text-[10px] px-1">
-                      {getUnreadCount(notifications.filter(n => n.category === 'status'))}
+                      {getUnreadCount('status')}
                     </Badge>
                   )}
                 </TabsTrigger>
@@ -693,13 +455,14 @@ const Dashboard: React.FC = () => {
                       notifications.map((notification) => {
                         const IconComponent = notification.icon;
                         const isRead = readNotifications.has(notification.id);
+                        console.log(`Notification ${notification.id}: isRead=${isRead}, readSet size=${readNotifications.size}`);
                         return (
                           <div 
                             key={notification.id} 
                             className={`p-3 hover:bg-gray-50 transition-colors border-l-2 cursor-pointer ${
                               !isRead ? 'border-l-blue-500 bg-blue-50/30' : 'border-l-transparent bg-gray-50/50'
                             }`}
-                            onClick={() => markNotificationAsRead(notification.id)}
+                            onClick={() => markNotificationAsRead(notification.id, notification)}
                           >
                             <div className="flex items-start gap-2">
                               <div className={`p-1 rounded ${notification.iconColor}`}>
@@ -714,7 +477,7 @@ const Dashboard: React.FC = () => {
                                 </div>
                                 <p className={`text-xs mt-1 leading-relaxed ${
                                   !isRead ? 'text-gray-600' : 'text-gray-500'
-                                }`}>{notification.message}</p>
+                                }`}>{renderMessageWithBoldEventTitle(notification.message)}</p>
                                 {!isRead && (
                                   <Badge variant="destructive" className="text-xs mt-1 h-4 px-1">New</Badge>
                                 )}
@@ -738,7 +501,7 @@ const Dashboard: React.FC = () => {
                           className={`p-4 hover:bg-gray-50 transition-colors border-l-4 cursor-pointer ${
                             !isRead ? 'border-l-blue-500 bg-blue-50/30' : 'border-l-transparent bg-gray-50/50'
                           }`}
-                          onClick={() => markNotificationAsRead(notification.id)}
+                          onClick={() => markNotificationAsRead(notification.id, notification)}
                         >
                           <div className="flex items-start gap-3">
                             <div className={`p-2 rounded-lg bg-gray-100 ${notification.iconColor}`}>
@@ -753,7 +516,7 @@ const Dashboard: React.FC = () => {
                               </div>
                               <p className={`text-sm mt-1 ${
                                 !isRead ? 'text-gray-600' : 'text-gray-500'
-                              }`}>{notification.message}</p>
+                              }`}>{renderMessageWithBoldEventTitle(notification.message)}</p>
                               {!isRead && (
                                 <div className="mt-2">
                                   <Badge variant="destructive" className="text-xs">New</Badge>
@@ -778,7 +541,7 @@ const Dashboard: React.FC = () => {
                           className={`p-4 hover:bg-gray-50 transition-colors border-l-4 cursor-pointer ${
                             !isRead ? 'border-l-blue-500 bg-blue-50/30' : 'border-l-transparent bg-gray-50/50'
                           }`}
-                          onClick={() => markNotificationAsRead(notification.id)}
+                          onClick={() => markNotificationAsRead(notification.id, notification)}
                         >
                           <div className="flex items-start gap-3">
                             <div className={`p-2 rounded-lg bg-gray-100 ${notification.iconColor}`}>
@@ -793,7 +556,7 @@ const Dashboard: React.FC = () => {
                               </div>
                               <p className={`text-sm mt-1 ${
                                 !isRead ? 'text-gray-600' : 'text-gray-500'
-                              }`}>{notification.message}</p>
+                              }`}>{renderMessageWithBoldEventTitle(notification.message)}</p>
                               {!isRead && (
                                 <div className="mt-2">
                                   <Badge variant="destructive" className="text-xs">New</Badge>
@@ -809,11 +572,7 @@ const Dashboard: React.FC = () => {
                 
                 <TabsContent value="status" className="mt-0">
                   <div className="space-y-1">
-                    {(() => {
-                      const statusNotifications = notifications.filter(n => n.category === 'status');
-                      console.log('🔍 Status notifications in tab:', statusNotifications);
-                      return statusNotifications;
-                    })().map((notification) => {
+                    {notifications.filter(n => n.category === 'status').map((notification) => {
                       const IconComponent = notification.icon;
                       const isRead = readNotifications.has(notification.id);
                       return (
@@ -822,7 +581,7 @@ const Dashboard: React.FC = () => {
                           className={`p-4 hover:bg-gray-50 transition-colors border-l-4 cursor-pointer ${
                             !isRead ? 'border-l-blue-500 bg-blue-50/30' : 'border-l-transparent bg-gray-50/50'
                           }`}
-                          onClick={() => markNotificationAsRead(notification.id)}
+                          onClick={() => markNotificationAsRead(notification.id, notification)}
                         >
                           <div className="flex items-start gap-3">
                             <div className={`p-2 rounded-lg bg-gray-100 ${notification.iconColor}`}>
@@ -837,7 +596,7 @@ const Dashboard: React.FC = () => {
                               </div>
                               <p className={`text-sm mt-1 ${
                                 !isRead ? 'text-gray-600' : 'text-gray-500'
-                              }`}>{notification.message}</p>
+                              }`}>{renderMessageWithBoldEventTitle(notification.message)}</p>
                               {!isRead && (
                                 <div className="mt-2">
                                   <Badge variant="destructive" className="text-xs">New</Badge>
@@ -994,17 +753,17 @@ const Dashboard: React.FC = () => {
                     All Events ({requirementsOverview.length})
                   </SelectItem>
                   {getUniqueEvents().map((event) => (
-                    <SelectItem key={event.id} value={event.id}>
-                      {event.title} ({requirementsOverview.filter(req => req.eventId === event.id).length})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              
-              <Badge variant="outline" className="gap-1">
-                <AlertCircle className="h-3 w-3" />
-                {getFilteredRequirements().length} Showing
-              </Badge>
+                  <SelectItem key={event.id} value={event.id}>
+                    {event.title} ({getFilteredRequirements(event.id).length})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            
+            <Badge variant="outline" className="gap-1">
+              <AlertCircle className="h-3 w-3" />
+              {getFilteredRequirements(selectedEventFilter).length} Showing
+            </Badge>
             </div>
           </div>
         </CardHeader>
@@ -1015,7 +774,7 @@ const Dashboard: React.FC = () => {
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
                 <p className="text-sm text-gray-500 mt-2">Loading requirements...</p>
               </div>
-            ) : getFilteredRequirements().length === 0 ? (
+            ) : getFilteredRequirements(selectedEventFilter).length === 0 ? (
               <div className="text-center py-8">
                 <AlertCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">
@@ -1029,7 +788,7 @@ const Dashboard: React.FC = () => {
               </div>
             ) : (
               <div className="max-h-[600px] overflow-y-auto pr-2 space-y-4">
-                {getFilteredRequirements().map((req) => (
+                {getFilteredRequirements(selectedEventFilter).map((req) => (
                   <div key={`${req.eventId}-${req.id}`} className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-md transition-all duration-200">
                     <div className="flex items-start justify-between">
                       <div className="flex items-start gap-4 flex-1">

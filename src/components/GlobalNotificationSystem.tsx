@@ -27,9 +27,8 @@ const initializeAudioContext = async () => {
   }
 };
 
-// Global notification sound function
+// Global notification sound function with fallback
 const playGlobalNotificationSound = async () => {
-  
   try {
     await initializeAudioContext();
     
@@ -45,15 +44,36 @@ const playGlobalNotificationSound = async () => {
       oscillator.frequency.exponentialRampToValueAtTime(600, globalAudioContext.currentTime + 0.1);
       
       gainNode.gain.setValueAtTime(0, globalAudioContext.currentTime);
-      gainNode.gain.linearRampToValueAtTime(0.2, globalAudioContext.currentTime + 0.01);
-      gainNode.gain.exponentialRampToValueAtTime(0.01, globalAudioContext.currentTime + 0.3);
+      gainNode.gain.linearRampToValueAtTime(0.3, globalAudioContext.currentTime + 0.01);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, globalAudioContext.currentTime + 0.4);
       
       oscillator.start(globalAudioContext.currentTime);
-      oscillator.stop(globalAudioContext.currentTime + 0.3);
+      oscillator.stop(globalAudioContext.currentTime + 0.4);
       
+    } else {
+      // Fallback: Try to play system notification sound
+      if ('Notification' in window && Notification.permission === 'granted') {
+        // Create a silent notification just to trigger system sound
+        new Notification('', { 
+          silent: false, 
+          tag: 'notification-sound',
+          icon: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
+        });
+      }
     }
   } catch (error) {
-    // Global notification sound failed
+    // Try alternative sound method
+    try {
+      if ('speechSynthesis' in window) {
+        // Use speech synthesis as last resort for sound
+        const utterance = new SpeechSynthesisUtterance('');
+        utterance.volume = 0.01;
+        utterance.rate = 10;
+        speechSynthesis.speak(utterance);
+      }
+    } catch (e) {
+      // All sound methods failed
+    }
   }
 };
 
@@ -101,8 +121,8 @@ export default function GlobalNotificationSystem() {
     const handleGlobalNewNotification = (notificationData: any) => {
       const now = Date.now();
       
-      // Throttle notifications - prevent spam (minimum 2 seconds between notifications)
-      if (now - lastNotificationTime < 2000) {
+      // Throttle notifications - prevent spam (minimum 1 second between notifications)
+      if (now - lastNotificationTime < 1000) {
         return;
       }
       
@@ -163,10 +183,10 @@ export default function GlobalNotificationSystem() {
       }
       
       
-      // Dispatch global event to refresh Dashboard notifications
-      window.dispatchEvent(new CustomEvent('notificationUpdate', { 
-        detail: { type: 'new', data: notificationData } 
-      }));
+      // Dispatch global event to refresh Dashboard notifications (DISABLED - was causing infinite loops)
+      // window.dispatchEvent(new CustomEvent('notificationUpdate', { 
+      //   detail: { type: 'new', data: notificationData } 
+      // }));
       
       // Create a custom toast with Framer Motion animation
       toast.custom((t) => (
@@ -206,14 +226,16 @@ export default function GlobalNotificationSystem() {
       });
     };
 
-    // Set up the global real-time listener
+    // Set up the global listener
     onNewNotification(handleGlobalNewNotification);
 
-    // Cleanup
+    // Cleanup function
     return () => {
-      offNewNotification();
+      if (offNewNotification) {
+        offNewNotification();
+      }
     };
-  }, [onNewNotification, offNewNotification]);
+  }, [onNewNotification, offNewNotification, userId]);
 
   // Clear old shown notifications every 5 minutes to prevent memory buildup
   useEffect(() => {

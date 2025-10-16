@@ -178,8 +178,12 @@ export const useUnreadMessages = (currentUserId?: string): UseUnreadMessagesRetu
       return;
     }
 
-    // Initial fetch only (no more background polling since real-time works perfectly)
-    fetchUnreadCounts();
+    // TEMPORARILY DISABLED - This hook was causing too many API calls on login
+    // fetchUnreadCounts();
+    
+    // Set loading to false and default count to 0 for now
+    setIsLoading(false);
+    setTotalUnreadCount(0);
 
     // Disabled background polling - real-time events handle everything now
     // const interval = setInterval(fetchUnreadCounts, 300000);

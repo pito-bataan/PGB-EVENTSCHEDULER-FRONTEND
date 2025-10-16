@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { useMessagesStore } from '@/stores/messagesStore';
 
 // Authenticated Image Component
 const AuthenticatedImage: React.FC<{ 
@@ -139,21 +140,36 @@ interface Conversation {
 }
 
 const MessagesPage: React.FC = () => {
-  const [selectedConversation, setSelectedConversation] = useState<string | null>(null);
-  const [newMessage, setNewMessage] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [expandedEvents, setExpandedEvents] = useState<Set<string>>(new Set());
-  const [isUploading, setIsUploading] = useState(false);
+  // Zustand store - replaces all useState calls above!
+  const {
+    conversations,
+    messages,
+    unreadCounts,
+    currentUser,
+    selectedConversation,
+    newMessage,
+    searchQuery,
+    expandedEvents,
+    isUploading,
+    loading,
+    initializeUser,
+    setSelectedConversation,
+    setNewMessage,
+    setSearchQuery,
+    toggleEventExpansion,
+    sendMessage,
+    sendFile,
+    addNewMessage,
+    updateMessageReadStatus,
+    getFilteredConversations,
+    getEventUnreadCount,
+    getLatestMessage,
+    getSelectedConversation
+  } = useMessagesStore();
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const currentRoomRef = useRef<string | null>(null);
-
-  // State for real event conversations
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [messages, setMessages] = useState<{ [conversationId: string]: Message[] }>({});
-  const [unreadCounts, setUnreadCounts] = useState<{ [conversationId: string]: number }>({});
 
   // Re-enable Socket.IO for real-time messaging
   const { joinConversation, leaveConversation, onNewMessage, offNewMessage, onMessagesRead, offMessagesRead } = useSocket(currentUser?.id);
@@ -163,453 +179,70 @@ const MessagesPage: React.FC = () => {
   const globalUnreadCount = 0; // Disabled for now
 
 
-  // Get current user from localStorage
+  // Initialize user and fetch conversations using Zustand store
   useEffect(() => {
-    const userData = localStorage.getItem('userData');
-    if (userData) {
-      try {
-        const user = JSON.parse(userData);
-        const currentUserData = {
-          id: user._id || '1',
-          name: user.email || 'User',
-          department: user.department || user.departmentName || 'Unknown',
-          isOnline: true
-        };
-        setCurrentUser(currentUserData);
-        
-        // Fetch events after setting current user
-        fetchEventConversations(user);
-      } catch (error) {
-        setLoading(false);
-      }
-    } else {
-      setLoading(false);
-    }
-  }, []);
+    initializeUser();
+  }, [initializeUser]);
 
-  // Fetch events and create conversations
-  const fetchEventConversations = async (user: any) => {
-    try {
-      const token = localStorage.getItem('authToken');
-      const response = await fetch('http://localhost:5000/api/events', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch events');
-      }
-
-      const eventsData = await response.json();
-      const events = eventsData.data || [];
-      
-      // Filter events where current user is involved
-      const userDepartment = user.department || user.departmentName;
-      const relevantEvents = events.filter((event: any) => {
-        // Show events where user is requestor OR user's department is tagged
-        return event.requestorDepartment === userDepartment || 
-               (event.taggedDepartments && event.taggedDepartments.includes(userDepartment));
-      });
-
-      // Fetch users for tagged departments
-      const conversationsPromises = relevantEvents.map(async (event: any) => {
-        const participants: User[] = [];
-        
-        // Determine who the current user should see based on their role in the event
-        const isRequestor = event.requestorDepartment === userDepartment;
-        
-        if (isRequestor) {
-          // If current user is the requestor, show users from tagged departments
-          
-          if (event.taggedDepartments) {
-            for (const deptName of event.taggedDepartments) {
-              try {
-                // Fetch users from this department
-                const usersResponse = await fetch(`http://localhost:5000/api/users/department/${deptName}`, {
-                  headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                  }
-                });
-                
-                if (usersResponse.ok) {
-                  const usersData = await usersResponse.json();
-                  const deptUsers = usersData.data || usersData || [];
-                  // Add department users to participants
-                  deptUsers.forEach((deptUser: any) => {
-                    if (!participants.find(p => p.id === deptUser._id)) {
-                      participants.push({
-                        id: deptUser._id,
-                        name: deptUser.email,
-                        department: deptUser.department || deptUser.departmentName || deptName,
-                        isOnline: Math.random() > 0.5, // Mock online status
-                        lastSeen: new Date(Date.now() - Math.random() * 2 * 60 * 60 * 1000)
-                      });
-                    }
-                  });
-                }
-              } catch (error) {
-                // Handle error silently
-              }
-            }
-          }
-        } else {
-          // If current user is from tagged department, show the requestor
-          
-          participants.push({
-            id: event.createdBy || 'unknown',
-            name: event.contactEmail || event.requestor || 'Unknown Requestor',
-            department: event.requestorDepartment || 'Unknown',
-            isOnline: Math.random() > 0.5, // Mock online status
-            lastSeen: new Date(Date.now() - Math.random() * 2 * 60 * 60 * 1000)
-          });
-          
-          // Also add other users from the same tagged department (colleagues)
-          try {
-            const usersResponse = await fetch(`http://localhost:5000/api/users/department/${userDepartment}`, {
-              headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json'
-              }
-            });
-            
-            if (usersResponse.ok) {
-              const usersData = await usersResponse.json();
-              const deptUsers = usersData.data || [];
-              
-              // Add department colleagues (excluding current user)
-              deptUsers.forEach((deptUser: any) => {
-                if (deptUser._id !== user._id && !participants.find(p => p.id === deptUser._id)) {
-                  participants.push({
-                    id: deptUser._id,
-                    name: deptUser.email,
-                    department: deptUser.department || deptUser.departmentName || userDepartment,
-                    isOnline: Math.random() > 0.5, // Mock online status
-                    lastSeen: new Date(Date.now() - Math.random() * 2 * 60 * 60 * 1000)
-                  });
-                }
-              });
-            }
-          } catch (error) {
-            // Handle error silently
-          }
-        }
-
-        
-        return {
-          id: event._id,
-          participants,
-          lastMessage: {
-            id: 'placeholder',
-            senderId: event.createdBy || 'unknown',
-            content: `Event "${event.eventTitle}" has been created. Let's coordinate the requirements!`,
-            timestamp: new Date(event.createdAt || Date.now()),
-            isRead: true,
-            type: 'text' as const
-          },
-          unreadCount: 0, // Will be updated when real messages are implemented
-          isGroup: true,
-          groupName: event.eventTitle,
-          eventId: event._id,
-          eventTitle: event.eventTitle
-        };
-      });
-
-      const conversations = await Promise.all(conversationsPromises);
-      setConversations(conversations);
-      
-      // Initialize some mock unread counts for demonstration
-      const mockUnreadCounts: { [key: string]: number } = {};
-      conversations.forEach(conv => {
-        conv.participants.forEach((participant: User) => {
-          if (participant.id !== user._id) {
-            const actualUserId = typeof participant.id === 'object' ? (participant.id as any)._id : participant.id;
-            const conversationId = `${conv.id}-${actualUserId}`;
-            // Add some random unread counts for demo
-            mockUnreadCounts[conversationId] = Math.floor(Math.random() * 5);
-          }
-        });
-      });
-      setUnreadCounts(mockUnreadCounts);
-      
-      setLoading(false);
-    } catch (error) {
-      setLoading(false);
-    }
-  };
+  // This function is now handled by the Zustand store
 
   // Auto scroll to bottom when new messages arrive
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [selectedConversation, messages]);
 
-  // Filter conversations based on search
-  const filteredConversations = conversations.filter(conv => {
-    if (!searchQuery) return true;
-    
-    const searchLower = searchQuery.toLowerCase();
-    return (
-      conv.participants.some(p => p.name.toLowerCase().includes(searchLower)) ||
-      conv.groupName?.toLowerCase().includes(searchLower) ||
-      conv.eventTitle?.toLowerCase().includes(searchLower) ||
-      conv.lastMessage.content.toLowerCase().includes(searchLower)
-    );
-  });
+  // Get filtered conversations from store
+  const filteredConversations = getFilteredConversations();
 
-  // Memoize event unread counts to prevent unnecessary recalculations and flickering
-  const eventUnreadCounts = useMemo(() => {
-    const counts: { [eventId: string]: number } = {};
-    
-    filteredConversations.forEach(conv => {
-      const eventId = conv.eventId || conv.id;
-      if (!counts[eventId]) {
-        // Sum up unread counts for all participants in this specific event (excluding current user)
-        const total = conv.participants.reduce((convTotal, participant) => {
-          const actualUserId = typeof participant.id === 'object' ? (participant.id as any)._id : participant.id;
-          if (actualUserId !== currentUser?.id) {
-            const conversationId = `${conv.id}-${actualUserId}`;
-            const count = unreadCounts[conversationId] || 0;
-            return convTotal + count;
-          }
-          return convTotal;
-        }, 0);
-        counts[eventId] = total;
-      }
-    });
-    
-    return counts;
-  }, [filteredConversations, unreadCounts, currentUser?.id]);
-
-  // Helper function to get event unread count
-  const getEventUnreadCount = (eventId: string) => {
-    const count = eventUnreadCounts[eventId] || 0;
-    return count;
-  };
+  // Event unread counts are now handled by the Zustand store
 
   // Note: Total unread count is now calculated globally by useUnreadMessages hook
 
-  // Get selected conversation data
-  const selectedConv = conversations.find(c => c.id === selectedConversation?.split('-')[0]);
+  // Get selected conversation data from store
+  const { conversation: selectedConv, user: selectedUser } = getSelectedConversation();
   const selectedUserId = selectedConversation?.split('-')[1];
-  const selectedUser = selectedConv?.participants.find(p => {
-    // Handle both string and object ID cases
-    const participantId = typeof p.id === 'object' ? (p.id as any)._id : p.id;
-    return participantId === selectedUserId;
-  });
   const conversationMessages = selectedConversation ? messages[selectedConversation] || [] : [];
   
 
-  // Fetch messages and unread counts for all conversations
-  const fetchAllConversationDataForConversations = async (conversationsToFetch: Conversation[]) => {
-    if (!currentUser) {
-      return;
-    }
-    
-    try {
-      const token = localStorage.getItem('authToken');
-      const counts: { [conversationId: string]: number } = {};
-      const allMessages: { [conversationId: string]: Message[] } = {};
-      
-      for (const conv of conversationsToFetch) {
-        for (const participant of conv.participants) {
-          if (participant.id !== currentUser.id) {
-            const participantId = typeof participant.id === 'object' ? (participant.id as any)._id : participant.id;
-            const conversationId = `${conv.id}-${participantId}`;
-            
-            try {
-              // Fetch messages for this conversation
-              const messagesResponse = await fetch(`http://localhost:5000/api/messages/conversation/${conv.eventId || conv.id}/${participantId}`, {
-                headers: {
-                  'Authorization': `Bearer ${token}`,
-                  'Content-Type': 'application/json'
-                }
-              });
-              
-              if (messagesResponse.ok) {
-                const messagesData = await messagesResponse.json();
-                allMessages[conversationId] = messagesData.data || [];
-              }
-              
-              // Fetch unread count for this conversation
-              const unreadResponse = await fetch(`http://localhost:5000/api/messages/unread-count/${conv.eventId || conv.id}/${participantId}`, {
-                headers: {
-                  'Authorization': `Bearer ${token}`,
-                  'Content-Type': 'application/json'
-                }
-              });
-              
-              if (unreadResponse.ok) {
-                const unreadData = await unreadResponse.json();
-                counts[conversationId] = unreadData.data.unreadCount;
-              }
-            } catch (error) {
-              // Handle error silently
-            }
-          }
-        }
-      }
-      
-      setMessages(allMessages);
-      setUnreadCounts(counts);
-    } catch (error) {
-      // Handle error silently
-    }
-  };
+  // This function is now handled by the Zustand store
 
-  // Mark conversation as read when user opens it
-  const markConversationAsRead = async (eventId: string, userId: string) => {
-    try {
-      const token = localStorage.getItem('authToken');
-      // Get the current unread count before marking as read
-      const conversationId = `${eventId}-${userId}`;
-      const currentUnreadCount = unreadCounts[conversationId] || 0;
-      
-      const response = await fetch(`http://localhost:5000/api/messages/mark-conversation-read/${eventId}/${userId}`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
+  // This function is now handled by the Zustand store
 
-      if (response.ok) {
-        const data = await response.json();
-        
-        // Update local unread counts
-        setUnreadCounts(prev => ({
-          ...prev,
-          [conversationId]: 0
-        }));
+  // This function is now handled by the Zustand store
 
-        // 🔥 NOTIFY GLOBAL HOOK IMMEDIATELY via custom event
-        if (currentUnreadCount > 0) {
-          window.dispatchEvent(new CustomEvent('messagesReadGlobal', {
-            detail: {
-              readerId: currentUser?.id,
-              messageCount: currentUnreadCount,
-              conversationId,
-              eventId,
-              userId
-            }
-          }));
-        }
-      }
-    } catch (error) {
-      // Handle error silently
-    }
-  };
-
-  // Fetch messages for a conversation
-  const fetchMessages = async (eventId: string, userId: string) => {
-    try {
-      const token = localStorage.getItem('authToken');
-      
-      const response = await fetch(`http://localhost:5000/api/messages/conversation/${eventId}/${userId}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.ok) {
-        const messagesData = await response.json();
-        setMessages(prev => ({
-          ...prev,
-          [`${eventId}-${userId}`]: messagesData.data || []
-        }));
-      }
-    } catch (error) {
-      // Handle error silently
-    }
-  };
-
-  // Load messages when conversation is selected (with debouncing)
-  useEffect(() => {
-    if (selectedConversation && selectedConv && selectedUserId && typeof selectedUserId === 'string') {
-      
-      // Add debouncing to prevent multiple rapid API calls
-      const timeoutId = setTimeout(() => {
-        fetchMessages(selectedConv.eventId || selectedConv.id, selectedUserId);
-        // Mark messages as read when user actually opens the conversation
-        markConversationAsRead(selectedConv.eventId || selectedConv.id, selectedUserId);
-      }, 200);
-      
-      return () => clearTimeout(timeoutId);
-    }
-  }, [selectedConversation, selectedConv, selectedUserId]);
+  // Conversation selection is now handled by the Zustand store
 
   // Set up real-time message listener
   useEffect(() => {
     onNewMessage((data: any) => {
       const { message, conversationId } = data;
       
-      // Add message to the appropriate conversation
-      setMessages(prev => ({
-        ...prev,
-        [conversationId]: [...(prev[conversationId] || []), message]
-      }));
-      
-      // Update unread count if not in current conversation
-      if (conversationId !== selectedConversation) {
-        setUnreadCounts(prev => ({
-          ...prev,
-          [conversationId]: (prev[conversationId] || 0) + 1
-        }));
-      }
-      
-      // Don't refresh all conversation data on every new message to avoid performance issues
-      // The message is already added to the local state above
+      // Add message using Zustand store
+      addNewMessage(conversationId, message);
     });
 
     // Cleanup listener on unmount
     return () => {
-      // Re-enable proper cleanup for real-time functionality
       offNewMessage();
     };
-  }, [onNewMessage, offNewMessage, selectedConversation]);
+  }, [onNewMessage, offNewMessage, addNewMessage]);
 
   // Set up real-time seen status listener
   useEffect(() => {
     onMessagesRead((data: any) => {
       const { eventId, readerId } = data;
       
-      // Update messages to mark them as read
-      setMessages(prev => {
-        const updatedMessages = { ...prev };
-        
-        // Find the conversation and mark sender's messages as read
-        Object.keys(updatedMessages).forEach(convId => {
-          if (convId.startsWith(eventId)) {
-            updatedMessages[convId] = updatedMessages[convId].map(message => {
-              // Mark as read if current user sent the message and it was read by the reader
-              if (message.senderId === currentUser?.id || (message.senderId as any)?._id === currentUser?.id) {
-                return { ...message, isRead: true };
-              }
-              return message;
-            });
-          }
-        });
-        
-        return updatedMessages;
-      });
-      
+      // Update message read status using Zustand store
+      updateMessageReadStatus(eventId, readerId);
     });
 
     // Cleanup listener on unmount
     return () => {
-      // Re-enable proper cleanup for real-time functionality
       offMessagesRead();
     };
-  }, [onMessagesRead, offMessagesRead, currentUser?.id]);
+  }, [onMessagesRead, offMessagesRead, updateMessageReadStatus]);
 
-  // Fetch all conversation data when conversations are loaded
-  useEffect(() => {
-    if (conversations.length > 0 && currentUser) {
-      fetchAllConversationDataForConversations(conversations);
-    }
-  }, [conversations.length, currentUser?.id]);
+  // Conversation data fetching is now handled by the Zustand store
 
   // Note: Badge count is now handled globally by useUnreadMessages hook
 
@@ -657,45 +290,15 @@ const MessagesPage: React.FC = () => {
   const handleSendFile = async (file: File) => {
     if (!selectedConversation || !selectedConv || !selectedUserId) return;
     
-    setIsUploading(true);
+    const success = await sendFile(selectedConv.eventId || selectedConv.id, selectedUserId, file, newMessage);
     
-    try {
-      const token = localStorage.getItem('authToken');
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('eventId', selectedConv.eventId || selectedConv.id);
-      formData.append('receiverId', selectedUserId);
-      formData.append('content', newMessage.trim());
-
-      const response = await fetch('http://localhost:5000/api/messages/send-file', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        },
-        body: formData
-      });
-
-      if (response.ok) {
-        const messageData = await response.json();
-        
-        // Add the new message to local state
-        setMessages(prev => ({
-          ...prev,
-          [selectedConversation]: [...(prev[selectedConversation] || []), messageData.data]
-        }));
-        
-        setNewMessage('');
-        
-        // Reset file input
-        if (fileInputRef.current) {
-          fileInputRef.current.value = '';
-        }
+    if (success) {
+      setNewMessage('');
+      
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
       }
-    } catch (error) {
-      // Handle error silently
-    } finally {
-      // Always reset uploading state
-      setIsUploading(false);
     }
   };
 
@@ -736,35 +339,10 @@ const MessagesPage: React.FC = () => {
   const handleSendMessage = async () => {
     if (!newMessage.trim() || !selectedConversation || !selectedConv || !selectedUserId) return;
     
-    try {
-      const token = localStorage.getItem('authToken');
-      const response = await fetch('http://localhost:5000/api/messages/send', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          eventId: selectedConv.eventId || selectedConv.id,
-          receiverId: selectedUserId,
-          content: newMessage.trim(),
-          messageType: 'text'
-        })
-      });
-
-      if (response.ok) {
-        const messageData = await response.json();
-        
-        // Add the new message to local state
-        setMessages(prev => ({
-          ...prev,
-          [selectedConversation]: [...(prev[selectedConversation] || []), messageData.data]
-        }));
-        
-        setNewMessage('');
-      }
-    } catch (error) {
-      // Handle error silently
+    const success = await sendMessage(selectedConv.eventId || selectedConv.id, selectedUserId, newMessage);
+    
+    if (success) {
+      setNewMessage('');
     }
   };
 
@@ -782,15 +360,7 @@ const MessagesPage: React.FC = () => {
     }
   };
 
-  // Get latest message for a conversation
-  const getLatestMessage = (conversationId: string) => {
-    const conversationMessages = messages[conversationId] || [];
-    if (conversationMessages.length === 0) return null;
-    
-    // Get the most recent message
-    const latestMessage = conversationMessages[conversationMessages.length - 1];
-    return latestMessage;
-  };
+  // This function is now handled by the Zustand store
 
   return (
     <div className="min-h-screen bg-gray-100 p-4">
@@ -843,13 +413,7 @@ const MessagesPage: React.FC = () => {
             const toggleExpanded = (e: React.MouseEvent) => {
               e.stopPropagation();
               const eventKey = conv.eventId || conv.id;
-              const newExpanded = new Set(expandedEvents);
-              if (isExpanded) {
-                newExpanded.delete(eventKey);
-              } else {
-                newExpanded.add(eventKey);
-              }
-              setExpandedEvents(newExpanded);
+              toggleEventExpansion(eventKey);
             };
             
             return (
