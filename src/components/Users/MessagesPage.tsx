@@ -16,7 +16,7 @@ const AuthenticatedImage: React.FC<{
     const loadImage = async () => {
       try {
         const token = localStorage.getItem('authToken');
-        const response = await fetch(`http://localhost:5000/api/messages/file/${filePath}`, {
+        const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/messages/file/${filePath}`, {
           headers: {
             'Authorization': `Bearer ${token}`
           }
@@ -456,7 +456,7 @@ const MessagesPage: React.FC = () => {
       // Extract just the filename from the full path (handle both / and \ separators)
       const filename = filePath.split(/[/\\]/).pop() || filePath;
       
-      const response = await fetch(`http://localhost:5000/api/messages/file/${filename}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/messages/file/${filename}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }

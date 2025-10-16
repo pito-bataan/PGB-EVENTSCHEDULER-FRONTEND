@@ -24,7 +24,7 @@ export const useSocket = (userId?: string) => {
       isConnecting = true;
       
       try {
-        globalSocket = io('http://localhost:5000', {
+        globalSocket = io(import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000', {
           transports: ['websocket', 'polling'],
           // Add connection options to prevent spam
           forceNew: false,

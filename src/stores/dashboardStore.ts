@@ -4,7 +4,7 @@ import { devtools } from 'zustand/middleware';
 import axios from 'axios';
 import { AlertCircle, Calendar } from 'lucide-react';
 
-const API_BASE_URL = 'http://localhost:5000/api';
+const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api`;
 
 // Helper function to get status color
 const getStatusColor = (status: string) => {

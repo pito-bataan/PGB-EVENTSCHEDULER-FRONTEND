@@ -220,7 +220,7 @@ const MyCalendarPage: React.FC = () => {
       const dateString = format(date, 'yyyy-MM-dd');
       
       // Get department info
-      const departmentsResponse = await fetch('http://localhost:5000/api/departments/visible');
+      const departmentsResponse = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/departments/visible`);
       if (!departmentsResponse.ok) {
         throw new Error(`Failed to fetch departments: ${departmentsResponse.statusText}`);
       }
@@ -233,7 +233,7 @@ const MyCalendarPage: React.FC = () => {
       }
 
       // Make actual API call to save availability
-      const response = await fetch('http://localhost:5000/api/resource-availability/availability/bulk', {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/resource-availability/availability/bulk`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`,

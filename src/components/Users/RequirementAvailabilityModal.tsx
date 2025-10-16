@@ -193,7 +193,7 @@ const RequirementAvailabilityModal: React.FC<RequirementAvailabilityModalProps> 
       };
 
       // Fetch all events and filter client-side for date range matching
-      const response = await fetch(`http://localhost:5000/api/events`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/events`, {
         headers
       });
 
@@ -299,7 +299,7 @@ const RequirementAvailabilityModal: React.FC<RequirementAvailabilityModalProps> 
         'Content-Type': 'application/json'
       };
 
-      const response = await fetch(`http://localhost:5000/api/events/${eventId}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/events/${eventId}`, {
         headers
       });
 
