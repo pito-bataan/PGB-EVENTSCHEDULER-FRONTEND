@@ -359,10 +359,82 @@ export const useMyCalendarStore = create<MyCalendarState>()(
         }
       },
 
-      // Bulk set unavailable (similar structure)
+      // Bulk set unavailable
       bulkSetUnavailable: async (calendarMonth: Date) => {
-        // Similar implementation to bulkSetAvailable but with isAvailable: false
-        // Implementation details omitted for brevity - follows same pattern
+        const { currentUser, requirements, getCurrentAndFutureDates, setProgressModal } = get();
+        
+        if (!currentUser?.department || requirements.length === 0) {
+          throw new Error('No requirements found for your department.');
+        }
+
+        set({ bulkLoading: true });
+        setProgressModal(true, 'unavailable', 0, 'Initializing...');
+        
+        try {
+          // Get department info
+          const response = await fetch(`${API_BASE_URL}/api/departments/visible`);
+          if (!response.ok) throw new Error('Failed to fetch departments');
+          
+          const departmentsData = await response.json();
+          const department = departmentsData.data?.find((dept: any) => dept.name === currentUser.department);
+          if (!department) throw new Error('Department not found');
+
+          const futureDates = getCurrentAndFutureDates(calendarMonth);
+          setProgressModal(true, 'unavailable', 10, `Processing ${futureDates.length} dates...`);
+
+          // Process in batches
+          const batchSize = 5;
+          for (let i = 0; i < futureDates.length; i += batchSize) {
+            const batch = futureDates.slice(i, i + batchSize);
+            const progress = (i / futureDates.length) * 80 + 10;
+            
+            setProgressModal(true, 'unavailable', progress, `Processing batch ${Math.floor(i/batchSize) + 1}...`);
+            
+            const batchPromises = batch.map(async (dateString: string) => {
+              const availabilities = requirements.map(req => ({
+                requirementId: req._id,
+                requirementText: req.text,
+                isAvailable: false,
+                quantity: 0,
+                maxCapacity: req.totalQuantity || 1
+              }));
+
+              const token = localStorage.getItem('authToken');
+              return fetch(`${API_BASE_URL}/api/resource-availability/availability/bulk`, {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  departmentId: department._id,
+                  departmentName: department.name,
+                  date: dateString,
+                  requirements: availabilities
+                })
+              });
+            });
+
+            await Promise.all(batchPromises);
+          }
+
+          // Refresh data
+          setProgressModal(true, 'unavailable', 95, 'Refreshing data...');
+          await get().fetchAvailabilityData(department._id, true);
+          
+          setProgressModal(true, 'unavailable', 100, 'Complete!');
+          
+          // Auto-close after delay
+          setTimeout(() => {
+            setProgressModal(false);
+          }, 1500);
+          
+        } catch (error) {
+          setProgressModal(false);
+          throw error;
+        } finally {
+          set({ bulkLoading: false });
+        }
       },
 
       // Bulk delete availability

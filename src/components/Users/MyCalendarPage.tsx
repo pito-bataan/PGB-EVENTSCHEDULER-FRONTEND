@@ -320,7 +320,7 @@ const MyCalendarPage: React.FC = () => {
     }
   };
 
-  // Delete all availability data for the current month
+  // Delete all availability data for current and future dates in the month
   const handleDeleteAllAvailability = async () => {
     if (!currentUser?.department || requirements.length === 0) {
       toast.error('No requirements found for your department.');
@@ -330,8 +330,57 @@ const MyCalendarPage: React.FC = () => {
     setShowDeleteDialog(false);
     
     try {
-      await bulkDeleteAvailability(calendarCurrentMonth);
-      toast.success(`Successfully deleted all availability data for ${format(calendarCurrentMonth, 'MMMM yyyy')}! Calendar has been cleared.`);
+      const token = localStorage.getItem('authToken');
+      
+      // Get department info
+      const deptResponse = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/departments/visible`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!deptResponse.ok) throw new Error('Failed to fetch departments');
+      
+      const departmentsData = await deptResponse.json();
+      const department = departmentsData.data?.find((dept: any) => dept.name === currentUser.department);
+      
+      if (!department) throw new Error('Department not found');
+
+      // Get current and future dates for the month
+      const futureDates = getCurrentAndFutureDates(calendarCurrentMonth);
+      
+      if (futureDates.length === 0) {
+        toast.info('No current or future dates to delete in this month.');
+        return;
+      }
+
+      // Delete each current/future date
+      const deletePromises = futureDates.map(async (dateStr) => {
+        const response = await fetch(
+          `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/resource-availability/department/${department._id}/date/${dateStr}`,
+          {
+            method: 'DELETE',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+        
+        if (!response.ok) {
+          throw new Error(`Failed to delete date ${dateStr}`);
+        }
+        
+        return response.json();
+      });
+
+      await Promise.all(deletePromises);
+      
+      // Refresh availability data
+      await fetchAvailabilityData(department._id, true);
+      
+      toast.success(`Successfully deleted availability data for ${futureDates.length} current/future dates in ${format(calendarCurrentMonth, 'MMMM yyyy')}!`);
     } catch (error) {
       toast.error(`Error deleting availability data: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
@@ -376,7 +425,6 @@ const MyCalendarPage: React.FC = () => {
     });
   };
 
-
   // Handle selective date deletion
   const handleSelectiveDateDeletion = async () => {
     if (selectedDatesForDeletion.length === 0) {
@@ -392,8 +440,47 @@ const MyCalendarPage: React.FC = () => {
     setShowSelectiveDateDeleteDialog(false);
     
     try {
-      // For now, use the bulk delete function - this could be enhanced to handle selective dates
-      await bulkDeleteAvailability(calendarCurrentMonth);
+      const token = localStorage.getItem('authToken');
+      
+      // Get department info
+      const deptResponse = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/departments/visible`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!deptResponse.ok) throw new Error('Failed to fetch departments');
+      
+      const departmentsData = await deptResponse.json();
+      const department = departmentsData.data?.find((dept: any) => dept.name === currentUser.department);
+      
+      if (!department) throw new Error('Department not found');
+
+      // Delete each selected date
+      const deletePromises = selectedDatesForDeletion.map(async (dateStr) => {
+        const response = await fetch(
+          `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/resource-availability/department/${department._id}/date/${dateStr}`,
+          {
+            method: 'DELETE',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+        
+        if (!response.ok) {
+          throw new Error(`Failed to delete date ${dateStr}`);
+        }
+        
+        return response.json();
+      });
+
+      await Promise.all(deletePromises);
+      
+      // Refresh availability data
+      await fetchAvailabilityData(department._id, true);
       
       // Clear selected dates and exit selection mode
       setSelectedDatesForDeletion([]);
@@ -405,7 +492,6 @@ const MyCalendarPage: React.FC = () => {
       toast.error(`Error deleting selected dates: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
-
 
   // Calculate summary stats for the viewed month using store getter
   const { available: availableInMonth, unavailable: unavailableInMonth, total: totalRequirements } = getMonthSummary(calendarCurrentMonth);
