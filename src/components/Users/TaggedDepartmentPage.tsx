@@ -251,8 +251,6 @@ const TaggedDepartmentPage: React.FC = () => {
       case 'confirmed': return 'bg-green-500';
       case 'pending': return 'bg-yellow-500';
       case 'declined': return 'bg-red-500';
-      case 'partially_fulfill': return 'bg-blue-500';
-      case 'in_preparation': return 'bg-purple-500';
       default: return 'bg-gray-500';
     }
   };
@@ -262,8 +260,6 @@ const TaggedDepartmentPage: React.FC = () => {
       case 'confirmed': return <CheckCircle className="w-4 h-4 text-green-500" />;
       case 'pending': return <Clock className="w-4 h-4 text-yellow-500" />;
       case 'declined': return <XCircle className="w-4 h-4 text-red-500" />;
-      case 'partially_fulfill': return <HelpCircle className="w-4 h-4 text-blue-500" />;
-      case 'in_preparation': return <Loader2 className="w-4 h-4 text-purple-500" />;
       default: return <AlertCircle className="w-4 h-4 text-gray-500" />;
     }
   };
@@ -634,18 +630,6 @@ const TaggedDepartmentPage: React.FC = () => {
                                 {counts.declined}
                               </Badge>
                             </TabsTrigger>
-                            <TabsTrigger value="partially_fulfill" className="flex items-center gap-2">
-                              Partially Fulfilled
-                              <Badge className="text-[10px] h-4 px-1.5 bg-red-500 text-white hover:bg-red-600">
-                                {counts.partially_fulfill}
-                              </Badge>
-                            </TabsTrigger>
-                            <TabsTrigger value="in_preparation" className="flex items-center gap-2">
-                              In Preparation
-                              <Badge className="text-[10px] h-4 px-1.5 bg-red-500 text-white hover:bg-red-600">
-                                {counts.in_preparation}
-                              </Badge>
-                            </TabsTrigger>
                           </>
                         );
                       })()
@@ -724,18 +708,6 @@ const TaggedDepartmentPage: React.FC = () => {
                                         <div className="flex items-center gap-2">
                                           <XCircle className="h-3 w-3 text-red-500" />
                                           Decline
-                                        </div>
-                                      </SelectItem>
-                                      <SelectItem value="partially_fulfill">
-                                        <div className="flex items-center gap-2">
-                                          <HelpCircle className="h-3 w-3 text-blue-500" />
-                                          Partially Fulfill
-                                        </div>
-                                      </SelectItem>
-                                      <SelectItem value="in_preparation">
-                                        <div className="flex items-center gap-2">
-                                          <Loader2 className="h-3 w-3 text-purple-500" />
-                                          In Preparation
                                         </div>
                                       </SelectItem>
                                     </SelectContent>
@@ -887,7 +859,7 @@ const TaggedDepartmentPage: React.FC = () => {
                   </TabsContent>
 
                   {/* Status-specific tabs */}
-                  {['confirmed', 'pending', 'declined', 'partially_fulfill', 'in_preparation'].map((status) => (
+                  {['confirmed', 'pending', 'declined'].map((status) => (
                     <TabsContent key={status} value={status} className="flex-1 overflow-hidden">
                       <ScrollArea className="h-full">
                         <div className="px-6 py-4 space-y-4">
@@ -961,18 +933,6 @@ const TaggedDepartmentPage: React.FC = () => {
                                                   <div className="flex items-center gap-2">
                                                     <XCircle className="h-3 w-3 text-red-500" />
                                                     Decline
-                                                  </div>
-                                                </SelectItem>
-                                                <SelectItem value="partially_fulfill">
-                                                  <div className="flex items-center gap-2">
-                                                    <HelpCircle className="h-3 w-3 text-blue-500" />
-                                                    Partially Fulfill
-                                                  </div>
-                                                </SelectItem>
-                                                <SelectItem value="in_preparation">
-                                                  <div className="flex items-center gap-2">
-                                                    <Loader2 className="h-3 w-3 text-purple-500" />
-                                                    In Preparation
                                                   </div>
                                                 </SelectItem>
                                               </SelectContent>
