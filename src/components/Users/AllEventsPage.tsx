@@ -614,7 +614,7 @@ const AllEventsPage: React.FC = () => {
                       <div className="bg-accent/30 rounded-lg p-2.5">
                         <p className="text-xs text-muted-foreground text-center">
                           <span className="font-medium text-foreground">Total:</span>{' '}
-                          {selectedEvent.participants + selectedEvent.vip + selectedEvent.vvip} participants
+                          {selectedEvent.participants + (selectedEvent.vip || 0) + (selectedEvent.vvip || 0)} participants
                         </p>
                       </div>
                     </div>
