@@ -1,97 +1,84 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import CustomCalendar from '@/components/ui/custom-calendar';
 import type { CalendarEvent } from '@/components/ui/custom-calendar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Badge } from '@/components/ui/badge';
-import { Calendar, MapPin, Clock } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Calendar, MapPin, Clock, RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
-import axios from 'axios';
-import { toast } from 'sonner';
-
-interface Event {
-  _id: string;
-  eventTitle: string;
-  location: string;
-  startDate: string;
-  startTime: string;
-  endDate: string;
-  endTime: string;
-  status: string;
-  requestor: string;
-  requestorDepartment: string;
-}
+import { getGlobalSocket } from '@/hooks/useSocket';
+import { useAdminCalendarStore, type Event } from '@/stores/adminCalendarStore';
 
 const AdminCalendarPage: React.FC = () => {
-  const [events, setEvents] = useState<Event[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
+  
+  // Zustand store
+  const {
+    events,
+    calendarEvents,
+    loading,
+    fetchEvents,
+    getEventsForDate
+  } = useAdminCalendarStore();
 
-  // API Configuration
-  const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api`;
-  const getAuthHeaders = () => {
-    const token = localStorage.getItem('authToken');
-    return {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    };
-  };
+  // Fetch events on mount
+  useEffect(() => {
+    fetchEvents(); // Will use cache if available
+  }, [fetchEvents]);
 
-  // Fetch all events
-  const fetchEvents = async () => {
-    try {
-      setLoading(true);
-      const response = await axios.get(`${API_BASE_URL}/events`, {
-        headers: getAuthHeaders()
-      });
-
-      if (response.data.success) {
-        const allEvents = response.data.data;
-        // Filter only approved and submitted events
-        const filteredEvents = allEvents.filter(
-          (event: Event) => event.status === 'approved' || event.status === 'submitted'
-        );
-        setEvents(filteredEvents);
-        
-        // Convert to calendar events
-        const calEvents = convertToCalendarEvents(filteredEvents);
-        setCalendarEvents(calEvents);
-      }
-    } catch (error: any) {
-      console.error('Error fetching events:', error);
-      toast.error('Failed to fetch events');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Convert events to calendar format
-  const convertToCalendarEvents = (events: Event[]): CalendarEvent[] => {
-    const calEvents: CalendarEvent[] = [];
+  // Listen for real-time event updates via Socket.IO
+  useEffect(() => {
+    const socket = getGlobalSocket();
     
-    events.forEach(event => {
-      // Add event for start date
-      calEvents.push({
-        id: event._id,
-        date: event.startDate,
-        title: event.eventTitle,
-        type: 'booking',
-        color: '#E0E7FF', // Light blue
-        className: 'cursor-pointer hover:opacity-80 transition-opacity'
-      });
-    });
+    if (!socket) {
+      console.log('❌ Calendar: Global socket not available yet');
+      return;
+    }
 
-    return calEvents;
-  };
+    console.log('✅ Calendar: Global socket available, setting up listeners');
 
-  // Get events for a specific date
-  const getEventsForDate = (date: Date): Event[] => {
-    const dateStr = format(date, 'yyyy-MM-dd');
-    return events.filter(event => {
-      const eventStartDate = format(new Date(event.startDate), 'yyyy-MM-dd');
-      return eventStartDate === dateStr;
-    });
-  };
+    const handleEventUpdated = (data: any) => {
+      console.log('📅 Calendar: Received event-updated:', data);
+      console.log('📅 Calendar: Calling fetchEvents(true) to force refresh');
+      // Force refresh calendar events when any event is updated
+      fetchEvents(true);
+    };
+
+    const handleEventStatusUpdated = (data: any) => {
+      console.log('📅 Calendar: Received event-status-updated:', data);
+      console.log('📅 Calendar: Calling fetchEvents(true) to force refresh');
+      // Also refresh on status updates
+      fetchEvents(true);
+    };
+
+    const handleConnect = () => {
+      console.log('✅ Calendar: Socket connected');
+    };
+
+    // Remove any existing listeners first to prevent duplicates
+    socket.off('event-updated');
+    socket.off('event-status-updated');
+    socket.off('connect');
+
+    // Set up listeners
+    socket.on('event-updated', handleEventUpdated);
+    socket.on('event-status-updated', handleEventStatusUpdated);
+    socket.on('connect', handleConnect);
+
+    // Check if already connected
+    if (socket.connected) {
+      console.log('✅ Calendar: Socket already connected');
+    } else {
+      console.log('⏳ Calendar: Waiting for socket to connect...');
+    }
+
+    return () => {
+      console.log('🧹 Calendar: Cleaning up socket listeners');
+      socket.off('event-updated', handleEventUpdated);
+      socket.off('event-status-updated', handleEventStatusUpdated);
+      socket.off('connect', handleConnect);
+    };
+  }, []);
 
   // Format time to 12-hour format
   const formatTime = (time: string) => {
@@ -224,17 +211,28 @@ const AdminCalendarPage: React.FC = () => {
     );
   };
 
-  useEffect(() => {
-    fetchEvents();
-  }, []);
-
   return (
     <div className="min-h-screen bg-gray-50/50 p-8">
       <div className="max-w-[1600px] mx-auto space-y-6">
         {/* Header */}
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-gray-900">Calendar</h1>
-          <p className="text-sm text-muted-foreground mt-1">View all events and bookings in calendar view</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-gray-900">Calendar</h1>
+            <p className="text-sm text-muted-foreground mt-1">View all events and bookings in calendar view</p>
+          </div>
+          <Button
+            onClick={() => {
+              console.log('🔄 Manual refresh triggered');
+              fetchEvents(true);
+            }}
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            disabled={loading}
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
         </div>
 
         {/* Calendar Card */}

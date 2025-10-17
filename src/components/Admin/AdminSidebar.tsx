@@ -7,7 +7,6 @@ import {
   Calendar, 
   CalendarDays, 
   Building2,
-  FileText,
   Activity,
   Shield,
   ChevronLeft,
@@ -20,6 +19,7 @@ interface AdminSidebarProps {
     name: string;
     email: string;
     department: string;
+    role?: string;
     avatar?: string;
   };
 }
@@ -29,21 +29,52 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ user }) => {
   const currentUser = user || {
     name: "Admin User",
     email: "admin@bataan.gov.ph",
-    department: "Administration"
+    department: "Administration",
+    role: "admin"
   };
   const [isCollapsed, setIsCollapsed] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   
-  const navigationItems = [
-    { icon: LayoutDashboard, label: 'Dashboard', href: '/admin/dashboard' },
-    { icon: Calendar, label: 'All Events', href: '/admin/all-events' },
-    { icon: CalendarDays, label: 'Calendar', href: '/admin/calendar' },
-    { icon: Users, label: 'Users', href: '/admin/users' },
-    { icon: Activity, label: 'Users Logs', href: '/admin/users-logs' },
-    { icon: Building2, label: 'Departments', href: '/admin/departments' },
-    { icon: FileText, label: 'Reports', href: '/admin/reports' },
+  // Get user role from user prop or localStorage (normalized to lowercase)
+  const getUserRole = (): string => {
+    let role = 'admin'; // default
+    
+    if (user?.role) {
+      role = user.role;
+    } else {
+      const userData = localStorage.getItem('userData');
+      if (userData) {
+        try {
+          const parsed = JSON.parse(userData);
+          role = parsed.role || 'admin';
+        } catch {
+          role = 'admin';
+        }
+      }
+    }
+    
+    // Normalize to lowercase for consistent checking
+    return role.toLowerCase();
+  };
+  
+  const userRole = getUserRole();
+  const isSuperAdmin = userRole === 'superadmin';
+  
+  // All navigation items
+  const allNavigationItems = [
+    { icon: LayoutDashboard, label: 'Dashboard', href: '/admin/dashboard', roles: ['superadmin'] },
+    { icon: Calendar, label: 'All Events', href: '/admin/all-events', roles: ['superadmin', 'admin'] },
+    { icon: CalendarDays, label: 'Calendar', href: '/admin/calendar', roles: ['superadmin', 'admin'] },
+    { icon: Users, label: 'Users', href: '/admin/users', roles: ['superadmin'] },
+    { icon: Activity, label: 'Users Logs', href: '/admin/users-logs', roles: ['superadmin'] },
+    { icon: Building2, label: 'Departments', href: '/admin/departments', roles: ['superadmin'] },
   ];
+  
+  // Filter navigation items based on user role (case-insensitive)
+  const navigationItems = allNavigationItems.filter(item => 
+    item.roles.includes(userRole)
+  );
 
   const handleNavigation = (href: string) => {
     navigate(href);

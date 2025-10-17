@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { format } from 'date-fns';
 import { motion } from 'framer-motion';
 import jsPDF from 'jspdf';
 import { toast } from 'sonner';
+import { useSocket } from '@/hooks/useSocket';
+import { useAllEventsStore, type Event } from '@/stores/allEventsStore';
 import {
   Card,
   CardContent,
@@ -37,6 +39,12 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
   Calendar,
   Clock,
   MapPin,
@@ -64,70 +72,30 @@ import {
   Square
 } from 'lucide-react';
 
-interface Event {
-  _id: string;
-  eventTitle: string;
-  requestor: string;
-  location: string;
-  description?: string;
-  participants: number;
-  vip?: number;
-  vvip?: number;
-  startDate: string;
-  endDate: string;
-  startTime: string;
-  endTime: string;
-  contactNumber: string;
-  contactEmail: string;
-  attachments: any[];
-  govFiles: {
-    brieferTemplate?: {
-      filename: string;
-      originalName: string;
-      mimetype: string;
-      size: number;
-      uploadedAt: Date;
-    };
-    availableForDL?: {
-      filename: string;
-      originalName: string;
-      mimetype: string;
-      size: number;
-      uploadedAt: Date;
-    };
-    programme?: {
-      filename: string;
-      originalName: string;
-      mimetype: string;
-      size: number;
-      uploadedAt: Date;
-    };
-  };
-  taggedDepartments: string[];
-  departmentRequirements: any;
-  requestorDepartment?: string;
-  status: 'draft' | 'submitted' | 'approved' | 'rejected' | 'completed' | 'cancelled';
-  submittedAt?: string;
-  createdAt: string;
-  updatedAt: string;
-  createdBy: {
-    _id: string;
-    name: string;
-    email: string;
-    department: string;
-  };
-}
-
 const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api`;
 
 const AllEventsPage: React.FC = () => {
-  const [events, setEvents] = useState<Event[]>([]);
-  const [departments, setDepartments] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [departmentFilter, setDepartmentFilter] = useState<string>('all');
-  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
+  // Socket.IO for real-time updates
+  const { socket } = useSocket();
+  
+  // Zustand store
+  const {
+    events,
+    departments,
+    loading,
+    searchQuery,
+    statusFilter,
+    departmentFilter,
+    selectedEvent: storeSelectedEvent,
+    fetchAllEvents,
+    setSearchQuery,
+    setStatusFilter,
+    setDepartmentFilter,
+    setSelectedEvent: setStoreSelectedEvent,
+    getFilteredEvents
+  } = useAllEventsStore();
+
+  // Local state for UI
   const [showDescription, setShowDescription] = useState(false);
   const [selectedEvents, setSelectedEvents] = useState<string[]>([]);
   const [showPdfOptions, setShowPdfOptions] = useState(false);
@@ -135,80 +103,138 @@ const AllEventsPage: React.FC = () => {
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string>('');
   const [showStatusDialog, setShowStatusDialog] = useState(false);
   const [statusAction, setStatusAction] = useState<'approve' | 'disapprove' | null>(null);
+  const [cancelReason, setCancelReason] = useState<string>('');
+  
+  // Use store's selected event or local state for status dialog
+  const selectedEvent = storeSelectedEvent;
 
-  // Fetch all events
-  const fetchAllEvents = async () => {
-    try {
-      setLoading(true);
-      const token = localStorage.getItem('authToken');
-      const headers = {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      };
-
-      const response = await axios.get(`${API_BASE_URL}/events`, { headers });
-      
-      console.log('📊 API Response:', response.data);
-      
-      if (response.data.success) {
-        console.log('✅ Events fetched:', response.data.data.length, 'events');
-        const eventsData = response.data.data;
-        setEvents(eventsData);
-        
-        // Extract unique departments from events
-        const uniqueDepartments = new Set<string>();
-        eventsData.forEach((event: Event) => {
-          // From tagged departments
-          if (event.taggedDepartments && event.taggedDepartments.length > 0) {
-            event.taggedDepartments.forEach(dept => {
-              if (dept && dept.trim()) uniqueDepartments.add(dept.trim());
-            });
-          }
-          // From requestor department
-          if (event.requestorDepartment && event.requestorDepartment.trim()) {
-            uniqueDepartments.add(event.requestorDepartment.trim());
-          }
-          // From created by department (fallback)
-          if (event.createdBy?.department && event.createdBy.department.trim()) {
-            uniqueDepartments.add(event.createdBy.department.trim());
-          }
-        });
-        
-        const departmentsList = Array.from(uniqueDepartments).sort();
-        setDepartments(departmentsList);
-        console.log('✅ Departments extracted:', departmentsList);
-      } else {
-        console.error('❌ API returned error:', response.data);
-        toast.error('Failed to fetch events');
+  // Get user role from localStorage
+  const getUserRole = (): string => {
+    const userData = localStorage.getItem('userData');
+    if (userData) {
+      try {
+        const parsed = JSON.parse(userData);
+        return parsed.role?.toLowerCase() || 'admin';
+      } catch {
+        return 'admin';
       }
-    } catch (error) {
-      console.error('Error fetching events:', error);
-      toast.error('Failed to fetch events');
-    } finally {
-      setLoading(false);
+    }
+    return 'admin';
+  };
+  
+  const userRole = getUserRole();
+  const isSuperAdmin = userRole === 'superadmin';
+
+  // Listen for real-time event updates via Socket.IO
+  useEffect(() => {
+    if (!socket) {
+      console.log('❌ AllEvents: Socket not available');
+      return;
+    }
+
+    console.log('✅ AllEvents: Setting up socket listener for event-updated');
+
+    const handleEventUpdated = (data: any) => {
+      console.log('📋 AllEvents: Received event-updated:', data);
+      // Force refresh to get the latest data
+      fetchAllEvents(true);
+    };
+
+    const handleEventStatusUpdated = (data: any) => {
+      console.log('📋 AllEvents: Received event-status-updated:', data);
+      // Also refresh on status updates
+      fetchAllEvents(true);
+    };
+
+    socket.on('event-updated', handleEventUpdated);
+    socket.on('event-status-updated', handleEventStatusUpdated);
+
+    return () => {
+      socket.off('event-updated', handleEventUpdated);
+      socket.off('event-status-updated', handleEventStatusUpdated);
+    };
+  }, [socket, fetchAllEvents]);
+
+  // Check and auto-complete expired events (optimized - no API calls unless needed)
+  const checkAndCompleteExpiredEvents = async () => {
+    const now = new Date();
+    
+    // Find events that should be marked as completed (client-side check only)
+    const expiredEvents = events.filter(event => {
+      // Only check approved events
+      if (event.status !== 'approved') return false;
+      
+      // Combine end date and end time
+      const endDateTime = new Date(`${event.endDate}T${event.endTime}`);
+      
+      // Check if event has ended
+      return endDateTime < now;
+    });
+    
+    // ✅ NO API CALLS if no expired events found
+    if (expiredEvents.length === 0) {
+      return;
+    }
+    
+    // ⚠️ ONLY MAKE API CALLS when there are actually expired events
+    const token = localStorage.getItem('authToken');
+    const updatePromises = expiredEvents.map(async (event) => {
+      try {
+        const response = await axios.patch(
+          `${API_BASE_URL}/events/${event._id}/status`,
+          { status: 'completed' },
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+        
+        if (response.data.success) {
+          return { success: true, eventTitle: event.eventTitle };
+        }
+        return { success: false, eventTitle: event.eventTitle };
+      } catch (error) {
+        console.error(`❌ Failed to auto-complete: ${event.eventTitle}`, error);
+        return { success: false, eventTitle: event.eventTitle };
+      }
+    });
+    
+    const results = await Promise.all(updatePromises);
+    const successCount = results.filter(r => r.success).length;
+    
+    if (successCount > 0) {
+      // Refresh the events list to show updated statuses
+      fetchAllEvents();
+      toast.success(`${successCount} event(s) automatically marked as completed`);
     }
   };
 
+  // Use ref to track if we've done initial check
+  const hasCheckedRef = useRef(false);
+
   useEffect(() => {
     fetchAllEvents();
-  }, []);
-
-  // Filter events based on search and filters
-  const filteredEvents = (events || []).filter(event => {
-    const matchesSearch = 
-      event.eventTitle.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      event.requestor.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      event.location.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (event.createdBy?.name || '').toLowerCase().includes(searchTerm.toLowerCase());
     
-    const matchesStatus = statusFilter === 'all' || event.status === statusFilter;
-    const matchesDepartment = departmentFilter === 'all' || 
-      (event.taggedDepartments && event.taggedDepartments.includes(departmentFilter)) ||
-      (event.requestorDepartment && event.requestorDepartment === departmentFilter) ||
-      (event.createdBy?.department && event.createdBy.department === departmentFilter);
+    // Set up interval for checking expired events every minute
+    const intervalId = setInterval(() => {
+      checkAndCompleteExpiredEvents();
+    }, 60000); // Check every 60 seconds
+    
+    return () => clearInterval(intervalId);
+  }, []); // ✅ Empty dependency array - only runs once on mount
 
-    return matchesSearch && matchesStatus && matchesDepartment;
-  });
+  // Run initial check only once when events are first loaded
+  useEffect(() => {
+    if (events.length > 0 && !hasCheckedRef.current) {
+      checkAndCompleteExpiredEvents();
+      hasCheckedRef.current = true;
+    }
+  }, [events]);
+
+  // Get filtered events from store (all filtering done in Zustand)
+  const filteredEvents = getFilteredEvents();
 
   // Get status info
   const getStatusInfo = (status: string) => {
@@ -314,7 +340,7 @@ const AllEventsPage: React.FC = () => {
         toast.success(`Event ${statusText} successfully!`);
         setShowStatusDialog(false);
         setStatusAction(null);
-        fetchAllEvents(); // Refresh the list
+        fetchAllEvents(true); // Force refresh to get updated data
       }
     } catch (error: any) {
       toast.error(error.response?.data?.message || `Failed to update event status`);
@@ -323,7 +349,7 @@ const AllEventsPage: React.FC = () => {
 
   // Open status dialog
   const openStatusDialog = (event: Event, action: 'approve' | 'disapprove') => {
-    setSelectedEvent(event);
+    setStoreSelectedEvent(event);
     setStatusAction(action);
     setShowStatusDialog(true);
   };
@@ -690,7 +716,7 @@ const AllEventsPage: React.FC = () => {
             </div>
             <div className="flex gap-2">
               <Button
-                onClick={fetchAllEvents}
+                onClick={() => fetchAllEvents(true)}
                 disabled={loading}
                 className="gap-2"
               >
@@ -717,8 +743,8 @@ const AllEventsPage: React.FC = () => {
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                 <Input
                   placeholder="Search events, requestors, locations..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-10"
                 />
               </div>
@@ -865,14 +891,14 @@ const AllEventsPage: React.FC = () => {
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex items-center gap-2 justify-end">
-                              {/* Status Button - Show for submitted, approved, rejected, and cancelled */}
-                              {(event.status === 'submitted' || event.status === 'approved' || event.status === 'rejected' || event.status === 'cancelled') && (
+                              {/* Status Button - Show for submitted, approved, rejected, and cancelled (superadmin only) */}
+                              {isSuperAdmin && (event.status === 'submitted' || event.status === 'approved' || event.status === 'rejected' || event.status === 'cancelled') && (
                                 <Button
                                   variant="outline"
                                   size="sm"
                                   className="gap-1"
                                   onClick={() => {
-                                    setSelectedEvent(event);
+                                    setStoreSelectedEvent(event);
                                     setShowStatusDialog(true);
                                   }}
                                 >
@@ -887,7 +913,7 @@ const AllEventsPage: React.FC = () => {
                                     variant="outline"
                                     size="sm"
                                     className="gap-1"
-                                    onClick={() => setSelectedEvent(event)}
+                                    onClick={() => setStoreSelectedEvent(event)}
                                   >
                                     <Eye className="w-3 h-3" />
                                     View
@@ -1071,7 +1097,7 @@ const AllEventsPage: React.FC = () => {
                                   variant="outline"
                                   size="sm"
                                   className="gap-1"
-                                  onClick={() => setSelectedEvent(event)}
+                                  onClick={() => setStoreSelectedEvent(event)}
                                 >
                                   <Paperclip className="w-3 h-3" />
                                   Files
@@ -1451,19 +1477,19 @@ const AllEventsPage: React.FC = () => {
                           </Badge>
                         </div>
                         
-                        {/* Requirements List */}
-                        <div className="space-y-2">
+                        {/* Requirements List - Grid layout for 3+ requirements */}
+                        <div className={allRequirements.length >= 3 ? "grid grid-cols-3 gap-2" : "space-y-2"}>
                           {allRequirements.map((req, index) => (
                             <div key={index} className="p-3 border rounded-lg hover:bg-muted/50 transition-colors">
                               <div className="flex items-start justify-between gap-3">
                                 <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 mb-1">
-                                    <Badge variant="secondary" className="text-xs">
+                                  <div className="flex flex-col gap-1 mb-1">
+                                    <Badge variant="secondary" className="text-xs w-fit">
                                       {req.department}
                                     </Badge>
                                     <Badge 
                                       variant={req.status === 'confirmed' ? 'default' : 'outline'}
-                                      className={`text-xs ${
+                                      className={`text-xs w-fit ${
                                         req.status === 'confirmed' 
                                           ? 'bg-green-100 text-green-800 border-green-200' 
                                           : 'bg-orange-100 text-orange-800 border-orange-200'
@@ -1472,9 +1498,9 @@ const AllEventsPage: React.FC = () => {
                                       {req.status === 'confirmed' ? 'Confirmed' : 'Pending'}
                                     </Badge>
                                   </div>
-                                  <p className="text-sm font-medium">{req.name}</p>
+                                  <p className="text-sm font-medium break-words">{req.name}</p>
                                   {req.quantity && (
-                                    <p className="text-xs text-muted-foreground mt-1">Quantity: {req.quantity}</p>
+                                    <p className="text-xs text-muted-foreground mt-1">Qty: {req.quantity}</p>
                                   )}
                                 </div>
                               </div>
@@ -1501,12 +1527,53 @@ const AllEventsPage: React.FC = () => {
                 >
                   Reject Event
                 </Button>
-                <Button
-                  className="bg-yellow-500 text-white hover:bg-yellow-600"
-                  onClick={() => handleStatusChange('cancelled')}
-                >
-                  Cancel Event
-                </Button>
+                
+                {/* Cancel Dropdown with Reasons */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button className="bg-yellow-500 text-white hover:bg-yellow-600">
+                      Cancel Event
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuItem onClick={() => {
+                      setCancelReason('Conflict with other event');
+                      handleStatusChange('cancelled');
+                    }}>
+                      Conflict with other event
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => {
+                      setCancelReason('Venue unavailable');
+                      handleStatusChange('cancelled');
+                    }}>
+                      Venue unavailable
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => {
+                      setCancelReason('Requestor cancelled');
+                      handleStatusChange('cancelled');
+                    }}>
+                      Requestor cancelled
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => {
+                      setCancelReason('Insufficient resources');
+                      handleStatusChange('cancelled');
+                    }}>
+                      Insufficient resources
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => {
+                      setCancelReason('Weather/Emergency');
+                      handleStatusChange('cancelled');
+                    }}>
+                      Weather/Emergency
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => {
+                      setCancelReason('Other reason');
+                      handleStatusChange('cancelled');
+                    }}>
+                      Other reason
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </div>
           )}

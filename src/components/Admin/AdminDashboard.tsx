@@ -1,6 +1,8 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { getGlobalSocket } from '@/hooks/useSocket';
 import { useUserLogsStore } from '@/stores/userLogsStore';
+import { useAdminDashboardStore } from '@/stores/adminDashboardStore';
 import { format } from 'date-fns';
 import {
   Card,
@@ -31,26 +33,13 @@ import {
   TrendingUp,
   Users,
   FileText,
-  Loader2
+  Loader2,
+  RefreshCw
 } from 'lucide-react';
-import axios from 'axios';
-
-const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api`;
-
-interface UpcomingEvent {
-  _id: string;
-  eventTitle: string;
-  startDate: string;
-  startTime: string;
-  endDate: string;
-  endTime: string;
-  location: string;
-  requestorDepartment: string;
-  status: string;
-}
-
 const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
+  
+  // User logs store
   const {
     loginLogs,
     eventLogs,
@@ -62,53 +51,58 @@ const AdminDashboard: React.FC = () => {
     initializeSocketListeners
   } = useUserLogsStore();
 
-  const [upcomingEvents, setUpcomingEvents] = React.useState<UpcomingEvent[]>([]);
-  const [eventsLoading, setEventsLoading] = React.useState(false);
+  // Admin dashboard store
+  const {
+    upcomingEvents,
+    upcomingEventsLoading,
+    fetchUpcomingEvents
+  } = useAdminDashboardStore();
+
+  // Listen for real-time event updates via Socket.IO
+  useEffect(() => {
+    const socket = getGlobalSocket();
+    
+    if (!socket) {
+      console.log('❌ Dashboard: Global socket not available yet');
+      return;
+    }
+
+    console.log('✅ Dashboard: Global socket available, setting up listeners');
+
+    const handleEventUpdated = (data: any) => {
+      console.log('📊 Dashboard: Received event-updated:', data);
+      // Refresh upcoming events when any event is updated
+      fetchUpcomingEvents(true);
+    };
+
+    const handleEventStatusUpdated = (data: any) => {
+      console.log('📊 Dashboard: Received event-status-updated:', data);
+      // Also refresh on status updates
+      fetchUpcomingEvents(true);
+    };
+
+    // Remove any existing listeners first to prevent duplicates
+    socket.off('event-updated');
+    socket.off('event-status-updated');
+
+    socket.on('event-updated', handleEventUpdated);
+    socket.on('event-status-updated', handleEventStatusUpdated);
+
+    return () => {
+      console.log('🧹 Dashboard: Cleaning up socket listeners');
+      socket.off('event-updated', handleEventUpdated);
+      socket.off('event-status-updated', handleEventStatusUpdated);
+    };
+  }, []);
 
   // Fetch data on mount
   useEffect(() => {
     fetchLoginLogs();
     fetchEventLogs();
-    initializeSocketListeners();
     fetchUpcomingEvents();
+    initializeSocketListeners();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Fetch upcoming events
-  const fetchUpcomingEvents = async () => {
-    try {
-      setEventsLoading(true);
-      const token = localStorage.getItem('authToken');
-      const response = await axios.get(`${API_BASE_URL}/events`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-
-      if (response.data.success) {
-        // Get today's date at midnight for comparison
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        
-        // Filter for approved/submitted events from today onwards and sort by start date
-        const upcoming = response.data.data
-          .filter((event: UpcomingEvent) => 
-            (event.status === 'approved' || event.status === 'submitted') &&
-            new Date(event.startDate) >= today
-          )
-          .sort((a: UpcomingEvent, b: UpcomingEvent) => 
-            new Date(a.startDate).getTime() - new Date(b.startDate).getTime()
-          )
-          .slice(0, 8); // Get only 8 events
-        
-        setUpcomingEvents(upcoming);
-      }
-    } catch (error) {
-      console.error('Error fetching upcoming events:', error);
-    } finally {
-      setEventsLoading(false);
-    }
-  };
 
   const stats = getStats();
   const loading = loginLogsLoading || eventLogsLoading;
@@ -126,9 +120,26 @@ const AdminDashboard: React.FC = () => {
     <div className="min-h-screen bg-gray-50/50 p-8">
       <div className="max-w-[1600px] mx-auto space-y-6">
         {/* Header */}
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-gray-900">Admin Dashboard</h1>
-          <p className="text-sm text-muted-foreground mt-1">Welcome back! Here's what's happening today.</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-gray-900">Admin Dashboard</h1>
+            <p className="text-sm text-muted-foreground mt-1">Welcome back! Here's what's happening today.</p>
+          </div>
+          <Button
+            onClick={() => {
+              console.log('🔄 Manual refresh triggered');
+              fetchLoginLogs(true);
+              fetchEventLogs(true);
+              fetchUpcomingEvents(true);
+            }}
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            disabled={loading || upcomingEventsLoading}
+          >
+            <RefreshCw className={`w-4 h-4 ${(loading || upcomingEventsLoading) ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
         </div>
 
         {/* Stats Cards */}
@@ -284,7 +295,7 @@ const AdminDashboard: React.FC = () => {
               <CardDescription className="text-xs">Approved events scheduled ahead</CardDescription>
             </CardHeader>
             <CardContent>
-              {eventsLoading ? (
+              {upcomingEventsLoading ? (
                 <div className="flex items-center justify-center h-64">
                   <Loader2 className="w-6 h-6 animate-spin text-purple-600" />
                 </div>

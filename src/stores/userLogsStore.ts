@@ -103,7 +103,6 @@ export const useUserLogsStore = create<UserLogsState>()(
         
         // Check cache
         if (!force && loginLogsLastFetched && (now - loginLogsLastFetched < CACHE_DURATION)) {
-          console.log('📦 Using cached login logs');
           return;
         }
         
@@ -134,7 +133,6 @@ export const useUserLogsStore = create<UserLogsState>()(
         
         // Check cache
         if (!force && eventLogsLastFetched && (now - eventLogsLastFetched < CACHE_DURATION)) {
-          console.log('📦 Using cached event logs');
           return;
         }
         

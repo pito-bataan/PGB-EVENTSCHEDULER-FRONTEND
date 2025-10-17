@@ -4,18 +4,18 @@ import axios from 'axios';
 
 const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api`;
 
-interface Event {
+export interface Event {
   _id: string;
   eventTitle: string;
   requestor: string;
-  requestorDepartment: string;
+  requestorDepartment?: string;
   location: string;
   participants: number;
-  vip: number;
-  vvip: number;
-  withoutGov: boolean;
-  multipleLocations: boolean;
-  description: string;
+  vip?: number;
+  vvip?: number;
+  withoutGov?: boolean;
+  multipleLocations?: boolean;
+  description?: string;
   startDate: string;
   startTime: string;
   endDate: string;
@@ -23,24 +23,55 @@ interface Event {
   contactNumber: string;
   contactEmail: string;
   attachments: any[];
-  noAttachments: boolean;
+  noAttachments?: boolean;
+  govFiles: {
+    brieferTemplate?: {
+      filename: string;
+      originalName: string;
+      mimetype: string;
+      size: number;
+      uploadedAt: Date;
+    };
+    availableForDL?: {
+      filename: string;
+      originalName: string;
+      mimetype: string;
+      size: number;
+      uploadedAt: Date;
+    };
+    programme?: {
+      filename: string;
+      originalName: string;
+      mimetype: string;
+      size: number;
+      uploadedAt: Date;
+    };
+  };
   taggedDepartments: string[];
   departmentRequirements: any;
-  status: string;
+  status: 'draft' | 'submitted' | 'approved' | 'rejected' | 'completed' | 'cancelled';
   submittedAt?: string;
-  createdBy: string;
+  createdBy: {
+    _id: string;
+    name: string;
+    email: string;
+    department: string;
+  };
   createdAt: string;
+  updatedAt?: string;
 }
 
 interface AllEventsState {
   // Data
   events: Event[];
+  departments: string[];
   selectedEvent: Event | null;
   
   // Filters
   searchQuery: string;
   locationFilter: string;
   statusFilter: string;
+  departmentFilter: string;
   dateFilter: string;
   
   // Loading & Cache
@@ -54,6 +85,7 @@ interface AllEventsState {
   setSearchQuery: (query: string) => void;
   setLocationFilter: (location: string) => void;
   setStatusFilter: (status: string) => void;
+  setDepartmentFilter: (department: string) => void;
   setDateFilter: (date: string) => void;
   clearFilters: () => void;
   clearCache: () => void;
@@ -68,10 +100,12 @@ export const useAllEventsStore = create<AllEventsState>()(
     (set, get) => ({
       // Initial state
       events: [],
+      departments: [],
       selectedEvent: null,
       searchQuery: '',
       locationFilter: 'all',
       statusFilter: 'all',
+      departmentFilter: 'all',
       dateFilter: 'all',
       loading: false,
       lastFetched: null,
@@ -101,14 +135,25 @@ export const useAllEventsStore = create<AllEventsState>()(
           if (response.data.success) {
             const events = response.data.data || [];
             
-            // Filter only approved and submitted events with locations
-            const bookedEvents = events.filter((event: Event) => 
-              (event.status === 'approved' || event.status === 'submitted') && 
-              event.location
-            );
+            // Extract unique departments
+            const uniqueDepartments = new Set<string>();
+            events.forEach((event: Event) => {
+              if (event.taggedDepartments && event.taggedDepartments.length > 0) {
+                event.taggedDepartments.forEach(dept => {
+                  if (dept && dept.trim()) uniqueDepartments.add(dept.trim());
+                });
+              }
+              if (event.requestorDepartment && event.requestorDepartment.trim()) {
+                uniqueDepartments.add(event.requestorDepartment.trim());
+              }
+            });
             
+            const departmentsList = Array.from(uniqueDepartments).sort();
+            
+            // Store ALL events (admin needs to see everything)
             set({
-              events: bookedEvents,
+              events: events,
+              departments: departmentsList,
               lastFetched: now,
               loading: false
             });
@@ -134,6 +179,10 @@ export const useAllEventsStore = create<AllEventsState>()(
         set({ statusFilter: status });
       },
       
+      setDepartmentFilter: (department: string) => {
+        set({ departmentFilter: department });
+      },
+      
       setDateFilter: (date: string) => {
         set({ dateFilter: date });
       },
@@ -143,6 +192,7 @@ export const useAllEventsStore = create<AllEventsState>()(
           searchQuery: '',
           locationFilter: 'all',
           statusFilter: 'all',
+          departmentFilter: 'all',
           dateFilter: 'all'
         });
       },
@@ -166,7 +216,7 @@ export const useAllEventsStore = create<AllEventsState>()(
           filtered = filtered.filter(event =>
             event.eventTitle.toLowerCase().includes(query) ||
             event.requestor.toLowerCase().includes(query) ||
-            event.requestorDepartment.toLowerCase().includes(query) ||
+            event.requestorDepartment?.toLowerCase().includes(query) ||
             event.location.toLowerCase().includes(query)
           );
         }
@@ -179,6 +229,14 @@ export const useAllEventsStore = create<AllEventsState>()(
         // Status filter
         if (state.statusFilter !== 'all') {
           filtered = filtered.filter(event => event.status === state.statusFilter);
+        }
+        
+        // Department filter
+        if (state.departmentFilter !== 'all') {
+          filtered = filtered.filter(event => 
+            (event.taggedDepartments && event.taggedDepartments.includes(state.departmentFilter)) ||
+            (event.requestorDepartment && event.requestorDepartment === state.departmentFilter)
+          );
         }
         
         // Date filter

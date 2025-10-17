@@ -234,19 +234,13 @@ const UsersManagement: React.FC = () => {
   // Fetch department permissions
   const fetchDepartmentPermissions = async (department: string) => {
     try {
-      console.log('📥 Fetching permissions for department:', department);
-      
       const response = await axios.get(`${API_BASE_URL}/department-permissions/${department}`, {
         headers: getAuthHeaders()
       });
       
-      console.log('📥 Backend returned:', response.data);
-      
       if (response.data.success) {
         // Ensure all permission fields exist (for backward compatibility)
         const permissions = response.data.data.permissions || {};
-        
-        console.log('📥 Raw permissions from backend:', permissions);
         
         const processedPermissions = {
           myRequirements: permissions.myRequirements || false,
@@ -255,8 +249,6 @@ const UsersManagement: React.FC = () => {
           allEvents: permissions.allEvents || false,
           taggedDepartments: permissions.taggedDepartments || false
         };
-        
-        console.log('📥 Processed permissions:', processedPermissions);
         
         setDepartmentPermissions({
           department: response.data.data.department,
@@ -285,23 +277,17 @@ const UsersManagement: React.FC = () => {
     try {
       setLoading(true);
       
-      console.log('🔄 Updating permissions for department:', selectedDepartment);
-      console.log('📦 Permissions being sent:', departmentPermissions.permissions);
-      
       const response = await axios.put(
         `${API_BASE_URL}/department-permissions/${selectedDepartment}`,
         { permissions: departmentPermissions.permissions },
         { headers: getAuthHeaders() }
       );
       
-      console.log('✅ Backend response:', response.data);
-      
       if (response.data.success) {
         toast.success('Department permissions updated successfully!');
         
         // Fetch permissions again to verify they were saved
         await fetchDepartmentPermissions(selectedDepartment);
-        console.log('🔍 Permissions after refetch:', departmentPermissions.permissions);
         
         setShowPermissionsModal(false);
       }
@@ -323,11 +309,7 @@ const UsersManagement: React.FC = () => {
 
   // Handle opening edit user modal
   const handleEditUser = (user: User) => {
-    console.log('🔍 User object for editing:', user);
-    console.log('🆔 User ID fields:', { _id: user._id, id: user.id });
-    
     const userId = user._id || user.id || '';
-    console.log('✅ Selected user ID:', userId);
     
     setEditingUser({
       id: userId,
@@ -396,7 +378,6 @@ const UsersManagement: React.FC = () => {
 
   // Handle opening delete confirmation dialog
   const handleDeleteUser = (user: User) => {
-    console.log('🗑️ Preparing to delete user:', user.username);
     setUserToDelete(user);
     setShowDeleteDialog(true);
   };
@@ -407,7 +388,6 @@ const UsersManagement: React.FC = () => {
 
     try {
       setLoading(true);
-      console.log('🗑️ Deleting user:', userToDelete.username);
       
       const response = await axios.delete(`${API_BASE_URL}/users/${userToDelete._id || userToDelete.id}`, {
         headers: getAuthHeaders()
