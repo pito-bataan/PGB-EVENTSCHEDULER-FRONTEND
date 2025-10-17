@@ -170,8 +170,8 @@ const RequestEventPage: React.FC = () => {
     { id: 6, title: 'Ready to Submit', icon: Send, description: 'Review and submit' }
   ];
 
-  // Check if attachments step is completed
-  const isAttachmentsCompleted = formData.noAttachments || formData.attachments.length > 0;
+  // Check if attachments step is completed - NOW REQUIRED!
+  const isAttachmentsCompleted = formData.attachments.length > 0;
 
   const [locations, setLocations] = useState<string[]>(['Add Custom Location']);
   const [availableDates, setAvailableDates] = useState<Date[]>([]);
@@ -1447,16 +1447,11 @@ const RequestEventPage: React.FC = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="noAttachments"
-                    checked={formData.noAttachments}
-                    onCheckedChange={(checked) => handleInputChange('noAttachments', checked as boolean)}
-                  />
-                  <Label htmlFor="noAttachments" className="text-sm">No attachments needed</Label>
+                <div className="mb-2">
+                  <p className="text-sm text-gray-600">📎 <strong>Attachments are required</strong> - Please upload at least one file</p>
                 </div>
 
-                {!formData.noAttachments && (
+                {
                   <div className="space-y-3">
                     <div className="border-2 border-dashed border-gray-200 rounded-lg p-4 text-center hover:border-gray-300 transition-colors">
                       <Upload className="w-6 h-6 text-gray-400 mx-auto mb-2" />
@@ -1507,7 +1502,7 @@ const RequestEventPage: React.FC = () => {
                       </div>
                     )}
                   </div>
-                )}
+                }
               </CardContent>
             </Card>
 
