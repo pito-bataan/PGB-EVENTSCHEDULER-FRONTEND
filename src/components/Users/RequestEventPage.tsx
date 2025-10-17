@@ -1989,7 +1989,11 @@ const RequestEventPage: React.FC = () => {
           <Button variant="outline" disabled>
             Previous
           </Button>
-          <Button onClick={() => setCurrentStep(3)} className="gap-2">
+          <Button 
+            onClick={() => setCurrentStep(3)} 
+            disabled={!formData.eventTitle || !formData.requestor || !formData.location || !formData.participants || !formData.description}
+            className="gap-2"
+          >
             Continue to Tag Departments
             <ChevronRight className="w-4 h-4" />
           </Button>
