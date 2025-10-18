@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -149,6 +149,9 @@ const MyEventsPage: React.FC = () => {
   const [showCustomLocationInput, setShowCustomLocationInput] = useState(false);
   const [customLocation, setCustomLocation] = useState('');
   const [conflictingEvents, setConflictingEvents] = useState<any[]>([]);
+  const [requirementConflicts, setRequirementConflicts] = useState<any[]>([]);
+  const [showConflictModal, setShowConflictModal] = useState(false);
+  const [allEventsOnDate, setAllEventsOnDate] = useState<any[]>([]); // All events on selected date for REQ checking
   
   // Edit Requirement Modal State
   const [showEditRequirementModal, setShowEditRequirementModal] = useState(false);
@@ -261,21 +264,24 @@ const MyEventsPage: React.FC = () => {
           const eventsData = await response.json();
           const events = eventsData.data || [];
           
-          // Filter events that are on the same date and location, excluding the current event being edited
-          const conflicts = events.filter((event: any) => {
-            if (!event.startDate || !event.location || !editFormData.startDate) return false;
-            
-            // Exclude the current event being edited from conflicts
+          // Store ALL events on this date (for REQ label checking)
+          const eventsOnDate = events.filter((event: any) => {
+            if (!event.startDate || !editFormData.startDate) return false;
             if (selectedEditEvent && event._id === selectedEditEvent._id) return false;
-            
-            // Only check conflicts for the SAME location
-            if (event.location !== editFormData.location) return false;
+            if (event.status !== 'submitted' && event.status !== 'approved') return false;
             
             const eventStartDate = new Date(event.startDate);
             const selectedDate = new Date(editFormData.startDate);
             
-            // Check if dates match (same day)
             return eventStartDate.toDateString() === selectedDate.toDateString();
+          });
+          setAllEventsOnDate(eventsOnDate);
+          
+          // Filter events that are on the same date and location, excluding the current event being edited
+          const conflicts = eventsOnDate.filter((event: any) => {
+            if (!event.location) return false;
+            // Only check conflicts for the SAME location
+            return event.location === editFormData.location;
           });
           
           setConflictingEvents(conflicts);
@@ -290,6 +296,168 @@ const MyEventsPage: React.FC = () => {
     const timeoutId = setTimeout(checkConflicts, 300);
     return () => clearTimeout(timeoutId);
   }, [editFormData.startDate, editFormData.location, showEditModal, selectedEditEvent]);
+
+  // Auto-check for requirement availability when rescheduling
+  useEffect(() => {
+    const checkRequirementAvailability = async () => {
+      if (editFormData.startDate && editFormData.startTime && editFormData.endDate && editFormData.endTime && showEditModal && selectedEditEvent) {
+        try {
+          // Get all events to check requirement conflicts
+          const response = await fetch(`${API_BASE_URL}/events`, {
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+              'Content-Type': 'application/json'
+            }
+          });
+          
+          if (response.ok) {
+            const eventsData = await response.json();
+            const events = eventsData.data || [];
+            
+            // Find the current event in the database to get fresh requirement data
+            const currentEventInDB = events.find((e: any) => e._id === selectedEditEvent._id);
+            
+            if (!currentEventInDB || !currentEventInDB.taggedDepartments || !currentEventInDB.departmentRequirements) {
+              setRequirementConflicts([]);
+              return;
+            }
+            
+            // Get the new time range - create dates in local timezone to avoid UTC conversion issues
+            const [startHours, startMinutes] = editFormData.startTime.split(':').map(Number);
+            const [endHours, endMinutes] = editFormData.endTime.split(':').map(Number);
+            
+            // Extract just the date part if it's an ISO string
+            const startDateStr = editFormData.startDate.includes('T') 
+              ? editFormData.startDate.split('T')[0] 
+              : editFormData.startDate;
+            const endDateStr = editFormData.endDate.includes('T') 
+              ? editFormData.endDate.split('T')[0] 
+              : editFormData.endDate;
+            
+            const newStartDateTime = new Date(startDateStr);
+            newStartDateTime.setHours(startHours, startMinutes, 0, 0);
+            
+            const newEndDateTime = new Date(endDateStr);
+            newEndDateTime.setHours(endHours, endMinutes, 0, 0);
+            
+            console.log('🔍 Checking requirement availability for:', {
+              newStartDateTime: newStartDateTime.toISOString(),
+              newStartDateTimeLocal: newStartDateTime.toString(),
+              newEndDateTime: newEndDateTime.toISOString(),
+              newEndDateTimeLocal: newEndDateTime.toString(),
+              currentEventId: selectedEditEvent._id,
+              formData: {
+                startDate: editFormData.startDate,
+                startTime: editFormData.startTime,
+                endDate: editFormData.endDate,
+                endTime: editFormData.endTime
+              }
+            });
+            
+            // Find events that overlap with the new time range (excluding current event)
+            const overlappingEvents = events.filter((event: any) => {
+              if (!event.startDate || !event.startTime || !event.endDate || !event.endTime) return false;
+              if (event._id === selectedEditEvent._id) return false; // Exclude current event
+              if (event.status !== 'submitted' && event.status !== 'approved') return false; // Only check active events
+              
+              // Parse event dates - create in local timezone
+              const eventStartDate = event.startDate.includes('T') ? event.startDate.split('T')[0] : event.startDate;
+              const eventEndDate = event.endDate.includes('T') ? event.endDate.split('T')[0] : event.endDate;
+              
+              const [eventStartHours, eventStartMinutes] = event.startTime.split(':').map(Number);
+              const [eventEndHours, eventEndMinutes] = event.endTime.split(':').map(Number);
+              
+              const eventStart = new Date(eventStartDate);
+              eventStart.setHours(eventStartHours, eventStartMinutes, 0, 0);
+              
+              const eventEnd = new Date(eventEndDate);
+              eventEnd.setHours(eventEndHours, eventEndMinutes, 0, 0);
+              
+              // Check if time ranges overlap
+              const overlaps = (newStartDateTime < eventEnd && newEndDateTime > eventStart);
+              
+              if (overlaps) {
+                console.log('📅 Found overlapping event:', {
+                  title: event.eventTitle,
+                  start: eventStart.toISOString(),
+                  startLocal: eventStart.toString(),
+                  end: eventEnd.toISOString(),
+                  endLocal: eventEnd.toString()
+                });
+              }
+              
+              return overlaps;
+            });
+            
+            console.log(`Found ${overlappingEvents.length} overlapping events`);
+            
+            // Check each tagged department's requirements
+            const conflicts: any[] = [];
+            
+            currentEventInDB.taggedDepartments.forEach((dept: string) => {
+              const deptReqs = currentEventInDB.departmentRequirements[dept] || [];
+              
+              deptReqs.forEach((req: any) => {
+                if (req.type === 'physical' && req.quantity && req.totalQuantity) {
+                  // Calculate how much is already booked during the new time slot
+                  let bookedQuantity = 0;
+                  
+                  overlappingEvents.forEach((event: any) => {
+                    if (event.departmentRequirements && event.departmentRequirements[dept]) {
+                      const eventReqs = event.departmentRequirements[dept];
+                      const matchingReq = eventReqs.find((r: any) => 
+                        r.id === req.id || r.name === req.name
+                      );
+                      if (matchingReq && matchingReq.quantity) {
+                        console.log(`📦 ${event.eventTitle} booked ${matchingReq.quantity} ${req.name}`);
+                        bookedQuantity += matchingReq.quantity;
+                      }
+                    }
+                  });
+                  
+                  const availableQuantity = req.totalQuantity - bookedQuantity;
+                  
+                  console.log(`🔢 ${req.name}: Requested=${req.quantity}, Booked=${bookedQuantity}, Available=${availableQuantity}, Total=${req.totalQuantity}`, {
+                    needsMore: req.quantity > availableQuantity,
+                    calculation: `${req.quantity} > ${availableQuantity}?`
+                  });
+                  
+                  // If requested quantity exceeds available, add to conflicts
+                  if (req.quantity > availableQuantity) {
+                    console.log(`❌ CONFLICT: ${req.name} - Need ${req.quantity} but only ${availableQuantity} available`);
+                    conflicts.push({
+                      department: dept,
+                      requirement: req.name,
+                      requested: req.quantity,
+                      available: availableQuantity,
+                      total: req.totalQuantity,
+                      booked: bookedQuantity
+                    });
+                  }
+                }
+              });
+            });
+            
+            console.log(`Total conflicts found: ${conflicts.length}`);
+            setRequirementConflicts(conflicts);
+            
+            // Show conflict modal if there are conflicts
+            if (conflicts.length > 0) {
+              setShowConflictModal(true);
+            }
+          }
+        } catch (error) {
+          console.error('Error checking requirement availability:', error);
+        }
+      } else if (!showEditModal) {
+        setRequirementConflicts([]);
+        setShowConflictModal(false);
+      }
+    };
+
+    const timeoutId = setTimeout(checkRequirementAvailability, 300);
+    return () => clearTimeout(timeoutId);
+  }, [editFormData.startDate, editFormData.startTime, editFormData.endDate, editFormData.endTime, showEditModal, selectedEditEvent]);
 
   // Fetch user's events
   const fetchMyEvents = async () => {
@@ -677,6 +845,41 @@ const MyEventsPage: React.FC = () => {
     setSelectedEventDepartments(event);
     setSelectedStatusFilter('all'); // Reset filter when opening modal
     setShowDepartmentsModal(true);
+  };
+
+  // Check if a time slot has requirement conflicts
+  const hasRequirementConflictsAtTime = (time: string): boolean => {
+    if (!editFormData.startDate || !selectedEditEvent || allEventsOnDate.length === 0) return false;
+    
+    // Parse the time to check
+    const [hours, minutes] = time.split(':').map(Number);
+    const checkTime = new Date(editFormData.startDate);
+    checkTime.setHours(hours, minutes, 0, 0);
+    
+    // Check if this time falls within any event that has shared departments
+    return allEventsOnDate.some((event: any) => {
+      if (!event.startTime || !event.endTime || !event.taggedDepartments) return false;
+      
+      // Check if events share any departments
+      const hasSharedDepts = event.taggedDepartments.some((dept: string) => 
+        selectedEditEvent.taggedDepartments?.includes(dept)
+      );
+      if (!hasSharedDepts) return false;
+      
+      // Parse event times
+      const eventStartDate = event.startDate.includes('T') ? event.startDate.split('T')[0] : event.startDate;
+      const [eventStartHours, eventStartMinutes] = event.startTime.split(':').map(Number);
+      const [eventEndHours, eventEndMinutes] = event.endTime.split(':').map(Number);
+      
+      const eventStart = new Date(eventStartDate);
+      eventStart.setHours(eventStartHours, eventStartMinutes, 0, 0);
+      
+      const eventEnd = new Date(eventStartDate);
+      eventEnd.setHours(eventEndHours, eventEndMinutes, 0, 0);
+      
+      // Check if this time falls within the event's time range
+      return checkTime >= eventStart && checkTime < eventEnd;
+    });
   };
 
   // Handle edit event
@@ -1125,9 +1328,10 @@ const MyEventsPage: React.FC = () => {
   };
 
   return (
-    <div className="p-2 max-w-[98%] mx-auto">
-      <Card className="shadow-lg">
-        <CardContent className="p-8 space-y-6">
+    <div className="w-full min-h-screen bg-gray-50 p-6">
+      <div className="w-full max-w-[1800px] mx-auto">
+        <Card className="shadow-lg bg-white">
+          <CardContent className="p-8 space-y-6">
           {/* Header */}
           <motion.div
             initial={{ opacity: 0, y: -10 }}
@@ -1645,7 +1849,7 @@ const MyEventsPage: React.FC = () => {
                       });
 
                       return (
-                        <div className="grid grid-cols-6 gap-3">
+                        <div className="grid grid-cols-4 gap-4">
                           <button
                             onClick={() => setSelectedStatusFilter('all')}
                             className={`text-center p-4 rounded-lg border transition-all hover:shadow-md ${
@@ -1678,28 +1882,6 @@ const MyEventsPage: React.FC = () => {
                           >
                             <div className="text-2xl font-bold text-yellow-600">{statusCounts.pending}</div>
                             <div className="text-sm text-yellow-700 font-medium">Pending</div>
-                          </button>
-                          <button
-                            onClick={() => setSelectedStatusFilter('in_preparation')}
-                            className={`text-center p-4 rounded-lg border transition-all hover:shadow-md ${
-                              selectedStatusFilter === 'in_preparation' 
-                                ? 'bg-purple-100 border-purple-400 ring-2 ring-purple-300' 
-                                : 'bg-purple-50 border-purple-200 hover:bg-purple-100'
-                            }`}
-                          >
-                            <div className="text-2xl font-bold text-purple-600">{statusCounts.in_preparation}</div>
-                            <div className="text-sm text-purple-700 font-medium">In Progress</div>
-                          </button>
-                          <button
-                            onClick={() => setSelectedStatusFilter('partially_fulfill')}
-                            className={`text-center p-4 rounded-lg border transition-all hover:shadow-md ${
-                              selectedStatusFilter === 'partially_fulfill' 
-                                ? 'bg-blue-100 border-blue-400 ring-2 ring-blue-300' 
-                                : 'bg-blue-50 border-blue-200 hover:bg-blue-100'
-                            }`}
-                          >
-                            <div className="text-2xl font-bold text-blue-600">{statusCounts.partially_fulfill}</div>
-                            <div className="text-sm text-blue-700 font-medium">Partial</div>
                           </button>
                           <button
                             onClick={() => setSelectedStatusFilter('declined')}
@@ -1848,8 +2030,21 @@ const MyEventsPage: React.FC = () => {
                                             </div>
                                           )}
 
+                                          {/* Decline Reason */}
+                                          {req.status?.toLowerCase() === 'declined' && req.declineReason && (
+                                            <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                                              <div className="flex items-start gap-2">
+                                                <AlertTriangle className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
+                                                <div className="flex-1">
+                                                  <p className="text-xs font-medium text-red-900 mb-1">Decline Reason:</p>
+                                                  <p className="text-sm text-red-800">{req.declineReason}</p>
+                                                </div>
+                                              </div>
+                                            </div>
+                                          )}
+
                                           {/* Availability & Updates */}
-                                          <div className="flex items-center justify-between text-xs text-gray-500">
+                                          <div className="flex items-center justify-between text-xs text-gray-500 mt-3">
                                             {req.isAvailable !== undefined && (
                                               <div className="flex items-center gap-1">
                                                 {req.isAvailable ? (
@@ -2194,25 +2389,25 @@ const MyEventsPage: React.FC = () => {
 
       {/* Edit Event Modal */}
       <Dialog open={showEditModal} onOpenChange={setShowEditModal}>
-        <DialogContent className="max-w-2xl w-[85vw] p-6">
-          <DialogHeader className="pb-4">
-            <DialogTitle className="text-xl font-medium text-gray-900">
-              Edit Event
+        <DialogContent className="!max-w-[900px] w-[90vw] max-h-[90vh] overflow-hidden p-0">
+          <DialogHeader className="px-6 py-4 border-b">
+            <DialogTitle className="text-xl font-semibold text-gray-900">
+              Edit Event Schedule
             </DialogTitle>
-            <DialogDescription className="text-sm text-gray-600">
+            <DialogDescription className="text-sm text-gray-500 mt-1">
               Update location, dates, and times for this event
             </DialogDescription>
           </DialogHeader>
           
           {selectedEditEvent && (
-            <div className="space-y-6">
-              {/* Event Title (Read-only) */}
-              <div>
-                <Label className="text-sm font-medium text-gray-700">Event Title</Label>
-                <div className="mt-1 p-3 bg-gray-50 rounded-md border">
-                  <p className="text-sm text-gray-900">{selectedEditEvent.eventTitle}</p>
+            <div className="flex flex-col h-full">
+              {/* Scrollable Content */}
+              <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+                {/* Event Title (Read-only) */}
+                <div className="bg-gray-50 rounded-lg p-4 border">
+                  <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Event Title</Label>
+                  <p className="text-base font-semibold text-gray-900 mt-1">{selectedEditEvent.eventTitle}</p>
                 </div>
-              </div>
 
               {/* Location Availability Info */}
               {editFormData.location && availableDates.length > 0 && (
@@ -2231,6 +2426,28 @@ const MyEventsPage: React.FC = () => {
                     <AlertTriangle className="w-3 h-3" />
                     {conflictingEvents.length} existing booking{conflictingEvents.length !== 1 ? 's' : ''} found for {editFormData.location} on {format(new Date(editFormData.startDate), "PPP")} - booked times are disabled
                   </p>
+                </div>
+              )}
+
+              {/* Requirement Conflict Indicator */}
+              {requirementConflicts.length > 0 && (
+                <div className="p-3 bg-red-50 border border-red-300 rounded-lg">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 text-red-600" />
+                      <p className="text-sm font-medium text-red-900">
+                        {requirementConflicts.length} Requirement{requirementConflicts.length > 1 ? 's' : ''} Unavailable
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowConflictModal(true)}
+                      className="text-red-700 border-red-300 hover:bg-red-100"
+                    >
+                      View Details
+                    </Button>
+                  </div>
                 </div>
               )}
 
@@ -2380,6 +2597,7 @@ const MyEventsPage: React.FC = () => {
                       <SelectContent className="max-h-80">
                         {generateTimeOptions().map((timeOption) => {
                           const isBooked = isTimeSlotBooked(timeOption.value);
+                          const hasReqConflicts = hasRequirementConflictsAtTime(timeOption.value);
                           return (
                             <SelectItem 
                               key={timeOption.value} 
@@ -2387,15 +2605,22 @@ const MyEventsPage: React.FC = () => {
                               disabled={isBooked}
                               className={isBooked ? 'opacity-50 cursor-not-allowed' : ''}
                             >
-                              <div className="flex items-center justify-between w-full">
+                              <div className="flex items-center justify-between w-full gap-2">
                                 <span className={isBooked ? 'text-gray-400' : ''}>
                                   {timeOption.label}
                                 </span>
-                                {isBooked && (
-                                  <Badge variant="destructive" className="ml-2 text-xs">
-                                    BOOKED
-                                  </Badge>
-                                )}
+                                <div className="flex items-center gap-1">
+                                  {hasReqConflicts && !isBooked && (
+                                    <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-300">
+                                      REQ
+                                    </Badge>
+                                  )}
+                                  {isBooked && (
+                                    <Badge variant="destructive" className="text-xs">
+                                      BOOKED
+                                    </Badge>
+                                  )}
+                                </div>
                               </div>
                             </SelectItem>
                           );
@@ -2457,6 +2682,7 @@ const MyEventsPage: React.FC = () => {
                       <SelectContent className="max-h-80">
                         {getAvailableEndTimes().map((timeOption) => {
                           const isBooked = isTimeSlotBooked(timeOption.value);
+                          const hasReqConflicts = hasRequirementConflictsAtTime(timeOption.value);
                           return (
                             <SelectItem 
                               key={timeOption.value} 
@@ -2464,15 +2690,22 @@ const MyEventsPage: React.FC = () => {
                               disabled={isBooked}
                               className={isBooked ? 'opacity-50 cursor-not-allowed' : ''}
                             >
-                              <div className="flex items-center justify-between w-full">
+                              <div className="flex items-center justify-between w-full gap-2">
                                 <span className={isBooked ? 'text-gray-400' : ''}>
                                   {timeOption.label}
                                 </span>
-                                {isBooked && (
-                                  <Badge variant="destructive" className="ml-2 text-xs">
-                                    BOOKED
-                                  </Badge>
-                                )}
+                                <div className="flex items-center gap-1">
+                                  {hasReqConflicts && !isBooked && (
+                                    <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-300">
+                                      REQ
+                                    </Badge>
+                                  )}
+                                  {isBooked && (
+                                    <Badge variant="destructive" className="text-xs">
+                                      BOOKED
+                                    </Badge>
+                                  )}
+                                </div>
                               </div>
                             </SelectItem>
                           );
@@ -2483,8 +2716,10 @@ const MyEventsPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Action Buttons */}
-              <div className="flex justify-end gap-3 pt-4 border-t">
+              </div>
+
+              {/* Footer Action Buttons */}
+              <div className="px-6 py-4 border-t bg-gray-50 flex justify-end gap-3">
                 <Button 
                   variant="outline" 
                   onClick={() => setShowEditModal(false)}
@@ -2493,8 +2728,10 @@ const MyEventsPage: React.FC = () => {
                 </Button>
                 <Button 
                   onClick={handleSaveEditedEvent}
+                  disabled={requirementConflicts.length > 0}
+                  className={requirementConflicts.length > 0 ? 'opacity-50 cursor-not-allowed' : ''}
                 >
-                  Save Changes
+                  {requirementConflicts.length > 0 ? 'Cannot Save - Resolve Conflicts' : 'Save Changes'}
                 </Button>
               </div>
             </div>
@@ -2922,8 +3159,76 @@ const MyEventsPage: React.FC = () => {
           </div>
         </DialogContent>
       </Dialog>
-        </CardContent>
-      </Card>
+
+      {/* Requirement Conflicts Modal */}
+      <Dialog open={showConflictModal} onOpenChange={setShowConflictModal}>
+        <DialogContent className="!max-w-[700px] w-[85vw] !max-h-[75vh]">
+          <DialogHeader className="pb-3">
+            <DialogTitle className="text-lg font-semibold text-red-900 flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5" />
+              Requirement Availability Issues
+            </DialogTitle>
+            <DialogDescription className="text-xs text-red-700 mt-1">
+              The following requirements are not available. Please choose a different time or reduce requirements.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2 max-h-[300px] overflow-y-auto py-1">
+            {requirementConflicts.map((conflict, idx) => (
+              <Card key={idx} className="border-red-200">
+                <CardContent className="p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-900">{conflict.requirement}</h4>
+                      <p className="text-xs text-gray-500">{conflict.department}</p>
+                    </div>
+                    <Badge variant="destructive" className="text-xs px-2 py-0.5">Insufficient</Badge>
+                  </div>
+                  
+                  <div className="grid grid-cols-3 gap-3 bg-gray-50 rounded p-2">
+                    <div className="text-center">
+                      <p className="text-xs text-gray-500">Requested</p>
+                      <p className="text-base font-bold text-gray-900">{conflict.requested}</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs text-gray-500">Available</p>
+                      <p className="text-base font-bold text-red-600">{conflict.available}</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs text-gray-500">Total</p>
+                      <p className="text-base font-bold text-gray-900">{conflict.total}</p>
+                    </div>
+                  </div>
+                  
+                  <p className="text-xs text-orange-700 text-center mt-2">
+                    {conflict.booked} already booked
+                  </p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          <div className="bg-red-50 border border-red-300 rounded p-2 mt-3">
+            <p className="text-xs text-red-900 font-medium text-center flex items-center justify-center gap-1">
+              <AlertTriangle className="w-3 h-3" />
+              Cannot reschedule to this date/time
+            </p>
+          </div>
+
+          <div className="flex justify-end mt-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowConflictModal(false)}
+            >
+              Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 };

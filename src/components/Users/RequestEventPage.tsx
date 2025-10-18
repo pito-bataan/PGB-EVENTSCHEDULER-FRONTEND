@@ -52,7 +52,8 @@ import {
   Package,
   Settings,
   Clock,
-  Loader2
+  Loader2,
+  User
 } from 'lucide-react';
 
 interface DepartmentRequirement {
@@ -66,6 +67,8 @@ interface DepartmentRequirement {
   isAvailable?: boolean;
   responsiblePerson?: string;
   availabilityNotes?: string; // Notes from resource availability
+  isCustom?: boolean; // Flag for custom requirements added by user
+  status?: string; // Status for custom requirements (pending_validation, pending, confirmed, declined)
 }
 
 interface DepartmentRequirements {
@@ -121,12 +124,15 @@ const RequestEventPage: React.FC = () => {
   const [showRequirementsModal, setShowRequirementsModal] = useState(false);
   const [selectedDepartment, setSelectedDepartment] = useState<string>('');
   const [customRequirement, setCustomRequirement] = useState<string>('');
+  const [customRequirementType, setCustomRequirementType] = useState<'physical' | 'service'>('service');
   const [showCustomInput, setShowCustomInput] = useState(false);
   const [showAvailableDatesModal, setShowAvailableDatesModal] = useState(false);
   const [departmentAvailableDates, setDepartmentAvailableDates] = useState<any[]>([]);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [selectedLocation, setSelectedLocation] = useState<string>('');
   const [showGovModal, setShowGovModal] = useState(false);
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [reviewStep, setReviewStep] = useState(1);
   const [govFiles, setGovFiles] = useState<{
     [key: string]: File | null;
   }>({
@@ -593,7 +599,11 @@ const RequestEventPage: React.FC = () => {
         id: newId,
         name: customRequirement.trim(),
         selected: true,
-        notes: ''
+        notes: '',
+        type: customRequirementType, // Use selected type (physical or service)
+        quantity: customRequirementType === 'physical' ? 1 : undefined, // Default quantity for physical items
+        isCustom: true, // Flag to identify custom requirements
+        status: 'pending_validation' // Custom requirements need department validation
       };
       
       const updatedReqs = [...currentReqs, newRequirement];
@@ -602,6 +612,8 @@ const RequestEventPage: React.FC = () => {
       handleInputChange('departmentRequirements', newDeptReqs);
       
       setCustomRequirement('');
+      setCustomRequirementType('service'); // Reset to default
+      toast.success(`Custom ${customRequirementType === 'physical' ? 'quantity-based' : 'service'} requirement added - awaiting department validation`);
     }
   };
 
@@ -1314,7 +1326,7 @@ const RequestEventPage: React.FC = () => {
               <CardContent className="space-y-4">
                 {/* Row 1: Title */}
                 <div>
-                  <Label htmlFor="eventTitle" className="text-sm font-medium">Event Title *</Label>
+                  <Label htmlFor="eventTitle" className="text-sm font-medium">Event Title <span className="text-red-500">*</span></Label>
                   <Input
                     id="eventTitle"
                     placeholder="Enter event title"
@@ -1327,7 +1339,7 @@ const RequestEventPage: React.FC = () => {
                 {/* Row 2: Requestor & Location */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="requestor" className="text-sm font-medium">Requestor *</Label>
+                    <Label htmlFor="requestor" className="text-sm font-medium">Requestor <span className="text-red-500">*</span></Label>
                     <Input
                       id="requestor"
                       placeholder="Enter requestor name"
@@ -1337,29 +1349,49 @@ const RequestEventPage: React.FC = () => {
                     />
                   </div>
                   <div>
-                    <Label htmlFor="location" className="text-sm font-medium">Location *</Label>
+                    <Label htmlFor="location" className="text-sm font-medium">Location <span className="text-red-500">*</span></Label>
                     {!showCustomLocation ? (
-                      <Select onValueChange={handleLocationChange}>
-                        <SelectTrigger className="mt-1 h-9">
-                          <SelectValue placeholder="Select location" />
-                        </SelectTrigger>
-                        <SelectContent className="max-h-48">
-                          {locations.map((location) => (
-                            <SelectItem 
-                              key={location} 
-                              value={location}
-                              className={location === 'Add Custom Location' ? 'text-blue-600 font-medium' : ''}
-                            >
-                              <div className="flex items-center gap-2">
-                                {location === 'Add Custom Location' && (
-                                  <Plus className="w-3 h-3" />
-                                )}
-                                {location}
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <div className="flex gap-2">
+                        <Select 
+                          value={formData.location} 
+                          onValueChange={handleLocationChange}
+                        >
+                          <SelectTrigger className="mt-1 h-9 flex-1">
+                            <SelectValue placeholder="Select location" />
+                          </SelectTrigger>
+                          <SelectContent className="max-h-48">
+                            {locations.map((location) => (
+                              <SelectItem 
+                                key={location} 
+                                value={location}
+                                className={location === 'Add Custom Location' ? 'text-blue-600 font-medium' : ''}
+                              >
+                                <div className="flex items-center gap-2">
+                                  {location === 'Add Custom Location' && (
+                                    <Plus className="w-3 h-3" />
+                                  )}
+                                  {location}
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {formData.location && formData.location !== 'Add Custom Location' && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedLocation(formData.location);
+                              setShowScheduleModal(true);
+                            }}
+                            className="mt-1 h-9 px-3"
+                            title="Edit schedule"
+                          >
+                            <CalendarIcon className="w-4 h-4" />
+                          </Button>
+                        )}
+                      </div>
                     ) : (
                       <div className="space-y-2">
                         <Input
@@ -1388,7 +1420,7 @@ const RequestEventPage: React.FC = () => {
                 {/* Row 3: Participants */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <div>
-                    <Label htmlFor="participants" className="text-sm font-medium">Participants *</Label>
+                    <Label htmlFor="participants" className="text-sm font-medium">Participants <span className="text-red-500">*</span></Label>
                     <Input
                       id="participants"
                       type="number"
@@ -1434,7 +1466,7 @@ const RequestEventPage: React.FC = () => {
 
                 {/* Description */}
                 <div>
-                  <Label htmlFor="description" className="text-sm font-medium">Description</Label>
+                  <Label htmlFor="description" className="text-sm font-medium">Description <span className="text-red-500">*</span></Label>
                   <Textarea
                     id="description"
                     placeholder="Enter event description"
@@ -1454,7 +1486,7 @@ const RequestEventPage: React.FC = () => {
               <CardHeader className="pb-4">
                 <CardTitle className="text-lg flex items-center gap-2">
                   <Paperclip className="w-5 h-5 text-blue-600" />
-                  Attachments
+                  Attachments <span className="text-red-500">*</span>
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -1673,15 +1705,37 @@ const RequestEventPage: React.FC = () => {
                                           </div>
                                         </div>
                                         <div className="flex items-center justify-between text-xs">
-                                          <span>Available: {req.totalQuantity || 'N/A'}</span>
-                                          <span className={`flex items-center gap-1 ${
-                                            req.isAvailable ? 'text-green-700' : 'text-red-700'
-                                          }`}>
-                                            <div className={`w-1.5 h-1.5 rounded-full ${
-                                              req.isAvailable ? 'bg-green-500' : 'bg-red-500'
-                                            }`}></div>
-                                            {req.isAvailable ? 'Available' : 'Unavailable'}
-                                          </span>
+                                          {req.isCustom ? (
+                                            <>
+                                              <span>
+                                                {req.type === 'physical' && req.quantity 
+                                                  ? `Quantity: ${req.quantity}` 
+                                                  : req.notes && req.notes.trim()
+                                                  ? `Notes: ${req.notes.substring(0, 20)}${req.notes.length > 20 ? '...' : ''}`
+                                                  : 'Custom requirement'}
+                                              </span>
+                                              <span className="flex items-center gap-1 text-orange-700">
+                                                <div className="w-1.5 h-1.5 rounded-full bg-orange-500"></div>
+                                                Pending Validation
+                                              </span>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <span>
+                                                {req.type === 'physical' && req.quantity 
+                                                  ? `Requested: ${req.quantity}${req.totalQuantity ? ` of ${req.totalQuantity}` : ''}` 
+                                                  : `Available: ${req.totalQuantity || 'N/A'}`}
+                                              </span>
+                                              <span className={`flex items-center gap-1 ${
+                                                req.isAvailable ? 'text-green-700' : 'text-red-700'
+                                              }`}>
+                                                <div className={`w-1.5 h-1.5 rounded-full ${
+                                                  req.isAvailable ? 'bg-green-500' : 'bg-red-500'
+                                                }`}></div>
+                                                {req.isAvailable ? 'Available' : 'Unavailable'}
+                                              </span>
+                                            </>
+                                          )}
                                         </div>
                                         {req.responsiblePerson && (
                                           <div className="text-xs text-blue-600 mt-1">
@@ -1974,21 +2028,15 @@ const RequestEventPage: React.FC = () => {
             Previous
           </Button>
           <Button 
-            onClick={handleSubmitEventRequest}
+            onClick={() => {
+              setShowReviewModal(true);
+              setReviewStep(1);
+            }}
             disabled={!isFormReadyToSubmit() || isSubmitting}
             className="bg-green-600 hover:bg-green-700 gap-2"
           >
-            {isSubmitting ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Submitting...
-              </>
-            ) : (
-              <>
-                <Send className="w-4 h-4" />
-                Submit Request
-              </>
-            )}
+            <Send className="w-4 h-4" />
+            Review & Submit
           </Button>
         </motion.div>
       )}
@@ -2006,7 +2054,7 @@ const RequestEventPage: React.FC = () => {
           </Button>
           <Button 
             onClick={() => setCurrentStep(3)} 
-            disabled={!formData.eventTitle || !formData.requestor || !formData.location || !formData.participants || !formData.description}
+            disabled={!formData.eventTitle || !formData.requestor || !formData.location || !formData.participants || !formData.description || formData.attachments.length === 0}
             className="gap-2"
           >
             Continue to Tag Departments
@@ -2138,14 +2186,21 @@ const RequestEventPage: React.FC = () => {
                           </div>
                           <div className="flex items-center gap-1">
                             <span className="font-medium">Status:</span>
-                            <span className={`flex items-center gap-1 ${
-                              requirement.isAvailable ? 'text-green-600' : 'text-red-600'
-                            }`}>
-                              <div className={`w-2 h-2 rounded-full ${
-                                requirement.isAvailable ? 'bg-green-500' : 'bg-red-500'
-                              }`}></div>
-                              {requirement.isAvailable ? 'Available' : 'Unavailable'}
-                            </span>
+                            {requirement.isCustom ? (
+                              <span className="flex items-center gap-1 text-orange-600">
+                                <div className="w-2 h-2 rounded-full bg-orange-500"></div>
+                                Pending Validation
+                              </span>
+                            ) : (
+                              <span className={`flex items-center gap-1 ${
+                                requirement.isAvailable ? 'text-green-600' : 'text-red-600'
+                              }`}>
+                                <div className={`w-2 h-2 rounded-full ${
+                                  requirement.isAvailable ? 'bg-green-500' : 'bg-red-500'
+                                }`}></div>
+                                {requirement.isAvailable ? 'Available' : 'Unavailable'}
+                              </span>
+                            )}
                           </div>
                         </div>
                         
@@ -2221,15 +2276,37 @@ const RequestEventPage: React.FC = () => {
 
           {/* Custom Requirement Input */}
           {showCustomInput && (
-            <div className="mb-6">
+            <div className="mb-6 space-y-3">
               <div className="flex gap-2">
                 <Input
-                  placeholder="Enter custom requirement..."
+                  placeholder="Enter custom requirement name..."
                   value={customRequirement}
                   onChange={(e) => setCustomRequirement(e.target.value)}
                   onKeyPress={(e) => e.key === 'Enter' && handleAddCustomRequirement()}
                   className="flex-1"
                 />
+                <Select 
+                  value={customRequirementType || 'service'} 
+                  onValueChange={(value: 'physical' | 'service') => setCustomRequirementType(value)}
+                >
+                  <SelectTrigger className="w-[140px]">
+                    <SelectValue placeholder="Type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="physical">
+                      <div className="flex items-center gap-2">
+                        <Package className="w-3 h-3" />
+                        Quantity
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="service">
+                      <div className="flex items-center gap-2">
+                        <StickyNote className="w-3 h-3" />
+                        Notes
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
                 <Button 
                   onClick={handleAddCustomRequirement}
                   disabled={!customRequirement.trim()}
@@ -2239,6 +2316,9 @@ const RequestEventPage: React.FC = () => {
                   Add
                 </Button>
               </div>
+              <p className="text-xs text-gray-500">
+                Choose "Quantity" for physical items or "Notes" for services
+              </p>
             </div>
           )}
 
@@ -2250,9 +2330,16 @@ const RequestEventPage: React.FC = () => {
                 {formData.departmentRequirements[selectedDepartment]
                   ?.filter(req => req.selected)
                   .map((requirement) => (
-                  <div key={requirement.id} className="flex items-center gap-1 bg-gray-100 rounded-full px-3 py-1">
-                    <span className="text-sm text-gray-700">
+                  <div key={requirement.id} className={`flex items-center gap-1 rounded-full px-3 py-1 ${
+                    requirement.isCustom ? 'bg-orange-100 border border-orange-300' : 'bg-gray-100'
+                  }`}>
+                    <span className="text-sm text-gray-700 truncate max-w-[200px]" title={requirement.name}>
                       {requirement.name}
+                      {requirement.isCustom && (
+                        <Badge variant="outline" className="ml-2 text-xs bg-orange-50 text-orange-700 border-orange-300">
+                          Pending Validation
+                        </Badge>
+                      )}
                       {requirement.type === 'physical' && requirement.quantity && (
                         <span className={`font-medium ml-1 ${
                           requirement.totalQuantity && requirement.quantity > requirement.totalQuantity
@@ -2301,7 +2388,7 @@ const RequestEventPage: React.FC = () => {
                                 value={requirement.quantity || ''}
                                 onChange={(e) => handleRequirementQuantity(requirement.id, parseInt(e.target.value) || 0)}
                                 className={`text-sm ${
-                                  requirement.quantity && (
+                                  !requirement.isCustom && requirement.quantity && (
                                     (conflictingEvents.length > 0 && formData.startDate && formData.startTime && 
                                      hasRequirementConflict(requirement, selectedDepartment) &&
                                      requirement.quantity > getAvailableQuantity(requirement, selectedDepartment)) ||
@@ -2311,14 +2398,19 @@ const RequestEventPage: React.FC = () => {
                                   ) ? 'border-red-300 focus:border-red-500 focus:ring-red-200' : ''
                                 }`}
                                 min="1"
-                                max={
+                                max={requirement.isCustom ? undefined : (
                                   conflictingEvents.length > 0 && formData.startDate && formData.startTime && 
                                   hasRequirementConflict(requirement, selectedDepartment)
                                     ? getAvailableQuantity(requirement, selectedDepartment)
                                     : (requirement.totalQuantity || undefined)
-                                }
+                                )}
                               />
-                              {requirement.quantity && (
+                              {requirement.isCustom ? (
+                                <p className="text-xs text-orange-600 bg-orange-50 p-2 rounded flex items-center gap-1">
+                                  <Info className="w-3 h-3" />
+                                  Custom requirement - quantity will be validated by {selectedDepartment}
+                                </p>
+                              ) : requirement.quantity && (
                                 (conflictingEvents.length > 0 && formData.startDate && formData.startTime && 
                                  hasRequirementConflict(requirement, selectedDepartment) &&
                                  requirement.quantity > getAvailableQuantity(requirement, selectedDepartment)) ||
@@ -2489,9 +2581,10 @@ const RequestEventPage: React.FC = () => {
                       }
                     }
                   }}
+                  disabled={!formData.startDate}
                 >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select start time" />
+                  <SelectTrigger className="w-full" disabled={!formData.startDate}>
+                    <SelectValue placeholder={!formData.startDate ? "Select start date first" : "Select start time"} />
                   </SelectTrigger>
                   <SelectContent className="max-h-80">
                     {generateTimeOptions().map((timeOption) => {
@@ -2570,7 +2663,7 @@ const RequestEventPage: React.FC = () => {
                   onValueChange={(value) => handleInputChange('endTime', value)}
                   disabled={!formData.startTime}
                 >
-                  <SelectTrigger className="w-full">
+                  <SelectTrigger className="w-full" disabled={!formData.startTime}>
                     <SelectValue placeholder={formData.startTime ? "Select end time" : "Select start time first"} />
                   </SelectTrigger>
                   <SelectContent className="max-h-80">
@@ -2979,6 +3072,317 @@ const RequestEventPage: React.FC = () => {
             <Button variant="outline" onClick={() => setShowAvailableDatesModal(false)}>
               Close
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Review & Submit Modal */}
+      <Dialog open={showReviewModal} onOpenChange={(open) => {
+        setShowReviewModal(open);
+        if (!open) setReviewStep(1);
+      }}>
+        <DialogContent className="!max-w-4xl !w-[95vw] max-h-[90vh] overflow-hidden p-0">
+          <div className="flex flex-col h-full">
+            {/* Header */}
+            <div className="px-8 py-6 border-b">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl font-bold tracking-tight text-gray-900">Review Your Request</h2>
+                  <p className="text-sm text-gray-500 mt-1.5">
+                    Please verify all details before submitting
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {[1, 2, 3].map((step) => (
+                    <div
+                      key={step}
+                      className={`h-2 w-12 rounded-full transition-all ${
+                        step === reviewStep
+                          ? 'bg-blue-600'
+                          : step < reviewStep
+                          ? 'bg-blue-200'
+                          : 'bg-gray-200'
+                      }`}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Content with slide transitions */}
+            <div className="flex-1 overflow-hidden relative min-h-[400px]">
+              {/* Step 1: Event Details */}
+              {reviewStep === 1 && (
+              <motion.div
+                key="review-step-1"
+                initial={{ x: 300, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                exit={{ x: -300, opacity: 0 }}
+                transition={{ duration: 0.3 }}
+                className="absolute inset-0 p-8 overflow-y-auto"
+              >
+                <div className="max-w-3xl mx-auto space-y-6">
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-1">Event Details</h3>
+                    <p className="text-sm text-gray-500">Basic information about your event</p>
+                  </div>
+
+                  <Separator />
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Event Title</Label>
+                      <p className="text-base font-medium text-gray-900">{formData.eventTitle}</p>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Requestor</Label>
+                      <p className="text-base font-medium text-gray-900">{formData.requestor}</p>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Location</Label>
+                      <p className="text-base font-medium text-gray-900">{formData.location}</p>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Participants</Label>
+                      <div className="flex items-center gap-3 text-sm">
+                        <span className="font-medium text-gray-900">{formData.participants} Regular</span>
+                        {formData.vip && <span className="text-gray-600">{formData.vip} VIP</span>}
+                        {formData.vvip && <span className="text-gray-600">{formData.vvip} VVIP</span>}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Description</Label>
+                    <p className="text-sm text-gray-700 leading-relaxed bg-gray-50 p-4 rounded-lg border">
+                      {formData.description}
+                    </p>
+                  </div>
+
+                  <div className="space-y-3">
+                    <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                      Attachments ({formData.attachments.length})
+                    </Label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {formData.attachments.map((file, idx) => (
+                        <div key={idx} className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg border text-sm">
+                          <Paperclip className="w-4 h-4 text-gray-400" />
+                          <span className="truncate font-medium text-gray-700">{file.name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+              )}
+
+              {/* Step 2: Tagged Departments */}
+              {reviewStep === 2 && (
+              <motion.div
+                key="review-step-2"
+                initial={{ x: 300, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                exit={{ x: -300, opacity: 0 }}
+                transition={{ duration: 0.3 }}
+                className="absolute inset-0 p-8 overflow-y-auto"
+              >
+                <div className="max-w-3xl mx-auto space-y-6">
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-1">Tagged Departments</h3>
+                    <p className="text-sm text-gray-500">Requirements for each department</p>
+                  </div>
+
+                  <Separator />
+
+                  <div className="space-y-4">
+                    {formData.taggedDepartments.map((dept) => {
+                      const deptReqs = formData.departmentRequirements[dept]?.filter(req => req.selected) || [];
+                      return (
+                        <Card key={dept} className="overflow-hidden">
+                          <CardHeader className="bg-gray-50 border-b py-4 px-6">
+                            <CardTitle className="text-base font-semibold flex items-center gap-2">
+                              <Building2 className="w-5 h-5 text-blue-600" />
+                              {dept}
+                              <Badge variant="secondary" className="ml-auto text-xs">
+                                {deptReqs.length} {deptReqs.length === 1 ? 'Requirement' : 'Requirements'}
+                              </Badge>
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent className="p-6">
+                            <div className="space-y-2">
+                              {deptReqs.map((req) => (
+                                <div key={req.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border hover:bg-gray-100 transition-colors">
+                                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                                    <div className="flex-shrink-0">
+                                      {req.type === 'physical' ? (
+                                        <Package className="w-4 h-4 text-gray-400" />
+                                      ) : (
+                                        <Settings className="w-4 h-4 text-gray-400" />
+                                      )}
+                                    </div>
+                                    <span className="font-medium text-sm text-gray-900 truncate">{req.name}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2 flex-shrink-0">
+                                    {req.isCustom && (
+                                      <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-200">
+                                        Custom
+                                      </Badge>
+                                    )}
+                                    {req.type === 'physical' && req.quantity && (
+                                      <Badge variant="secondary" className="text-xs">
+                                        Qty: {req.quantity}
+                                      </Badge>
+                                    )}
+                                    {req.notes && req.notes.trim() && (
+                                      <StickyNote className="w-4 h-4 text-gray-400" />
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                </div>
+              </motion.div>
+              )}
+
+              {/* Step 3: Schedule & Contact */}
+              {reviewStep === 3 && (
+              <motion.div
+                key="review-step-3"
+                initial={{ x: 300, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                exit={{ x: -300, opacity: 0 }}
+                transition={{ duration: 0.3 }}
+                className="absolute inset-0 p-8 overflow-y-auto"
+              >
+                <div className="max-w-3xl mx-auto space-y-6">
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-1">Schedule & Contact</h3>
+                    <p className="text-sm text-gray-500">Event timing and contact information</p>
+                  </div>
+
+                  <Separator />
+
+                  <Card>
+                    <CardHeader className="bg-gray-50 border-b py-4 px-6">
+                      <CardTitle className="text-base font-semibold flex items-center gap-2">
+                        <CalendarIcon className="w-5 h-5 text-blue-600" />
+                        Event Schedule
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-3">
+                          <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Start Date & Time</Label>
+                          <div className="flex items-center gap-2 text-sm">
+                            <CalendarIcon className="w-4 h-4 text-gray-400" />
+                            <span className="font-medium text-gray-900">
+                              {formData.startDate && format(formData.startDate, "PPP")}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 text-sm">
+                            <Clock className="w-4 h-4 text-gray-400" />
+                            <span className="font-medium text-gray-900">
+                              {formData.startTime && formatTime(formData.startTime)}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="space-y-3">
+                          <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">End Date & Time</Label>
+                          <div className="flex items-center gap-2 text-sm">
+                            <CalendarIcon className="w-4 h-4 text-gray-400" />
+                            <span className="font-medium text-gray-900">
+                              {formData.endDate && format(formData.endDate, "PPP")}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 text-sm">
+                            <Clock className="w-4 h-4 text-gray-400" />
+                            <span className="font-medium text-gray-900">
+                              {formData.endTime && formatTime(formData.endTime)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader className="bg-gray-50 border-b py-4 px-6">
+                      <CardTitle className="text-base font-semibold flex items-center gap-2">
+                        <User className="w-5 h-5 text-blue-600" />
+                        Contact Information
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-2">
+                          <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Contact Number</Label>
+                          <p className="text-base font-medium text-gray-900">{formData.contactNumber}</p>
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Email Address</Label>
+                          <p className="text-base font-medium text-gray-900">{formData.contactEmail}</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              </motion.div>
+              )}
+            </div>
+
+            {/* Footer Navigation */}
+            <div className="px-6 py-4 border-t bg-gray-50 flex items-center justify-between">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (reviewStep > 1) {
+                    setReviewStep(reviewStep - 1);
+                  } else {
+                    setShowReviewModal(false);
+                    setReviewStep(1);
+                  }
+                }}
+              >
+                {reviewStep === 1 ? 'Cancel' : 'Previous'}
+              </Button>
+
+              {reviewStep < 3 ? (
+                <Button
+                  onClick={() => setReviewStep(reviewStep + 1)}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  Next
+                  <ChevronRight className="w-4 h-4 ml-1" />
+                </Button>
+              ) : (
+                <Button
+                  onClick={() => {
+                    setShowReviewModal(false);
+                    setReviewStep(1);
+                    handleSubmitEventRequest();
+                  }}
+                  disabled={isSubmitting}
+                  className="bg-green-600 hover:bg-green-700 gap-2"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Submitting...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      Submit Request
+                    </>
+                  )}
+                </Button>
+              )}
+            </div>
           </div>
         </DialogContent>
       </Dialog>
