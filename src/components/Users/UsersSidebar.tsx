@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import EventCountBadge from '@/components/ui/event-count-badge';
 import { useUnreadMessages } from '@/hooks/useUnreadMessages';
 import { useMessagesStore } from '@/stores/messagesStore';
+import { useSocket } from '@/hooks/useSocket';
 import { 
   Calendar, 
   CalendarDays,
@@ -65,11 +66,17 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // Initialize Socket.IO
+  const { onStatusUpdate, offStatusUpdate } = useSocket(currentUser.id);
+
   // Event count state for My Calendar badge
   const [eventCount, setEventCount] = useState(0);
   
   // Location event count state for Manage Location badge
   const [locationEventCount, setLocationEventCount] = useState(0);
+  
+  // Tagged departments ongoing events count
+  const [taggedDepartmentsCount, setTaggedDepartmentsCount] = useState(0);
   
   // Fetch event count for My Calendar badge
   useEffect(() => {
@@ -134,6 +141,40 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
     }
   }, [currentUser.department]);
 
+  // Fetch tagged departments ongoing events count
+  useEffect(() => {
+    const fetchTaggedDepartmentsCount = async () => {
+      try {
+        const token = localStorage.getItem('authToken');
+        if (!token) return;
+        
+        const response = await axios.get(`${API_BASE_URL}/events/tagged`, {
+          headers: getAuthHeaders()
+        });
+        
+        if (response.data.success) {
+          const events = response.data.data || [];
+          // Count only ongoing events (not completed)
+          const ongoingEvents = events.filter((event: any) => {
+            const userDeptReqs = event.departmentRequirements?.[currentUser.department] || [];
+            const confirmedCount = userDeptReqs.filter((r: any) => (r.status || 'pending') === 'confirmed').length;
+            const totalCount = userDeptReqs.length;
+            // Ongoing = not all requirements are confirmed
+            return totalCount === 0 || confirmedCount < totalCount;
+          });
+          setTaggedDepartmentsCount(ongoingEvents.length);
+        }
+      } catch (error) {
+        // Keep default count if fetch fails
+        setTaggedDepartmentsCount(0);
+      }
+    };
+    
+    if (currentUser.department && currentUser.department !== "Department" && permissions.taggedDepartments) {
+      fetchTaggedDepartmentsCount();
+    }
+  }, [currentUser.department, permissions.taggedDepartments]);
+
   // Real-time refresh functions
   const refreshEventCounts = async () => {
     try {
@@ -164,6 +205,24 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
           setLocationEventCount(locationBookedEvents.length);
         }
       }
+
+      // Update Tagged Departments count
+      if (permissions.taggedDepartments) {
+        const taggedResponse = await axios.get(`${API_BASE_URL}/events/tagged`, {
+          headers: getAuthHeaders()
+        });
+        
+        if (taggedResponse.data.success) {
+          const taggedEvents = taggedResponse.data.data || [];
+          const ongoingEvents = taggedEvents.filter((event: any) => {
+            const userDeptReqs = event.departmentRequirements?.[currentUser.department] || [];
+            const confirmedCount = userDeptReqs.filter((r: any) => (r.status || 'pending') === 'confirmed').length;
+            const totalCount = userDeptReqs.length;
+            return totalCount === 0 || confirmedCount < totalCount;
+          });
+          setTaggedDepartmentsCount(ongoingEvents.length);
+        }
+      }
     } catch (error) {
       // Keep current counts if refresh fails
     }
@@ -172,16 +231,10 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
   // Refresh counts when navigating or permissions change
   useEffect(() => {
     refreshEventCounts();
-  }, [location.pathname, permissions.manageLocation, permissions.myCalendar, currentUser.department]);
+  }, [location.pathname, permissions.manageLocation, permissions.myCalendar, permissions.taggedDepartments, currentUser.department]);
 
-  // Real-time polling every 15 seconds for live updates
-  useEffect(() => {
-    const interval = setInterval(() => {
-      refreshEventCounts();
-    }, 15000); // 15 seconds for more real-time feel
-
-    return () => clearInterval(interval);
-  }, [currentUser.department, permissions]);
+  // Removed polling - now using Socket.IO for real-time updates!
+  // Badge counts update via Socket.IO 'status-update' event (see below)
 
   // Refresh when window gains focus (user comes back to the app)
   useEffect(() => {
@@ -204,6 +257,56 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
       window.removeEventListener('storage', handleStorageChange);
     };
   }, [currentUser.department, permissions]);
+
+  // Socket.IO listener for real-time requirement status updates
+  useEffect(() => {
+    console.log('🔌 [SIDEBAR] Setting up Socket.IO listener, onStatusUpdate available:', typeof onStatusUpdate === 'function');
+    
+    if (typeof onStatusUpdate === 'function' && permissions.taggedDepartments) {
+      const handleStatusUpdate = (data: any) => {
+        console.log('🔔 [SIDEBAR] ✅✅✅ SOCKET.IO EVENT RECEIVED! ✅✅✅');
+        console.log('📦 Event data:', data);
+        
+        // Immediately refresh badge count (non-blocking)
+        setTimeout(() => {
+          if (permissions.taggedDepartments) {
+            const token = localStorage.getItem('authToken');
+            if (token) {
+              axios.get(`${API_BASE_URL}/events/tagged`, {
+                headers: getAuthHeaders()
+              })
+              .then(taggedResponse => {
+                if (taggedResponse.data.success) {
+                  const taggedEvents = taggedResponse.data.data || [];
+                  const ongoingEvents = taggedEvents.filter((event: any) => {
+                    const userDeptReqs = event.departmentRequirements?.[currentUser.department] || [];
+                    const confirmedCount = userDeptReqs.filter((r: any) => 
+                      (r.status || 'pending') === 'confirmed'
+                    ).length;
+                    const totalCount = userDeptReqs.length;
+                    return totalCount === 0 || confirmedCount < totalCount;
+                  });
+                  setTaggedDepartmentsCount(ongoingEvents.length);
+                  console.log('✅ [SIDEBAR] Badge updated:', ongoingEvents.length);
+                }
+              })
+              .catch(error => {
+                console.error('Failed to update badge:', error);
+              });
+            }
+          }
+        }, 0); // Execute immediately but non-blocking
+      };
+
+      onStatusUpdate(handleStatusUpdate);
+
+      return () => {
+        if (typeof offStatusUpdate === 'function') {
+          offStatusUpdate();
+        }
+      };
+    }
+  }, [currentUser.department, permissions.taggedDepartments]);
 
   // Use messages store for real-time unread counts
   const { 
@@ -412,6 +515,7 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
           const isMyCalendar = item.label === 'My Calendar';
           const isMessages = item.label === 'Messages';
           const isManageLocation = item.label === 'Manage Location';
+          const isTaggedDepartments = item.label === 'Tagged Departments';
           const totalEventCount = isMyCalendar ? eventCount : 0;
           
 
@@ -458,6 +562,13 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
               {isManageLocation && locationEventCount > 0 && !isCollapsed && (
                 <div className="absolute -top-1 -right-1 bg-red-500 text-white text-xs px-1.5 py-0.5 min-w-[20px] h-5 flex items-center justify-center rounded-full">
                   {locationEventCount > 99 ? '99+' : locationEventCount}
+                </div>
+              )}
+
+              {/* Ongoing Events Count Badge for Tagged Departments */}
+              {isTaggedDepartments && taggedDepartmentsCount > 0 && !isCollapsed && (
+                <div className="absolute -top-1 -right-1 bg-red-500 text-white text-xs px-1.5 py-0.5 min-w-[20px] h-5 flex items-center justify-center rounded-full">
+                  {taggedDepartmentsCount > 99 ? '99+' : taggedDepartmentsCount}
                 </div>
               )}
               

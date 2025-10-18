@@ -24,7 +24,8 @@ import {
   Clock,
   MapPin,
   AlertCircle,
-  X
+  X,
+  RefreshCw
 } from 'lucide-react';
 import axios from 'axios';
 import { useSocket } from '@/hooks/useSocket';
@@ -99,8 +100,8 @@ const Dashboard: React.FC = () => {
   
   // User data loaded and memoized
   
-  // Initialize Socket.IO for real-time read status updates only (popups handled by GlobalNotificationSystem)
-  const { onNotificationRead, offNotificationRead } = useSocket(userId);
+  // Initialize Socket.IO for real-time updates
+  const { onNotificationRead, offNotificationRead, onNewNotification, offNewNotification } = useSocket(userId);
 
   // Helper function to format time
   const formatTime = (time: string) => {
@@ -291,35 +292,30 @@ const Dashboard: React.FC = () => {
   useEffect(() => {
     fetchDashboardData(userId);
     fetchReadNotifications(userId);
-    
-    // Set up periodic refresh for real-time updates
-    const refreshInterval = setInterval(() => {
-      fetchDashboardData(userId, true); // Force refresh
-    }, 30000); // Refresh every 30 seconds
-    
-    return () => clearInterval(refreshInterval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]); // REMOVED fetchDashboardData and fetchReadNotifications to prevent infinite loop
 
-  // Listen for global notification events from GlobalNotificationSystem (DISABLED - was causing loops)
-  // useEffect(() => {
-  //   const handleGlobalNotificationUpdate = (event: any) => {
-  //     if (event.detail.type === 'new') {
-  //       // Refresh notifications when new notification arrives
-  //       setTimeout(() => {
-  //         fetchEventsAndNotifications().then(() => {
-  //           loadReadNotifications();
-  //         });
-  //       }, 500);
-  //     }
-  //   };
+  // Listen for Socket.IO new notification events (TRUE REAL-TIME, NO POLLING!)
+  useEffect(() => {
+    if (typeof onNewNotification === 'function') {
+      const handleNewNotification = (notificationData: any) => {
+        console.log('🔔 [DASHBOARD] Socket.IO notification received, refreshing dashboard');
+        // Refresh dashboard when new notification arrives via Socket.IO
+        fetchDashboardData(userId, true); // Force refresh to get new notifications
+      };
 
-  //   window.addEventListener('notificationUpdate', handleGlobalNotificationUpdate);
-    
-  //   return () => {
-  //     window.removeEventListener('notificationUpdate', handleGlobalNotificationUpdate);
-  //   };
-  // }, [fetchEventsAndNotifications, loadReadNotifications]);
+      // Set up Socket.IO listener
+      onNewNotification(handleNewNotification);
+      
+      // Cleanup
+      return () => {
+        if (typeof offNewNotification === 'function') {
+          offNewNotification();
+        }
+      };
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]); // Only depend on userId, not on fetchDashboardData to prevent loops
 
   
   // Real-time notification read status listener (new notifications handled by GlobalNotificationSystem)
@@ -393,9 +389,23 @@ const Dashboard: React.FC = () => {
           <div className="p-3 border-b">
             <div className="flex items-center justify-between">
               <h3 className="font-medium text-sm">Notifications</h3>
-              <Button variant="ghost" size="sm" onClick={() => setNotificationOpen(false)} className="h-6 w-6 p-0">
-                <X className="h-3 w-3" />
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={() => {
+                    console.log('🔄 [DASHBOARD] Manual refresh triggered');
+                    fetchDashboardData(userId, true);
+                  }} 
+                  className="h-6 w-6 p-0"
+                  title="Refresh notifications"
+                >
+                  <RefreshCw className="h-3 w-3" />
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setNotificationOpen(false)} className="h-6 w-6 p-0">
+                  <X className="h-3 w-3" />
+                </Button>
+              </div>
             </div>
           </div>
           

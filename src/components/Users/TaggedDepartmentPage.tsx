@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { useTaggedDepartmentsStore } from '@/stores/taggedDepartmentsStore';
+import { useSocket } from '@/hooks/useSocket';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -15,6 +16,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
@@ -45,7 +55,8 @@ import {
   MessageSquare,
   Edit3,
   Save,
-  X
+  X,
+  MapPin
 } from 'lucide-react';
 
 // Event type definitions
@@ -62,6 +73,7 @@ interface Requirement {
   status?: string;
   departmentNotes?: string;
   lastUpdated?: string;
+  declineReason?: string;
 }
 
 interface Event {
@@ -99,6 +111,27 @@ interface ApiResponse {
 }
 
 const TaggedDepartmentPage: React.FC = () => {
+  // Get current user data
+  const currentUser = JSON.parse(localStorage.getItem('userData') || '{}');
+  const userId = currentUser._id || currentUser.id || 'unknown';
+  
+  // Initialize Socket.IO
+  const { onNewNotification, offNewNotification, onStatusUpdate, offStatusUpdate } = useSocket(userId);
+  
+  // Decline dialog state
+  const [declineDialog, setDeclineDialog] = React.useState<{
+    open: boolean;
+    eventId: string;
+    requirementId: string;
+    requirementName: string;
+  }>({
+    open: false,
+    eventId: '',
+    requirementId: '',
+    requirementName: ''
+  });
+  const [declineReason, setDeclineReason] = React.useState('');
+  
   // Zustand store - replaces all useState calls above!
   const {
     events,
@@ -125,16 +158,201 @@ const TaggedDepartmentPage: React.FC = () => {
   useEffect(() => {
     // Fetch tagged events using Zustand store
     fetchTaggedEvents();
-  }, [fetchTaggedEvents]);
+    
+    // Set up Socket.IO listener for real-time updates (NO POLLING!)
+    if (typeof onNewNotification === 'function') {
+      const handleNewNotification = (notificationData: any) => {
+        console.log('🔔 [TAGGED DEPT] Socket.IO notification received:', notificationData);
+        
+        // Check if this notification is for a tagged event
+        const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+        const userDepartment = userData.department || userData.departmentName || '';
+        
+        // If user's department is tagged in this event, refresh the list
+        if (userDepartment && notificationData.taggedDepartments?.includes(userDepartment)) {
+          console.log('✅ [TAGGED DEPT] User department is tagged, refreshing events list');
+          fetchTaggedEvents(true); // Force refresh to get new tagged event
+        }
+      };
+      
+      // Set up Socket.IO listener
+      onNewNotification(handleNewNotification);
+      
+      // Cleanup
+      return () => {
+        if (typeof offNewNotification === 'function') {
+          offNewNotification();
+        }
+      };
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Empty deps to prevent infinite loop
 
-  const handleRequirementStatusChange = async (eventId: string, requirementId: string, status: string) => {
-    try {
-      await updateRequirementStatus(eventId, requirementId, status);
-      // Update selected event with new data
-      const updatedEvent = events.find(event => event._id === eventId);
+  // Socket.IO listener for real-time requirement status updates
+  useEffect(() => {
+    if (typeof onStatusUpdate === 'function') {
+      const handleStatusUpdate = (data: any) => {
+        console.log('🔄 [TAGGED DEPT] Socket.IO status update received');
+        console.log('📦 Update data:', data);
+        
+        // Immediately refresh events list to update tabs
+        console.log('🔄 Refreshing events list to update Ongoing/Completed tabs');
+        fetchTaggedEvents(true);
+      };
+
+      onStatusUpdate(handleStatusUpdate);
+
+      return () => {
+        if (typeof offStatusUpdate === 'function') {
+          offStatusUpdate();
+        }
+      };
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Empty deps to prevent infinite loop
+
+  // Update selected event when events list changes
+  useEffect(() => {
+    if (selectedEvent && events.length > 0) {
+      const updatedEvent = events.find(event => event._id === selectedEvent._id);
       if (updatedEvent) {
+        console.log('📝 Syncing selected event with updated events list');
         setSelectedEvent(updatedEvent);
       }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [events]); // Watch for changes in events array
+
+  const handleDeclineWithReason = async () => {
+    if (!declineReason.trim()) {
+      toast.error('Please provide a reason for declining');
+      return;
+    }
+
+    try {
+      // Update status to declined with the reason
+      await updateRequirementStatus(declineDialog.eventId, declineDialog.requirementId, 'declined', declineReason);
+      
+      console.log('✅ Status updated to declined with reason');
+      
+      // Close dialog and reset
+      setDeclineDialog({ open: false, eventId: '', requirementId: '', requirementName: '' });
+      setDeclineReason('');
+      
+      // Force a small delay then fetch to ensure backend has the latest data
+      setTimeout(async () => {
+        console.log('🔄 Fetching events to update Ongoing/Completed tabs');
+        await fetchTaggedEvents(true);
+        
+        // After fetching, check if current event is now completed
+        setTimeout(() => {
+          const freshEvents = useTaggedDepartmentsStore.getState().events;
+          const freshEvent = freshEvents.find(e => e._id === declineDialog.eventId);
+          
+          if (freshEvent) {
+            const userDeptReqs = freshEvent.departmentRequirements[currentUserDepartment] || [];
+            const confirmedCount = userDeptReqs.filter(r => (r.status || 'pending') === 'confirmed').length;
+            const totalCount = userDeptReqs.length;
+            const isNowCompleted = totalCount > 0 && confirmedCount === totalCount;
+            
+            if (isNowCompleted) {
+              const ongoingEvents = getOngoingEvents();
+              if (ongoingEvents.length > 0) {
+                setSelectedEvent(ongoingEvents[0]);
+                setActiveEventTab('ongoing');
+              } else {
+                setSelectedEvent(null);
+                setActiveEventTab('completed');
+              }
+            }
+          }
+        }, 300);
+      }, 200);
+      
+      toast.success('Requirement declined successfully');
+    } catch (error) {
+      if (error instanceof Error) {
+        toast.error(error.message);
+      } else {
+        toast.error('Failed to decline requirement. Please try again.');
+      }
+    }
+  };
+
+  const handleRequirementStatusChange = async (eventId: string, requirementId: string, status: string, requirementName?: string) => {
+    // If declining, show the reason dialog first
+    if (status === 'declined') {
+      setDeclineDialog({
+        open: true,
+        eventId,
+        requirementId,
+        requirementName: requirementName || 'this requirement'
+      });
+      return; // Don't proceed with status update yet
+    }
+    
+    try {
+      await updateRequirementStatus(eventId, requirementId, status);
+      
+      console.log('✅ Status updated successfully - store already has fresh data');
+      
+      // Force a small delay then fetch to ensure backend has the latest data
+      // This will update the Ongoing/Completed tabs
+      setTimeout(async () => {
+        console.log('🔄 Fetching events to update Ongoing/Completed tabs');
+        await fetchTaggedEvents(true);
+        
+        // After fetching, check if current event is now completed
+        setTimeout(() => {
+          // Get the FRESH events directly from the store (not from closure!)
+          const freshEvents = useTaggedDepartmentsStore.getState().events;
+          const freshEvent = freshEvents.find(e => e._id === eventId);
+          
+          console.log('🔍 Fresh events count:', freshEvents.length);
+          
+          if (freshEvent) {
+            const userDeptReqs = freshEvent.departmentRequirements[currentUserDepartment] || [];
+            const confirmedCount = userDeptReqs.filter(r => (r.status || 'pending') === 'confirmed').length;
+            const totalCount = userDeptReqs.length;
+            const isNowCompleted = totalCount > 0 && confirmedCount === totalCount;
+            
+            console.log('📊 Checking completion (FRESH data):', { 
+              eventTitle: freshEvent.eventTitle,
+              confirmedCount, 
+              totalCount, 
+              isNowCompleted 
+            });
+            
+            if (isNowCompleted) {
+              console.log('🎉 Event is now completed! Auto-selecting next ongoing event...');
+              
+              // Get next ongoing event from store
+              const ongoingEvents = getOngoingEvents();
+              console.log('📋 Ongoing events available:', ongoingEvents.length);
+              
+              if (ongoingEvents.length > 0) {
+                // Select the first ongoing event
+                const nextEvent = ongoingEvents[0];
+                setSelectedEvent(nextEvent);
+                console.log('✅ Auto-selected next event:', nextEvent.eventTitle);
+                
+                // Switch to Ongoing tab to show the next event
+                setActiveEventTab('ongoing');
+                console.log('📑 Switched to Ongoing tab');
+              } else {
+                // No more ongoing events, switch to Completed tab
+                setSelectedEvent(null);
+                setActiveEventTab('completed');
+                console.log('✅ No more ongoing events, switched to Completed tab');
+              }
+            } else {
+              console.log('⏭️ Event not yet completed, keeping current selection');
+              console.log(`   Still need ${totalCount - confirmedCount} more confirmations`);
+            }
+          }
+        }, 300); // Increased delay to ensure store is updated
+      }, 200);
+      
       toast.success('Requirement status updated successfully');
     } catch (error) {
       if (error instanceof Error) {
@@ -269,6 +487,16 @@ const TaggedDepartmentPage: React.FC = () => {
     return requirement.status || 'pending';
   };
 
+  // Helper function to format time to 12-hour format with AM/PM
+  const formatTime = (time: string) => {
+    if (!time) return '';
+    const [hours, minutes] = time.split(':');
+    const hour = parseInt(hours, 10);
+    const ampm = hour >= 12 ? 'PM' : 'AM';
+    const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+    return `${displayHour}:${minutes} ${ampm}`;
+  };
+
   // This function is now handled by the Zustand store
 
   // Status update dialog
@@ -288,7 +516,7 @@ const TaggedDepartmentPage: React.FC = () => {
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction
             onClick={() => {
-              handleRequirementStatusChange(statusDialog.eventId, statusDialog.requirementId, statusDialog.status);
+              handleRequirementStatusChange(statusDialog.eventId, statusDialog.requirementId, statusDialog.status, statusDialog.requirementName);
               setStatusDialog({ ...statusDialog, isOpen: false });
             }}
           >
@@ -333,24 +561,31 @@ const TaggedDepartmentPage: React.FC = () => {
             </div>
             
             {/* Event Tabs */}
-            <Tabs value={activeEventTab} onValueChange={(value) => setActiveEventTab(value as 'ongoing' | 'completed')} className="w-full">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="ongoing" className="flex items-center gap-2">
-                  <Clock className="h-3 w-3" />
-                  Ongoing
-                  <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
+            <Tabs value={activeEventTab} onValueChange={(value) => setActiveEventTab(value as 'ongoing' | 'completed' | 'declined')} className="w-full">
+              <TabsList className="grid w-full grid-cols-3 gap-2 bg-transparent p-0">
+                <TabsTrigger 
+                  value="ongoing" 
+                  className="flex items-center justify-center gap-1.5 px-3 py-2 data-[state=active]:bg-yellow-100 data-[state=active]:text-yellow-900 data-[state=inactive]:bg-gray-100"
+                >
+                  <Clock className="h-3.5 w-3.5 flex-shrink-0" />
+                  <span className="text-xs font-medium">Ongoing</span>
+                  <Badge variant="secondary" className="text-[10px] h-4 px-1.5 ml-auto">
                     {events.filter(event => {
                       const userDeptReqs = event.departmentRequirements[currentUserDepartment] || [];
                       const confirmedCount = userDeptReqs.filter(r => getRequirementStatus(r) === 'confirmed').length;
+                      const declinedCount = userDeptReqs.filter(r => getRequirementStatus(r) === 'declined').length;
                       const totalCount = userDeptReqs.length;
-                      return totalCount === 0 || confirmedCount < totalCount;
+                      return totalCount > 0 && confirmedCount < totalCount && declinedCount < totalCount;
                     }).length}
                   </Badge>
                 </TabsTrigger>
-                <TabsTrigger value="completed" className="flex items-center gap-2">
-                  <CheckCircle className="h-3 w-3" />
-                  Completed
-                  <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
+                <TabsTrigger 
+                  value="completed" 
+                  className="flex items-center justify-center gap-1.5 px-3 py-2 data-[state=active]:bg-green-100 data-[state=active]:text-green-900 data-[state=inactive]:bg-gray-100"
+                >
+                  <CheckCircle className="h-3.5 w-3.5 flex-shrink-0" />
+                  <span className="text-xs font-medium">Completed</span>
+                  <Badge variant="secondary" className="text-[10px] h-4 px-1.5 ml-auto">
                     {events.filter(event => {
                       const userDeptReqs = event.departmentRequirements[currentUserDepartment] || [];
                       const confirmedCount = userDeptReqs.filter(r => getRequirementStatus(r) === 'confirmed').length;
@@ -359,12 +594,27 @@ const TaggedDepartmentPage: React.FC = () => {
                     }).length}
                   </Badge>
                 </TabsTrigger>
+                <TabsTrigger 
+                  value="declined" 
+                  className="flex items-center justify-center gap-1.5 px-3 py-2 data-[state=active]:bg-red-100 data-[state=active]:text-red-900 data-[state=inactive]:bg-gray-100"
+                >
+                  <XCircle className="h-3.5 w-3.5 flex-shrink-0" />
+                  <span className="text-xs font-medium">Declined</span>
+                  <Badge variant="secondary" className="text-[10px] h-4 px-1.5 ml-auto">
+                    {events.filter(event => {
+                      const userDeptReqs = event.departmentRequirements[currentUserDepartment] || [];
+                      const declinedCount = userDeptReqs.filter(r => getRequirementStatus(r) === 'declined').length;
+                      const totalCount = userDeptReqs.length;
+                      return totalCount > 0 && declinedCount === totalCount;
+                    }).length}
+                  </Badge>
+                </TabsTrigger>
               </TabsList>
             </Tabs>
           </div>
           
-          <Tabs value={activeEventTab} className="flex-1 flex flex-col">
-            <TabsContent value="ongoing" className="flex-1 mt-0">
+          <Tabs value={activeEventTab} className="flex-1 flex flex-col min-h-0">
+            <TabsContent value="ongoing" className="flex-1 mt-0 overflow-hidden bg-gradient-to-br from-yellow-50 via-amber-50 to-orange-50">
               <ScrollArea className="h-full">
                 <div className="p-3">
                   {loading ? (
@@ -391,10 +641,10 @@ const TaggedDepartmentPage: React.FC = () => {
                     >
                       <CardContent className="p-4">
                         <div className="space-y-4">
-                          <div>
-                            <div className="flex items-center gap-2 mb-2">
-                              <h3 className="font-medium text-sm truncate">{event.eventTitle}</h3>
-                              <Badge variant="secondary" className="text-[10px] h-4">
+                          <div className="overflow-hidden">
+                            <div className="flex items-start gap-2 mb-2">
+                              <h3 className="font-medium text-sm flex-1 min-w-0 max-w-[240px] overflow-hidden text-ellipsis line-clamp-1" title={event.eventTitle}>{event.eventTitle}</h3>
+                              <Badge variant="secondary" className="text-[10px] h-4 flex-shrink-0">
                                 {event.status}
                               </Badge>
                             </div>
@@ -408,7 +658,7 @@ const TaggedDepartmentPage: React.FC = () => {
                               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                   <Clock className="w-3 h-3" />
                                   <span>
-                                    {event.startTime} - {event.endTime}
+                                    {formatTime(event.startTime)} - {formatTime(event.endTime)}
                                   </span>
                               </div>
                             </div>
@@ -451,7 +701,7 @@ const TaggedDepartmentPage: React.FC = () => {
               </ScrollArea>
             </TabsContent>
             
-            <TabsContent value="completed" className="flex-1 mt-0">
+            <TabsContent value="completed" className="flex-1 mt-0 overflow-hidden bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50">
               <ScrollArea className="h-full">
                 <div className="p-3">
                   {loading ? (
@@ -482,13 +732,13 @@ const TaggedDepartmentPage: React.FC = () => {
                             >
                               <CardContent className="p-4">
                                 <div className="space-y-4">
-                                  <div>
-                                    <div className="flex items-center gap-2 mb-2">
-                                      <h3 className="font-medium text-sm truncate">{event.eventTitle}</h3>
-                                      <Badge variant="secondary" className="text-[10px] h-4">
+                                  <div className="overflow-hidden">
+                                    <div className="flex items-start gap-2 mb-2">
+                                      <h3 className="font-medium text-sm flex-1 min-w-0 max-w-[180px] overflow-hidden text-ellipsis line-clamp-1" title={event.eventTitle}>{event.eventTitle}</h3>
+                                      <Badge variant="secondary" className="text-[10px] h-4 flex-shrink-0">
                                         {event.status}
                                       </Badge>
-                                      <Badge className="text-[10px] h-4 bg-green-500 text-white">
+                                      <Badge className="text-[10px] h-4 bg-green-500 text-white flex-shrink-0">
                                         ✓ Complete
                                       </Badge>
                                     </div>
@@ -502,7 +752,7 @@ const TaggedDepartmentPage: React.FC = () => {
                                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                           <Clock className="w-3 h-3" />
                                           <span>
-                                            {event.startTime} - {event.endTime}
+                                            {formatTime(event.startTime)} - {formatTime(event.endTime)}
                                           </span>
                                       </div>
                                     </div>
@@ -535,6 +785,91 @@ const TaggedDepartmentPage: React.FC = () => {
                 </div>
               </ScrollArea>
             </TabsContent>
+
+            <TabsContent value="declined" className="flex-1 mt-0 overflow-hidden bg-gradient-to-br from-red-50 via-rose-50 to-pink-50">
+              <ScrollArea className="h-full">
+                <div className="p-3">
+                  {loading ? (
+                    <div className="flex items-center justify-center h-24">
+                      <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : (
+                    <AnimatePresence>
+                      {events
+                        .filter(event => {
+                          const userDeptReqs = event.departmentRequirements[currentUserDepartment] || [];
+                          const declinedCount = userDeptReqs.filter(r => getRequirementStatus(r) === 'declined').length;
+                          const totalCount = userDeptReqs.length;
+                          return totalCount > 0 && declinedCount === totalCount;
+                        })
+                        .map((event) => (
+                          <motion.div
+                            key={event._id}
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, x: -20 }}
+                            transition={{ duration: 0.2 }}
+                            className="mb-2 last:mb-0"
+                          >
+                            <Card 
+                              className={`transition-all hover:shadow-sm cursor-pointer overflow-hidden border-l-4 border-l-red-500 ${selectedEvent?._id === event._id ? 'ring-2 ring-primary bg-primary/5' : ''}`}
+                              onClick={() => setSelectedEvent(event)}
+                            >
+                              <CardContent className="p-4">
+                                <div className="space-y-4">
+                                  <div className="overflow-hidden">
+                                    <div className="flex items-start gap-2 mb-2">
+                                      <h3 className="font-medium text-sm flex-1 min-w-0 max-w-[180px] overflow-hidden text-ellipsis line-clamp-1" title={event.eventTitle}>{event.eventTitle}</h3>
+                                      <Badge variant="secondary" className="text-[10px] h-4 flex-shrink-0">
+                                        {event.status}
+                                      </Badge>
+                                      <Badge className="text-[10px] h-4 bg-red-500 text-white flex-shrink-0">
+                                        ✗ Declined
+                                      </Badge>
+                                    </div>
+                                    <div className="space-y-1">
+                                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                          <CalendarDays className="w-3 h-3" />
+                                          <span>
+                                            {new Date(event.startDate).toLocaleDateString()} - {new Date(event.endDate).toLocaleDateString()}
+                                          </span>
+                                      </div>
+                                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                          <Clock className="w-3 h-3" />
+                                          <span>
+                                            {formatTime(event.startTime)} - {formatTime(event.endTime)}
+                                          </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  
+                                  <div className="flex items-center gap-3 text-xs">
+                                    <div className="flex items-center gap-2 flex-1">
+                                      <Progress 
+                                        value={100}
+                                        className="h-1 flex-1 bg-red-100"
+                                      />
+                                      <span className="text-red-600 font-medium whitespace-nowrap">
+                                        {(() => {
+                                          const userDeptReqs = event.departmentRequirements[currentUserDepartment] || [];
+                                          return `${userDeptReqs.length}/${userDeptReqs.length}`;
+                                        })()}
+                                      </span>
+                                    </div>
+                                    <Badge variant="outline" className="text-[10px] h-4 whitespace-nowrap bg-red-50 text-red-700 border-red-200">
+                                      {(event.departmentRequirements[currentUserDepartment] || []).length} requirements
+                                    </Badge>
+                                  </div>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          </motion.div>
+                        ))}
+                    </AnimatePresence>
+                  )}
+                </div>
+              </ScrollArea>
+            </TabsContent>
           </Tabs>
         </div>
 
@@ -542,6 +877,7 @@ const TaggedDepartmentPage: React.FC = () => {
         <div className="flex-1 bg-muted/5 rounded-xl border overflow-hidden flex flex-col h-[calc(100vh-80px)]">
           {selectedEvent ? (
             <motion.div 
+              key={selectedEvent._id}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               className="h-full flex flex-col"
@@ -555,27 +891,44 @@ const TaggedDepartmentPage: React.FC = () => {
                   </Badge>
                 </div>
 
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
+                <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
                   <div className="space-y-1.5">
                     <Label className="text-xs text-muted-foreground">Requestor's Department</Label>
                     <div className="flex items-center gap-2">
-                      <Building2 className="w-4 h-4 text-muted-foreground" />
-                      <span className="font-medium">{selectedEvent.requestorDepartment}</span>
+                      <Building2 className="w-3.5 h-3.5 text-muted-foreground" />
+                      <span className="text-sm font-medium">{selectedEvent.requestorDepartment}</span>
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Event Location</Label>
+                    <div className="flex items-center gap-2">
+                      <MapPin className="w-3.5 h-3.5 text-muted-foreground" />
+                      <span className="text-sm font-medium">{selectedEvent.location}</span>
                     </div>
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs text-muted-foreground">Event Schedule</Label>
                     <div className="flex flex-col gap-1">
-                      <div className="flex items-center gap-2 text-sm">
-                        <CalendarDays className="w-4 h-4 text-muted-foreground" />
-                        <span className="font-medium">
+                      <div className="flex items-center gap-2">
+                        <CalendarDays className="w-3.5 h-3.5 text-muted-foreground" />
+                        <span className="text-sm font-medium">
                           {new Date(selectedEvent.startDate).toLocaleDateString()} - {new Date(selectedEvent.endDate).toLocaleDateString()}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 text-sm">
-                        <Clock className="w-4 h-4 text-muted-foreground" />
-                        <span className="font-medium">
-                          {selectedEvent.startTime} - {selectedEvent.endTime}
+                      <div className="flex items-center gap-2">
+                        <Clock className="w-3.5 h-3.5 text-muted-foreground" />
+                        <span className="text-sm font-medium">
+                          {(() => {
+                            const formatTime = (time: string) => {
+                              if (!time) return '';
+                              const [hours, minutes] = time.split(':');
+                              const hour = parseInt(hours, 10);
+                              const ampm = hour >= 12 ? 'PM' : 'AM';
+                              const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+                              return `${displayHour}:${minutes} ${ampm}`;
+                            };
+                            return `${formatTime(selectedEvent.startTime)} - ${formatTime(selectedEvent.endTime)}`;
+                          })()}
                         </span>
                       </div>
                     </div>
@@ -583,15 +936,15 @@ const TaggedDepartmentPage: React.FC = () => {
                   <div className="space-y-1.5">
                     <Label className="text-xs text-muted-foreground">Contact Email</Label>
                     <div className="flex items-center gap-2">
-                      <Mail className="w-4 h-4 text-muted-foreground" />
-                      <span className="font-medium">{selectedEvent.contactEmail}</span>
+                      <Mail className="w-3.5 h-3.5 text-muted-foreground" />
+                      <span className="text-sm font-medium">{selectedEvent.contactEmail}</span>
                     </div>
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs text-muted-foreground">Contact Number</Label>
                     <div className="flex items-center gap-2">
-                      <Phone className="w-4 h-4 text-muted-foreground" />
-                      <span className="font-medium">{selectedEvent.contactNumber}</span>
+                      <Phone className="w-3.5 h-3.5 text-muted-foreground" />
+                      <span className="text-sm font-medium">{selectedEvent.contactNumber}</span>
                     </div>
                   </div>
                 </div>
@@ -601,34 +954,42 @@ const TaggedDepartmentPage: React.FC = () => {
               <div className="flex-1 overflow-hidden">
                 <Tabs defaultValue="all" className="h-full flex flex-col">
                   <div className="px-6 pt-4">
-                    <TabsList className="w-full grid grid-cols-6 gap-4">
+                    <TabsList className="w-full grid grid-cols-4">
                       {(() => {
                         const counts = getRequirementCounts(selectedEvent);
                         return (
                           <>
                             <TabsTrigger value="all" className="flex items-center gap-2">
                               All
-                              <Badge className="text-[10px] h-4 px-1.5 bg-red-500 text-white hover:bg-red-600">
-                                {counts.all}
-                              </Badge>
+                              {counts.all > 0 && (
+                                <Badge className="text-[10px] h-4 px-1.5 bg-red-500 text-white hover:bg-red-600">
+                                  {counts.all}
+                                </Badge>
+                              )}
                             </TabsTrigger>
                             <TabsTrigger value="confirmed" className="flex items-center gap-2">
                               Confirmed
-                              <Badge className="text-[10px] h-4 px-1.5 bg-red-500 text-white hover:bg-red-600">
-                                {counts.confirmed}
-                              </Badge>
+                              {counts.confirmed > 0 && (
+                                <Badge className="text-[10px] h-4 px-1.5 bg-red-500 text-white hover:bg-red-600">
+                                  {counts.confirmed}
+                                </Badge>
+                              )}
                             </TabsTrigger>
                             <TabsTrigger value="pending" className="flex items-center gap-2">
                               Pending
-                              <Badge className="text-[10px] h-4 px-1.5 bg-red-500 text-white hover:bg-red-600">
-                                {counts.pending}
-                              </Badge>
+                              {counts.pending > 0 && (
+                                <Badge className="text-[10px] h-4 px-1.5 bg-red-500 text-white hover:bg-red-600">
+                                  {counts.pending}
+                                </Badge>
+                              )}
                             </TabsTrigger>
                             <TabsTrigger value="declined" className="flex items-center gap-2">
                               Declined
-                              <Badge className="text-[10px] h-4 px-1.5 bg-red-500 text-white hover:bg-red-600">
-                                {counts.declined}
-                              </Badge>
+                              {counts.declined > 0 && (
+                                <Badge className="text-[10px] h-4 px-1.5 bg-red-500 text-white hover:bg-red-600">
+                                  {counts.declined}
+                                </Badge>
+                              )}
                             </TabsTrigger>
                           </>
                         );
@@ -646,207 +1007,167 @@ const TaggedDepartmentPage: React.FC = () => {
                         .map(([department, requirements]) => 
                         requirements.map((req: Requirement) => (
                         <motion.div
-                          key={req.id}
+                          key={`${req.id}-${getRequirementStatus(req)}-${req.lastUpdated || Date.now()}`}
                           initial={{ opacity: 0, y: 10 }}
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, x: -10 }}
-                          className="group"
                         >
-                          <Card className="overflow-hidden hover:shadow-md transition-all duration-200 border-l-4 border-l-blue-500">
-                            <CardContent className="p-0">
-                              {/* Header Section */}
-                              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 border-b">
-                                <div className="flex items-start justify-between gap-4">
-                                  <div className="flex items-start gap-3 flex-1">
-                                    <Avatar className="h-10 w-10 bg-blue-100">
-                                      <AvatarFallback className="bg-blue-100 text-blue-700">
-                                        <Package className="h-5 w-5" />
-                                      </AvatarFallback>
-                                    </Avatar>
-                                    <div className="flex-1 min-w-0">
-                                      <div className="flex items-center gap-2 mb-1">
-                                        <h4 className="font-semibold text-gray-900 truncate">{req.name}</h4>
-                                        <Badge variant="secondary" className="text-xs px-2 py-0.5">
-                                          {req.type}
-                                        </Badge>
-                                      </div>
-                                      <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                                        <span className="flex items-center gap-1">
-                                          <Package className="h-3 w-3" />
-                                          Requested: {req.quantity} of {req.totalQuantity}
-                                        </span>
-                                        {getStatusIcon(getRequirementStatus(req))}
-                                      </div>
-                                    </div>
+                          <Card className="hover:shadow-sm transition-shadow">
+                            <CardContent className="p-4 space-y-4">
+                              {/* Requirement Header */}
+                              <div className="flex items-start justify-between gap-4">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <Package className="h-4 w-4 text-gray-600" />
+                                    <h4 className="font-medium text-gray-900">{req.name}</h4>
                                   </div>
-                                  <Select 
-                                    defaultValue={getRequirementStatus(req)}
-                                    onValueChange={(value) => setStatusDialog({
-                                      isOpen: true,
-                                      eventId: selectedEvent._id,
-                                      requirementId: req.id,
-                                      status: value
-                                    })}
-                                  >
-                                    <SelectTrigger className="w-[140px] h-9">
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="confirmed">
-                                        <div className="flex items-center gap-2">
-                                          <CheckCircle className="h-3 w-3 text-green-500" />
-                                          Confirm
-                                        </div>
-                                      </SelectItem>
-                                      <SelectItem value="pending">
-                                        <div className="flex items-center gap-2">
-                                          <Clock className="h-3 w-3 text-yellow-500" />
-                                          Pending
-                                        </div>
-                                      </SelectItem>
-                                      <SelectItem value="declined">
-                                        <div className="flex items-center gap-2">
-                                          <XCircle className="h-3 w-3 text-red-500" />
-                                          Decline
-                                        </div>
-                                      </SelectItem>
-                                    </SelectContent>
-                                  </Select>
+                                  <p className="text-sm text-gray-600">
+                                    Quantity: {req.quantity} of {req.totalQuantity} • Type: {req.type}
+                                  </p>
+                                </div>
+                                <Select 
+                                  key={`${req.id}-${getRequirementStatus(req)}`}
+                                  value={getRequirementStatus(req)}
+                                  onValueChange={(value) => setStatusDialog({
+                                    isOpen: true,
+                                    eventId: selectedEvent._id,
+                                    requirementId: req.id,
+                                    status: value
+                                  })}
+                                >
+                                  <SelectTrigger className="w-[130px]">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="confirmed">
+                                      <div className="flex items-center gap-2">
+                                        <CheckCircle className="h-3.5 w-3.5 text-green-600" />
+                                        Confirm
+                                      </div>
+                                    </SelectItem>
+                                    <SelectItem value="pending">
+                                      <div className="flex items-center gap-2">
+                                        <Clock className="h-3.5 w-3.5 text-yellow-600" />
+                                        Pending
+                                      </div>
+                                    </SelectItem>
+                                    <SelectItem value="declined">
+                                      <div className="flex items-center gap-2">
+                                        <XCircle className="h-3.5 w-3.5 text-red-600" />
+                                        Decline
+                                      </div>
+                                    </SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+
+                              <Separator />
+
+                              {/* Requestor's Note */}
+                              <div className="space-y-2">
+                                <Label className="text-sm font-medium flex items-center gap-2">
+                                  <User className="h-3.5 w-3.5" />
+                                  Requestor's Note
+                                </Label>
+                                <div className="bg-gray-50 rounded-md p-3 border">
+                                  <p className="text-sm text-gray-700">
+                                    {req.notes || 'No notes provided'}
+                                  </p>
                                 </div>
                               </div>
 
-                              {/* Content Section */}
-                              <div className="p-4 space-y-4">
-                                {/* Requestor's Note */}
-                                <div className="space-y-2">
-                                  <div className="flex items-center gap-2">
-                                    <User className="h-4 w-4 text-blue-600" />
-                                    <Label className="text-sm font-medium text-gray-700">Requestor's Note</Label>
-                                  </div>
-                                  <Card className="bg-blue-50/50 border-blue-200">
-                                    <CardContent className="p-3">
-                                      <p className="text-sm text-gray-700 leading-relaxed">
-                                        {req.notes || 'No notes provided by the requestor'}
-                                      </p>
-                                    </CardContent>
-                                  </Card>
-                                </div>
-
-                                <Separator className="my-4" />
-
-                                {/* Department's Note */}
-                                <div className="space-y-3">
-                                  <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-2">
-                                      <MessageSquare className="h-4 w-4 text-green-600" />
-                                      <Label className="text-sm font-medium text-gray-700">Your Department Notes</Label>
-                                    </div>
+                              {/* Department's Note */}
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <Label className="text-sm font-medium flex items-center gap-2">
+                                    <MessageSquare className="h-3.5 w-3.5" />
+                                    Your Department Notes
+                                  </Label>
+                                  {!showNotesMap[req.id] && (
                                     <Button
-                                      variant={showNotesMap[req.id] ? "secondary" : "outline"}
+                                      variant="outline"
                                       size="sm"
                                       onClick={() => {
-                                        setShowNotes(req.id, !showNotesMap[req.id]);
-                                        if (!showNotesMap[req.id]) {
-                                          const currentNote = req.departmentNotes || notesMap[req.id] || '';
-                                          setNotes(req.id, currentNote);
-                                        }
+                                        setShowNotes(req.id, true);
+                                        const currentNote = req.departmentNotes || notesMap[req.id] || '';
+                                        setNotes(req.id, currentNote);
                                       }}
-                                      className="h-8 px-3 text-xs gap-1"
+                                      className="h-7 text-xs"
                                     >
-                                      {showNotesMap[req.id] ? (
-                                        <><X className="h-3 w-3" /> Cancel</>
-                                      ) : (
-                                        <><Edit3 className="h-3 w-3" /> {req.departmentNotes || notesMap[req.id] ? 'Edit' : 'Add'} Notes</>
-                                      )}
+                                      <Edit3 className="h-3 w-3 mr-1" />
+                                      {req.departmentNotes || notesMap[req.id] ? 'Edit' : 'Add'}
                                     </Button>
-                                  </div>
-                                  
-                                  {/* Display saved notes when not editing */}
-                                  {!showNotesMap[req.id] && (req.departmentNotes || notesMap[req.id]) && (
-                                    <Card className="bg-green-50/50 border-green-200">
-                                      <CardContent className="p-3">
-                                        <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
-                                          {req.departmentNotes || notesMap[req.id]}
-                                        </p>
-                                      </CardContent>
-                                    </Card>
-                                  )}
-                                  
-                                  {/* Empty state when no notes */}
-                                  {!showNotesMap[req.id] && !(req.departmentNotes || notesMap[req.id]) && (
-                                    <Card className="bg-gray-50/50 border-gray-200 border-dashed">
-                                      <CardContent className="p-4 text-center">
-                                        <MessageSquare className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                                        <p className="text-sm text-gray-500">No notes added yet</p>
-                                        <p className="text-xs text-gray-400 mt-1">Click "Add Notes" to provide feedback</p>
-                                      </CardContent>
-                                    </Card>
-                                  )}
-                                  
-                                  {/* Editing interface */}
-                                  {showNotesMap[req.id] && (
-                                    <motion.div
-                                      initial={{ opacity: 0, height: 0 }}
-                                      animate={{ opacity: 1, height: 'auto' }}
-                                      exit={{ opacity: 0, height: 0 }}
-                                      transition={{ duration: 0.2 }}
-                                    >
-                                      <Card className="border-green-300 bg-green-50/30">
-                                        <CardContent className="p-4 space-y-3">
-                                          <Textarea
-                                            placeholder="Add your department's notes about this requirement..."
-                                            value={notesMap[req.id] || ''}
-                                            onChange={(e) => {
-                                              setNotes(req.id, e.target.value);
-                                            }}
-                                            className="resize-none min-h-[100px] border-green-200 focus:border-green-400"
-                                          />
-                                          <div className="flex justify-end gap-2">
-                                            <Button
-                                              variant="outline"
-                                              size="sm"
-                                              onClick={() => {
-                                                setNotes(req.id, req.departmentNotes || '');
-                                                setShowNotes(req.id, false);
-                                              }}
-                                              className="gap-1"
-                                            >
-                                              <X className="h-3 w-3" />
-                                              Cancel
-                                            </Button>
-                                            <Button
-                                              size="sm"
-                                              onClick={() => {
-                                                handleNoteUpdate(selectedEvent._id, req.id, notesMap[req.id] || '');
-                                                setShowNotes(req.id, false);
-                                              }}
-                                              className="gap-1 bg-green-600 hover:bg-green-700"
-                                            >
-                                              <Save className="h-3 w-3" />
-                                              Save Notes
-                                            </Button>
-                                          </div>
-                                        </CardContent>
-                                      </Card>
-                                    </motion.div>
                                   )}
                                 </div>
+                                
+                                {/* Display or Edit Notes */}
+                                {showNotesMap[req.id] ? (
+                                  <div className="space-y-2">
+                                    <Textarea
+                                      placeholder="Add your department's notes..."
+                                      value={notesMap[req.id] || ''}
+                                      onChange={(e) => setNotes(req.id, e.target.value)}
+                                      className="min-h-[80px] text-sm"
+                                    />
+                                    <div className="flex justify-end gap-2">
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => {
+                                          setNotes(req.id, req.departmentNotes || '');
+                                          setShowNotes(req.id, false);
+                                        }}
+                                        className="h-7 text-xs"
+                                      >
+                                        Cancel
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        onClick={() => {
+                                          handleNoteUpdate(selectedEvent._id, req.id, notesMap[req.id] || '');
+                                          setShowNotes(req.id, false);
+                                        }}
+                                        className="h-7 text-xs"
+                                      >
+                                        <Save className="h-3 w-3 mr-1" />
+                                        Save
+                                      </Button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="bg-gray-50 rounded-md p-3 border">
+                                    <p className="text-sm text-gray-700">
+                                      {req.departmentNotes || notesMap[req.id] || 'No notes added yet'}
+                                    </p>
+                                  </div>
+                                )}
                               </div>
 
-                              {/* Footer */}
-                              <div className="px-4 py-3 bg-gray-50/50 border-t">
-                                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                                  <span className="flex items-center gap-1.5">
-                                    <Clock className="w-3 h-3" />
-                                    Last updated: {new Date(selectedEvent.submittedAt).toLocaleDateString()}
+                              {/* Status Badge */}
+                              <div className="pt-2 border-t space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-xs text-gray-500">
+                                    Updated: {new Date(selectedEvent.submittedAt).toLocaleDateString()}
                                   </span>
                                   <Badge 
-                                    variant="outline" 
-                                    className={`text-xs ${getStatusColor(getRequirementStatus(req))} text-white border-0`}
+                                    className={`${getStatusColor(getRequirementStatus(req))} text-white border-0`}
                                   >
-                                    {getRequirementStatus(req).replace('_', ' ').toUpperCase()}
+                                    {getRequirementStatus(req).toUpperCase()}
                                   </Badge>
                                 </div>
+                                
+                                {/* Decline Reason */}
+                                {getRequirementStatus(req) === 'declined' && req.declineReason && (
+                                  <div className="bg-red-50 border border-red-200 rounded-md p-2">
+                                    <div className="flex items-start gap-2">
+                                      <XCircle className="h-4 w-4 text-red-600 flex-shrink-0 mt-0.5" />
+                                      <div className="flex-1">
+                                        <p className="text-xs font-medium text-red-900 mb-0.5">Decline Reason:</p>
+                                        <p className="text-xs text-red-700">{req.declineReason}</p>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             </CardContent>
                           </Card>
@@ -871,207 +1192,167 @@ const TaggedDepartmentPage: React.FC = () => {
                                 .filter(req => getRequirementStatus(req) === status)
                                 .map((req: Requirement) => (
                                   <motion.div
-                                    key={req.id}
+                                    key={`${req.id}-${getRequirementStatus(req)}-${req.lastUpdated || Date.now()}`}
                                     initial={{ opacity: 0, y: 10 }}
                                     animate={{ opacity: 1, y: 0 }}
                                     exit={{ opacity: 0, x: -10 }}
-                                    className="group"
                                   >
-                                    <Card className="overflow-hidden hover:shadow-md transition-all duration-200 border-l-4 border-l-blue-500">
-                                      <CardContent className="p-0">
-                                        {/* Header Section */}
-                                        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 border-b">
-                                          <div className="flex items-start justify-between gap-4">
-                                            <div className="flex items-start gap-3 flex-1">
-                                              <Avatar className="h-10 w-10 bg-blue-100">
-                                                <AvatarFallback className="bg-blue-100 text-blue-700">
-                                                  <Package className="h-5 w-5" />
-                                                </AvatarFallback>
-                                              </Avatar>
-                                              <div className="flex-1 min-w-0">
-                                                <div className="flex items-center gap-2 mb-1">
-                                                  <h4 className="font-semibold text-gray-900 truncate">{req.name}</h4>
-                                                  <Badge variant="secondary" className="text-xs px-2 py-0.5">
-                                                    {req.type}
-                                                  </Badge>
-                                                </div>
-                                                <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                                                  <span className="flex items-center gap-1">
-                                                    <Package className="h-3 w-3" />
-                                                    Requested: {req.quantity} of {req.totalQuantity}
-                                                  </span>
-                                                  {getStatusIcon(getRequirementStatus(req))}
-                                                </div>
-                                              </div>
+                                    <Card className="hover:shadow-sm transition-shadow">
+                                      <CardContent className="p-4 space-y-4">
+                                        {/* Requirement Header */}
+                                        <div className="flex items-start justify-between gap-4">
+                                          <div className="flex-1">
+                                            <div className="flex items-center gap-2 mb-1">
+                                              <Package className="h-4 w-4 text-gray-600" />
+                                              <h4 className="font-medium text-gray-900">{req.name}</h4>
                                             </div>
-                                            <Select 
-                                              defaultValue={getRequirementStatus(req)}
-                                              onValueChange={(value) => setStatusDialog({
-                                                isOpen: true,
-                                                eventId: selectedEvent._id,
-                                                requirementId: req.id,
-                                                status: value
-                                              })}
-                                            >
-                                              <SelectTrigger className="w-[140px] h-9">
-                                                <SelectValue />
-                                              </SelectTrigger>
-                                              <SelectContent>
-                                                <SelectItem value="confirmed">
-                                                  <div className="flex items-center gap-2">
-                                                    <CheckCircle className="h-3 w-3 text-green-500" />
-                                                    Confirm
-                                                  </div>
-                                                </SelectItem>
-                                                <SelectItem value="pending">
-                                                  <div className="flex items-center gap-2">
-                                                    <Clock className="h-3 w-3 text-yellow-500" />
-                                                    Pending
-                                                  </div>
-                                                </SelectItem>
-                                                <SelectItem value="declined">
-                                                  <div className="flex items-center gap-2">
-                                                    <XCircle className="h-3 w-3 text-red-500" />
-                                                    Decline
-                                                  </div>
-                                                </SelectItem>
-                                              </SelectContent>
-                                            </Select>
+                                            <p className="text-sm text-gray-600">
+                                              Quantity: {req.quantity} of {req.totalQuantity} • Type: {req.type}
+                                            </p>
+                                          </div>
+                                          <Select 
+                                            key={`${req.id}-${getRequirementStatus(req)}`}
+                                            value={getRequirementStatus(req)}
+                                            onValueChange={(value) => setStatusDialog({
+                                              isOpen: true,
+                                              eventId: selectedEvent._id,
+                                              requirementId: req.id,
+                                              status: value
+                                            })}
+                                          >
+                                            <SelectTrigger className="w-[130px]">
+                                              <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              <SelectItem value="confirmed">
+                                                <div className="flex items-center gap-2">
+                                                  <CheckCircle className="h-3.5 w-3.5 text-green-600" />
+                                                  Confirm
+                                                </div>
+                                              </SelectItem>
+                                              <SelectItem value="pending">
+                                                <div className="flex items-center gap-2">
+                                                  <Clock className="h-3.5 w-3.5 text-yellow-600" />
+                                                  Pending
+                                                </div>
+                                              </SelectItem>
+                                              <SelectItem value="declined">
+                                                <div className="flex items-center gap-2">
+                                                  <XCircle className="h-3.5 w-3.5 text-red-600" />
+                                                  Decline
+                                                </div>
+                                              </SelectItem>
+                                            </SelectContent>
+                                          </Select>
+                                        </div>
+
+                                        <Separator />
+
+                                        {/* Requestor's Note */}
+                                        <div className="space-y-2">
+                                          <Label className="text-sm font-medium flex items-center gap-2">
+                                            <User className="h-3.5 w-3.5" />
+                                            Requestor's Note
+                                          </Label>
+                                          <div className="bg-gray-50 rounded-md p-3 border">
+                                            <p className="text-sm text-gray-700">
+                                              {req.notes || 'No notes provided'}
+                                            </p>
                                           </div>
                                         </div>
 
-                                        {/* Content Section */}
-                                        <div className="p-4 space-y-4">
-                                          {/* Requestor's Note */}
-                                          <div className="space-y-2">
-                                            <div className="flex items-center gap-2">
-                                              <User className="h-4 w-4 text-blue-600" />
-                                              <Label className="text-sm font-medium text-gray-700">Requestor's Note</Label>
-                                            </div>
-                                            <Card className="bg-blue-50/50 border-blue-200">
-                                              <CardContent className="p-3">
-                                                <p className="text-sm text-gray-700 leading-relaxed">
-                                                  {req.notes || 'No notes provided by the requestor'}
-                                                </p>
-                                              </CardContent>
-                                            </Card>
-                                          </div>
-
-                                          <Separator className="my-4" />
-
-                                          {/* Department's Note */}
-                                          <div className="space-y-3">
-                                            <div className="flex items-center justify-between">
-                                              <div className="flex items-center gap-2">
-                                                <MessageSquare className="h-4 w-4 text-green-600" />
-                                                <Label className="text-sm font-medium text-gray-700">Your Department Notes</Label>
-                                              </div>
+                                        {/* Department's Note */}
+                                        <div className="space-y-2">
+                                          <div className="flex items-center justify-between">
+                                            <Label className="text-sm font-medium flex items-center gap-2">
+                                              <MessageSquare className="h-3.5 w-3.5" />
+                                              Your Department Notes
+                                            </Label>
+                                            {!showNotesMap[req.id] && (
                                               <Button
-                                                variant={showNotesMap[req.id] ? "secondary" : "outline"}
+                                                variant="outline"
                                                 size="sm"
                                                 onClick={() => {
-                                                  setShowNotes(req.id, !showNotesMap[req.id]);
-                                                  if (!showNotesMap[req.id]) {
-                                                    const currentNote = req.departmentNotes || notesMap[req.id] || '';
-                                                    setNotes(req.id, currentNote);
-                                                  }
+                                                  setShowNotes(req.id, true);
+                                                  const currentNote = req.departmentNotes || notesMap[req.id] || '';
+                                                  setNotes(req.id, currentNote);
                                                 }}
-                                                className="h-8 px-3 text-xs gap-1"
+                                                className="h-7 text-xs"
                                               >
-                                                {showNotesMap[req.id] ? (
-                                                  <><X className="h-3 w-3" /> Cancel</>
-                                                ) : (
-                                                  <><Edit3 className="h-3 w-3" /> {req.departmentNotes || notesMap[req.id] ? 'Edit' : 'Add'} Notes</>
-                                                )}
+                                                <Edit3 className="h-3 w-3 mr-1" />
+                                                {req.departmentNotes || notesMap[req.id] ? 'Edit' : 'Add'}
                                               </Button>
-                                            </div>
-                                            
-                                            {/* Display saved notes when not editing */}
-                                            {!showNotesMap[req.id] && (req.departmentNotes || notesMap[req.id]) && (
-                                              <Card className="bg-green-50/50 border-green-200">
-                                                <CardContent className="p-3">
-                                                  <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
-                                                    {req.departmentNotes || notesMap[req.id]}
-                                                  </p>
-                                                </CardContent>
-                                              </Card>
-                                            )}
-                                            
-                                            {/* Empty state when no notes */}
-                                            {!showNotesMap[req.id] && !(req.departmentNotes || notesMap[req.id]) && (
-                                              <Card className="bg-gray-50/50 border-gray-200 border-dashed">
-                                                <CardContent className="p-4 text-center">
-                                                  <MessageSquare className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                                                  <p className="text-sm text-gray-500">No notes added yet</p>
-                                                  <p className="text-xs text-gray-400 mt-1">Click "Add Notes" to provide feedback</p>
-                                                </CardContent>
-                                              </Card>
-                                            )}
-                                            
-                                            {/* Editing interface */}
-                                            {showNotesMap[req.id] && (
-                                              <motion.div
-                                                initial={{ opacity: 0, height: 0 }}
-                                                animate={{ opacity: 1, height: 'auto' }}
-                                                exit={{ opacity: 0, height: 0 }}
-                                                transition={{ duration: 0.2 }}
-                                              >
-                                                <Card className="border-green-300 bg-green-50/30">
-                                                  <CardContent className="p-4 space-y-3">
-                                                    <Textarea
-                                                      placeholder="Add your department's notes about this requirement..."
-                                                      value={notesMap[req.id] || ''}
-                                                      onChange={(e) => {
-                                                        setNotes(req.id, e.target.value);
-                                                      }}
-                                                      className="resize-none min-h-[100px] border-green-200 focus:border-green-400"
-                                                    />
-                                                    <div className="flex justify-end gap-2">
-                                                      <Button
-                                                        variant="outline"
-                                                        size="sm"
-                                                        onClick={() => {
-                                                          setNotes(req.id, req.departmentNotes || '');
-                                                          setShowNotes(req.id, false);
-                                                        }}
-                                                        className="gap-1"
-                                                      >
-                                                        <X className="h-3 w-3" />
-                                                        Cancel
-                                                      </Button>
-                                                      <Button
-                                                        size="sm"
-                                                        onClick={() => {
-                                                          handleNoteUpdate(selectedEvent._id, req.id, notesMap[req.id] || '');
-                                                          setShowNotes(req.id, false);
-                                                        }}
-                                                        className="gap-1 bg-green-600 hover:bg-green-700"
-                                                      >
-                                                        <Save className="h-3 w-3" />
-                                                        Save Notes
-                                                      </Button>
-                                                    </div>
-                                                  </CardContent>
-                                                </Card>
-                                              </motion.div>
                                             )}
                                           </div>
+                                          
+                                          {/* Display or Edit Notes */}
+                                          {showNotesMap[req.id] ? (
+                                            <div className="space-y-2">
+                                              <Textarea
+                                                placeholder="Add your department's notes..."
+                                                value={notesMap[req.id] || ''}
+                                                onChange={(e) => setNotes(req.id, e.target.value)}
+                                                className="min-h-[80px] text-sm"
+                                              />
+                                              <div className="flex justify-end gap-2">
+                                                <Button
+                                                  variant="outline"
+                                                  size="sm"
+                                                  onClick={() => {
+                                                    setNotes(req.id, req.departmentNotes || '');
+                                                    setShowNotes(req.id, false);
+                                                  }}
+                                                  className="h-7 text-xs"
+                                                >
+                                                  Cancel
+                                                </Button>
+                                                <Button
+                                                  size="sm"
+                                                  onClick={() => {
+                                                    handleNoteUpdate(selectedEvent._id, req.id, notesMap[req.id] || '');
+                                                    setShowNotes(req.id, false);
+                                                  }}
+                                                  className="h-7 text-xs"
+                                                >
+                                                  <Save className="h-3 w-3 mr-1" />
+                                                  Save
+                                                </Button>
+                                              </div>
+                                            </div>
+                                          ) : (
+                                            <div className="bg-gray-50 rounded-md p-3 border">
+                                              <p className="text-sm text-gray-700">
+                                                {req.departmentNotes || notesMap[req.id] || 'No notes added yet'}
+                                              </p>
+                                            </div>
+                                          )}
                                         </div>
 
-                                        {/* Footer */}
-                                        <div className="px-4 py-3 bg-gray-50/50 border-t">
-                                          <div className="flex items-center justify-between text-xs text-muted-foreground">
-                                            <span className="flex items-center gap-1.5">
-                                              <Clock className="w-3 h-3" />
-                                              Last updated: {new Date(selectedEvent.submittedAt).toLocaleDateString()}
+                                        {/* Status Badge */}
+                                        <div className="pt-2 border-t space-y-2">
+                                          <div className="flex items-center justify-between">
+                                            <span className="text-xs text-gray-500">
+                                              Updated: {new Date(selectedEvent.submittedAt).toLocaleDateString()}
                                             </span>
                                             <Badge 
-                                              variant="outline" 
-                                              className={`text-xs ${getStatusColor(getRequirementStatus(req))} text-white border-0`}
+                                              className={`${getStatusColor(getRequirementStatus(req))} text-white border-0`}
                                             >
-                                              {getRequirementStatus(req).replace('_', ' ').toUpperCase()}
+                                              {getRequirementStatus(req).toUpperCase()}
                                             </Badge>
                                           </div>
+                                          
+                                          {/* Decline Reason */}
+                                          {getRequirementStatus(req) === 'declined' && req.declineReason && (
+                                            <div className="bg-red-50 border border-red-200 rounded-md p-2">
+                                              <div className="flex items-start gap-2">
+                                                <XCircle className="h-4 w-4 text-red-600 flex-shrink-0 mt-0.5" />
+                                                <div className="flex-1">
+                                                  <p className="text-xs font-medium text-red-900 mb-0.5">Decline Reason:</p>
+                                                  <p className="text-xs text-red-700">{req.declineReason}</p>
+                                                </div>
+                                              </div>
+                                            </div>
+                                          )}
                                         </div>
                                       </CardContent>
                                     </Card>
@@ -1101,6 +1382,57 @@ const TaggedDepartmentPage: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Decline Reason Dialog */}
+      <Dialog open={declineDialog.open} onOpenChange={(open) => {
+        if (!open) {
+          setDeclineDialog({ open: false, eventId: '', requirementId: '', requirementName: '' });
+          setDeclineReason('');
+        }
+      }}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Decline Requirement</DialogTitle>
+            <DialogDescription>
+              Please provide a reason for declining "{declineDialog.requirementName}". This will be visible to the event requestor.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="decline-reason">Reason for Declining *</Label>
+              <Textarea
+                id="decline-reason"
+                placeholder="Please explain why you're declining this requirement..."
+                value={declineReason}
+                onChange={(e) => setDeclineReason(e.target.value)}
+                rows={4}
+                className="resize-none"
+              />
+              <p className="text-sm text-muted-foreground">
+                {declineReason.length}/500 characters
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDeclineDialog({ open: false, eventId: '', requirementId: '', requirementName: '' });
+                setDeclineReason('');
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeclineWithReason}
+              disabled={!declineReason.trim()}
+            >
+              Decline Requirement
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
     </>
   );

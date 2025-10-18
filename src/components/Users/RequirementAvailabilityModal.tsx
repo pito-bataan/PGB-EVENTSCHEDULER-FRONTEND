@@ -104,7 +104,7 @@ const RequirementAvailabilityModal: React.FC<RequirementAvailabilityModalProps> 
   const [loadingBookings, setLoadingBookings] = useState(false);
   const [showEventModal, setShowEventModal] = useState(false);
   const [selectedEventDetails, setSelectedEventDetails] = useState<EventDetails | null>(null);
-  const [loadingEventDetails, setLoadingEventDetails] = useState(false);
+  const [loadingEventId, setLoadingEventId] = useState<string | null>(null);
   const [availabilityStartTime, setAvailabilityStartTime] = useState<string>('08:00');
   const [availabilityEndTime, setAvailabilityEndTime] = useState<string>('17:00');
 
@@ -291,7 +291,7 @@ const RequirementAvailabilityModal: React.FC<RequirementAvailabilityModalProps> 
 
   // Fetch event details
   const fetchEventDetails = async (eventId: string) => {
-    setLoadingEventDetails(true);
+    setLoadingEventId(eventId);
     try {
       const token = localStorage.getItem('authToken');
       const headers = {
@@ -313,7 +313,7 @@ const RequirementAvailabilityModal: React.FC<RequirementAvailabilityModalProps> 
     } catch (error) {
       console.error('Error fetching event details:', error);
     } finally {
-      setLoadingEventDetails(false);
+      setLoadingEventId(null);
     }
   };
 
@@ -383,37 +383,12 @@ const RequirementAvailabilityModal: React.FC<RequirementAvailabilityModalProps> 
         {/* Fixed Header */}
         <div className="flex-shrink-0 p-6 pb-4 border-b bg-white">
           <DialogHeader>
-            {/* Title with Time Range in Right Corner */}
-            <div className="flex items-center justify-between">
-              <DialogTitle className="flex items-center gap-2 text-lg">
-                <Edit3 className="w-5 h-5 text-blue-600" />
-                Set Resource Availability
-              </DialogTitle>
-              
-              {/* Compact Time Range in Right Corner */}
-              <div className="flex items-center gap-3 p-3 bg-background border rounded-lg shadow-sm">
-                <Clock className="w-4 h-4 text-muted-foreground" />
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="time"
-                    value={availabilityStartTime}
-                    onChange={(e) => setAvailabilityStartTime(e.target.value)}
-                    className="w-24 h-8 text-sm"
-                    title="Availability Start Time"
-                  />
-                  <span className="text-sm text-muted-foreground">to</span>
-                  <Input
-                    type="time"
-                    value={availabilityEndTime}
-                    onChange={(e) => setAvailabilityEndTime(e.target.value)}
-                    className="w-24 h-8 text-sm"
-                    title="Availability End Time"
-                  />
-                </div>
-              </div>
-            </div>
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              <Edit3 className="w-5 h-5 text-blue-600" />
+              Set Resource Availability
+            </DialogTitle>
             
-            <div className="flex flex-col sm:flex-row sm:items-center gap-2 mt-2">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 mt-2">
               <p className="text-sm text-gray-600 flex items-center">
                 <CalendarIcon className="w-4 h-4 mr-1" />
                 {format(selectedDate, 'EEEE, MMMM dd, yyyy')}
@@ -421,9 +396,6 @@ const RequirementAvailabilityModal: React.FC<RequirementAvailabilityModalProps> 
               <p className="text-sm text-gray-600 flex items-center">
                 <Package className="w-4 h-4 mr-1" />
                 {departmentName} - {requirements.length} Resources
-              </p>
-              <p className="text-xs text-blue-600 ml-auto">
-                Time range: {availabilityStartTime} - {availabilityEndTime}
               </p>
             </div>
           </DialogHeader>
@@ -667,14 +639,7 @@ const RequirementAvailabilityModal: React.FC<RequirementAvailabilityModalProps> 
                       const bookings = departmentBookings[availability.requirementId] || [];
                       const hasActiveBookings = bookings.length > 0;
                       
-                      return hasActiveBookings && (
-                        <div className="mt-2 p-2 bg-orange-50 border border-orange-200 rounded-md">
-                          <p className="text-xs text-orange-700 flex items-center gap-1">
-                            <AlertCircle className="w-3 h-3" />
-                            Cannot change availability - {bookings.length} active booking{bookings.length !== 1 ? 's' : ''} exist for today
-                          </p>
-                        </div>
-                      );
+                      return null;
                     })()}
                   </div>
 
@@ -818,13 +783,6 @@ const RequirementAvailabilityModal: React.FC<RequirementAvailabilityModalProps> 
                     />
                   </div>
 
-                  {/* Validation Warning */}
-                  {!availability.isAvailable && !availability.notes.trim() && (
-                    <div className="flex items-center gap-2 mt-3 p-2 bg-muted border border-border rounded text-muted-foreground">
-                      <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                      <span className="text-xs">Please provide a reason for unavailability</span>
-                    </div>
-                  )}
                 </motion.div>
                     ))}
                   </div>
@@ -893,14 +851,7 @@ const RequirementAvailabilityModal: React.FC<RequirementAvailabilityModalProps> 
                       const bookings = departmentBookings[availability.requirementId] || [];
                       const hasActiveBookings = bookings.length > 0;
                       
-                      return hasActiveBookings && (
-                        <div className="mt-2 p-2 bg-orange-50 border border-orange-200 rounded-md">
-                          <p className="text-xs text-orange-700 flex items-center gap-1">
-                            <AlertCircle className="w-3 h-3" />
-                            Cannot change availability - {bookings.length} active booking{bookings.length !== 1 ? 's' : ''} exist for today
-                          </p>
-                        </div>
-                      );
+                      return null;
                     })()}
                   </div>
 
@@ -924,13 +875,6 @@ const RequirementAvailabilityModal: React.FC<RequirementAvailabilityModalProps> 
                     />
                   </div>
 
-                  {/* Validation Warning */}
-                  {!availability.isAvailable && !availability.notes.trim() && (
-                    <div className="flex items-center gap-2 mt-3 p-2 bg-muted border border-border rounded text-muted-foreground">
-                      <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                      <span className="text-xs">Please provide a reason for unavailability</span>
-                    </div>
-                  )}
                 </motion.div>
                     ))}
                   </div>
@@ -955,102 +899,148 @@ const RequirementAvailabilityModal: React.FC<RequirementAvailabilityModalProps> 
                         <p className="text-sm text-muted-foreground">Loading department bookings...</p>
                       </div>
                     ) : (
-                      requirements.map(requirement => {
-                      const bookings = departmentBookings[requirement._id] || [];
-                      const totalQuantityBooked = bookings.reduce((sum, booking) => sum + booking.quantity, 0);
-                      
-                      // Get the actual availability quantity for this requirement
-                      const availability = availabilities.find(av => av.requirementId === requirement._id);
-                      const actualAvailableQuantity = availability ? availability.quantity : requirement.totalQuantity || 1;
-                      
-                      return (
-                        <div key={requirement._id} className="space-y-4">
-                          <div className="flex items-center gap-2 pb-2 border-b">
-                            {requirement.type === 'physical' ? (
-                              <Package className="w-5 h-5 text-purple-600" />
-                            ) : (
-                              <Settings className="w-5 h-5 text-orange-600" />
-                            )}
-                            <h4 className="text-md font-semibold">{requirement.text}</h4>
-                            <Badge variant="outline" className="ml-auto">
-                              {requirement.type === 'physical' 
-                                ? `${totalQuantityBooked}/${actualAvailableQuantity} booked`
-                                : `${bookings.length} booking${bookings.length !== 1 ? 's' : ''}`
-                              }
+                      <div className="space-y-6">
+                      {(() => {
+                        // Group all bookings by department first
+                        const departmentGroups: { [dept: string]: Array<{
+                          requirement: typeof requirements[0];
+                          bookings: any[];
+                          totalQuantityBooked: number;
+                          actualAvailableQuantity: number;
+                        }> } = {};
+
+                        requirements.forEach(requirement => {
+                          const bookings = departmentBookings[requirement._id] || [];
+                          const availability = availabilities.find(av => av.requirementId === requirement._id);
+                          const actualAvailableQuantity = availability ? availability.quantity : requirement.totalQuantity || 1;
+
+                          // Group bookings by department
+                          bookings.forEach(booking => {
+                            const dept = booking.departmentName;
+                            if (!departmentGroups[dept]) {
+                              departmentGroups[dept] = [];
+                            }
+                            
+                            // Find if this requirement already exists for this department
+                            let reqGroup = departmentGroups[dept].find(g => g.requirement._id === requirement._id);
+                            if (!reqGroup) {
+                              reqGroup = {
+                                requirement,
+                                bookings: [],
+                                totalQuantityBooked: 0,
+                                actualAvailableQuantity
+                              };
+                              departmentGroups[dept].push(reqGroup);
+                            }
+                            
+                            reqGroup.bookings.push(booking);
+                            reqGroup.totalQuantityBooked += booking.quantity || 0;
+                          });
+                        });
+
+                        return Object.entries(departmentGroups).map(([deptName, deptRequirements]) => (
+                        <div key={deptName} className="space-y-4">
+                          {/* Department Header */}
+                          <div className="flex items-center gap-2 pb-2 border-b-2 border-blue-500">
+                            <Building2 className="w-5 h-5 text-blue-600" />
+                            <h3 className="text-lg font-semibold text-blue-600">{deptName} Department</h3>
+                            <Badge variant="secondary" className="ml-auto">
+                              {deptRequirements.length} Requirement{deptRequirements.length !== 1 ? 's' : ''}
                             </Badge>
                           </div>
 
-                          {bookings.length === 0 ? (
+                          {/* Requirements Grid */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {deptRequirements.map((reqGroup) => (
+                              <div key={reqGroup.requirement._id} className="border rounded-lg p-4 bg-card">
+                                {/* Requirement Header */}
+                                <div className="flex items-center gap-2 pb-3 mb-3 border-b">
+                                  {reqGroup.requirement.type === 'physical' ? (
+                                    <Package className="w-5 h-5 text-purple-600" />
+                                  ) : (
+                                    <Settings className="w-5 h-5 text-orange-600" />
+                                  )}
+                                  <h4 className="text-md font-semibold flex-1">{reqGroup.requirement.text}</h4>
+                                  <Badge variant="outline">
+                                    {reqGroup.requirement.type === 'physical' 
+                                      ? `${reqGroup.totalQuantityBooked}/${reqGroup.actualAvailableQuantity} booked`
+                                      : `${reqGroup.bookings.length} booking${reqGroup.bookings.length !== 1 ? 's' : ''}`
+                                    }
+                                  </Badge>
+                                </div>
+
+                          {reqGroup.bookings.length === 0 ? (
                             <div className="text-center py-8 text-muted-foreground">
                               <Package className="w-8 h-8 mx-auto mb-2 opacity-50" />
                               <p className="text-sm">No bookings for this requirement on this date</p>
                             </div>
                           ) : (
-                            <div className="grid grid-cols-1 gap-3">
-                              {bookings.map((booking, index) => (
+                            <div className="space-y-3">
+                              {reqGroup.bookings.map((booking: any, index: number) => (
                                 <motion.div
                                   key={`${booking.eventId}-${index}`}
                                   initial={{ opacity: 0, y: 10 }}
                                   animate={{ opacity: 1, y: 0 }}
                                   transition={{ delay: index * 0.05 }}
-                                  className="p-4 rounded-lg border border-border bg-card text-card-foreground shadow-sm"
+                                  className="p-4 rounded-lg border border-border bg-card text-card-foreground shadow-sm hover:shadow-md transition-shadow flex flex-col"
                                 >
-                                  <div className="flex items-start justify-between">
-                                    <div className="flex items-start gap-3 flex-1">
-                                      <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 bg-blue-100 text-blue-600">
-                                        <Building2 className="w-4 h-4" />
-                                      </div>
-                                      <div className="flex-1 min-w-0">
-                                        <h5 className="font-medium text-foreground text-sm leading-tight mb-1">
-                                          {booking.eventTitle}
-                                        </h5>
-                                        <div className="flex items-center gap-4 text-xs text-muted-foreground mb-2">
-                                          <span className="flex items-center gap-1">
-                                            <Building2 className="w-3 h-3" />
-                                            {booking.departmentName}
-                                          </span>
-                                          <span className="flex items-center gap-1">
-                                            <Users className="w-3 h-3" />
-                                            {booking.requestor}
-                                          </span>
-                                          {requirement.type === 'physical' && (
-                                            <span className="flex items-center gap-1">
-                                              <Package className="w-3 h-3" />
-                                              Qty: {booking.quantity}
-                                            </span>
-                                          )}
-                                          {booking.startTime && booking.endTime && (
-                                            <span className="flex items-center gap-1">
-                                              <Clock className="w-3 h-3" />
-                                              {formatTime12Hour(booking.startTime)} - {formatTime12Hour(booking.endTime)}
-                                            </span>
-                                          )}
-                                        </div>
-                                        {booking.notes && (
-                                          <p className="text-xs text-muted-foreground bg-muted/50 p-2 rounded">
-                                            {booking.notes}
-                                          </p>
-                                        )}
-                                      </div>
+                                  {/* Header with Icon and Title */}
+                                  <div className="flex items-start gap-3 mb-3">
+                                    <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 bg-blue-100 text-blue-600">
+                                      <Building2 className="w-4 h-4" />
                                     </div>
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      className="gap-1 h-7 px-2 text-xs"
-                                      onClick={() => handleViewEvent(booking.eventId)}
-                                      disabled={loadingEventDetails}
-                                    >
-                                      <Eye className="w-3 h-3" />
-                                      {loadingEventDetails ? 'Loading...' : 'View Event'}
-                                    </Button>
+                                    <h5 className="font-medium text-foreground text-sm leading-tight flex-1 truncate" title={booking.eventTitle}>
+                                      {booking.eventTitle}
+                                    </h5>
                                   </div>
+
+                                  {/* Details */}
+                                  <div className="space-y-2 mb-3 flex-1">
+                                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                      <Users className="w-3 h-3" />
+                                      <span>{booking.requestor}</span>
+                                    </div>
+                                    {reqGroup.requirement.type === 'physical' && (
+                                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                        <Package className="w-3 h-3" />
+                                        <span>Qty: {booking.quantity}</span>
+                                      </div>
+                                    )}
+                                    {booking.startTime && booking.endTime && (
+                                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                        <Clock className="w-3 h-3" />
+                                        <span>{formatTime12Hour(booking.startTime)} - {formatTime12Hour(booking.endTime)}</span>
+                                      </div>
+                                    )}
+                                    {booking.notes && (
+                                      <p className="text-xs text-muted-foreground bg-muted/50 p-2 rounded mt-2">
+                                        {booking.notes}
+                                      </p>
+                                    )}
+                                  </div>
+
+                                  {/* View Button */}
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="gap-1 w-full"
+                                    onClick={() => handleViewEvent(booking.eventId)}
+                                    disabled={loadingEventId === booking.eventId}
+                                  >
+                                    <Eye className="w-3 h-3" />
+                                    {loadingEventId === booking.eventId ? 'Loading...' : 'View Event'}
+                                  </Button>
                                 </motion.div>
                               ))}
                             </div>
                           )}
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                      );
-                    })
+                      ));
+                    })()}
+                      </div>
                     )}
                   </div>
                 </TabsContent>

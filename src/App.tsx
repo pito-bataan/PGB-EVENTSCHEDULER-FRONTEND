@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { Toaster } from 'sonner'
 import GlobalNotificationSystem from './components/GlobalNotificationSystem'
 import LoginForm from './components/LoginForm'
+import ProtectedRoute from './components/ProtectedRoute'
 import MainLayout from './components/Users/MainLayout'
 import Dashboard from './components/Users/Dashboard'
 import RequestEventPage from './components/Users/RequestEventPage'
@@ -44,41 +45,45 @@ function App() {
           
           {/* Users Routes */}
           <Route path="/users/*" element={
-            <MainLayout user={user}>
-              <Routes>
-                <Route path="dashboard" element={<Dashboard />} />
-                <Route path="request-event" element={<RequestEventPage />} />
-                <Route path="my-events" element={<MyEventsPage />} />
-                <Route path="my-calendar" element={<MyCalendarPage />} />
-                <Route path="my-requirements" element={<MyRequirementsPage />} />
-                <Route path="manage-location" element={<ManageLocationPage />} />
-                <Route path="calendar" element={<div className="p-6"><h1 className="text-2xl font-bold">Calendar</h1><p>Coming soon...</p></div>} />
-                <Route path="all-events" element={<UserAllEventsPage />} />
-                <Route path="messages" element={<MessagesPage />} />
-                <Route path="tagged-departments" element={<TaggedDepartmentPage />} />
-                <Route path="" element={<Navigate to="dashboard" replace />} />
-              </Routes>
-            </MainLayout>
+            <ProtectedRoute>
+              <MainLayout user={user}>
+                <Routes>
+                  <Route path="dashboard" element={<Dashboard />} />
+                  <Route path="request-event" element={<RequestEventPage />} />
+                  <Route path="my-events" element={<MyEventsPage />} />
+                  <Route path="my-calendar" element={<MyCalendarPage />} />
+                  <Route path="my-requirements" element={<MyRequirementsPage />} />
+                  <Route path="manage-location" element={<ManageLocationPage />} />
+                  <Route path="calendar" element={<div className="p-6"><h1 className="text-2xl font-bold">Calendar</h1><p>Coming soon...</p></div>} />
+                  <Route path="all-events" element={<UserAllEventsPage />} />
+                  <Route path="messages" element={<MessagesPage />} />
+                  <Route path="tagged-departments" element={<TaggedDepartmentPage />} />
+                  <Route path="" element={<Navigate to="dashboard" replace />} />
+                </Routes>
+              </MainLayout>
+            </ProtectedRoute>
           } />
           
           {/* Admin Routes */}
           <Route path="/admin/*" element={
-            <AdminMainLayout user={adminUser}>
-              <Routes>
-                <Route path="dashboard" element={<AdminDashboard />} />
-                <Route path="all-events" element={<AllEventsPage />} />
-                <Route path="calendar" element={<AdminCalendarPage />} />
-                <Route path="users" element={<UsersManagement />} />
-                <Route path="users-logs" element={<UsersLogsPage />} />
-                <Route path="departments" element={<DepartmentsManagement />} />
-                <Route path="reports" element={<div className="p-6"><h1 className="text-2xl font-bold">Reports</h1><p>Coming soon...</p></div>} />
-                <Route path="" element={<Navigate to="dashboard" replace />} />
-              </Routes>
-            </AdminMainLayout>
+            <ProtectedRoute>
+              <AdminMainLayout user={adminUser}>
+                <Routes>
+                  <Route path="dashboard" element={<AdminDashboard />} />
+                  <Route path="all-events" element={<AllEventsPage />} />
+                  <Route path="calendar" element={<AdminCalendarPage />} />
+                  <Route path="users" element={<UsersManagement />} />
+                  <Route path="users-logs" element={<UsersLogsPage />} />
+                  <Route path="departments" element={<DepartmentsManagement />} />
+                  <Route path="reports" element={<div className="p-6"><h1 className="text-2xl font-bold">Reports</h1><p>Coming soon...</p></div>} />
+                  <Route path="" element={<Navigate to="dashboard" replace />} />
+                </Routes>
+              </AdminMainLayout>
+            </ProtectedRoute>
           } />
           
           {/* Default redirect */}
-          <Route path="/" element={<Navigate to="/users/dashboard" replace />} />
+          <Route path="/" element={<Navigate to="/login" replace />} />
         </Routes>
       </Router>
       <Toaster position="top-right" />

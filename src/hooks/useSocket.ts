@@ -37,10 +37,12 @@ export const useSocket = (userId?: string) => {
         
         // Reset connecting flag when connection is established
         globalSocket.on('connect', () => {
+          console.log('🔗 [SOCKET] Connected to Socket.IO server');
           isConnecting = false;
         });
         
         globalSocket.on('disconnect', () => {
+          console.log('🔌 [SOCKET] Disconnected from Socket.IO server');
           isConnecting = false;
         });
         
@@ -83,12 +85,14 @@ export const useSocket = (userId?: string) => {
     // Only join user room if not already joined and userId provided
     if (userId && !joinedUserRooms.has(userId)) {
       if (socket.connected) {
+        console.log(`👤 [SOCKET] Joining user room for userId: ${userId}`);
         socket.emit('join-user-room', userId);
         joinedUserRooms.add(userId);
       } else {
         // If not connected yet, wait for connection
         socket.once('connect', () => {
           if (!joinedUserRooms.has(userId)) {
+            console.log(`👤 [SOCKET] Joining user room after connection for userId: ${userId}`);
             socket.emit('join-user-room', userId);
             joinedUserRooms.add(userId);
           }

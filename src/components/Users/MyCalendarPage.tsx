@@ -261,10 +261,19 @@ const MyCalendarPage: React.FC = () => {
 
       const result = await response.json();
       
-      // Refresh availability data
-      await fetchAvailabilityData(department._id);
+      // Refresh availability data - force refresh to bypass cache and show updated data immediately
+      await fetchAvailabilityData(department._id, true);
+      
+      // Show success message
+      toast.success(`Resource availability saved successfully for ${format(date, 'MMM dd, yyyy')}!`, {
+        description: `${availabilities.length} requirement(s) updated`
+      });
       
     } catch (error) {
+      // Show error message
+      toast.error('Failed to save resource availability', {
+        description: error instanceof Error ? error.message : 'Please try again'
+      });
       throw error;
     }
   };

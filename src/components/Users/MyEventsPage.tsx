@@ -7,6 +7,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Separator } from '@/components/ui/separator';
 import {
   Select,
@@ -45,6 +47,7 @@ import {
   Download,
   Paperclip,
   Edit,
+  ChevronRight,
   AlertTriangle,
   HelpCircle,
   Loader2
@@ -146,6 +149,29 @@ const MyEventsPage: React.FC = () => {
   const [showCustomLocationInput, setShowCustomLocationInput] = useState(false);
   const [customLocation, setCustomLocation] = useState('');
   const [conflictingEvents, setConflictingEvents] = useState<any[]>([]);
+  
+  // Edit Requirement Modal State
+  const [showEditRequirementModal, setShowEditRequirementModal] = useState(false);
+  const [editingRequirement, setEditingRequirement] = useState<any>(null);
+  const [editRequirementData, setEditRequirementData] = useState({
+    quantity: 0,
+    notes: ''
+  });
+  
+  // Change Department Modal State
+  const [showChangeDepartmentModal, setShowChangeDepartmentModal] = useState(false);
+  const [changingRequirement, setChangingRequirement] = useState<any>(null);
+  const [allDepartments, setAllDepartments] = useState<string[]>([]);
+  const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
+  const [departmentSearchQuery, setDepartmentSearchQuery] = useState('');
+  
+  // Add More Departments Modal State
+  const [showAddDepartmentsModal, setShowAddDepartmentsModal] = useState(false);
+  const [addingToEvent, setAddingToEvent] = useState<any>(null);
+  const [showDepartmentRequirementsModal, setShowDepartmentRequirementsModal] = useState(false);
+  const [selectedDepartmentData, setSelectedDepartmentData] = useState<any>(null);
+  const [departmentRequirements, setDepartmentRequirements] = useState<any[]>([]);
+  const [addDepartmentSearchQuery, setAddDepartmentSearchQuery] = useState('');
 
   // Fetch available dates for selected location
   const fetchAvailableDates = async (locationName: string) => {
@@ -289,8 +315,47 @@ const MyEventsPage: React.FC = () => {
     }
   };
 
+  // Fetch all departments
+  const fetchAllDepartments = async () => {
+    try {
+      const token = localStorage.getItem('authToken');
+      // Fetch visible departments from the public endpoint
+      const response = await axios.get(`${API_BASE_URL}/departments/visible`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (response.data.success && Array.isArray(response.data.data)) {
+        // Extract department names
+        const deptNames = response.data.data
+          .map((dept: any) => dept.name)
+          .filter(Boolean)
+          .sort(); // Sort alphabetically
+        
+        console.log('📊 Total departments from API:', response.data.data.length);
+        console.log('✅ Loaded departments from database:', deptNames);
+        console.log('🔍 PGSO included?', deptNames.includes('PGSO'));
+        console.log('🔍 PITO included?', deptNames.includes('PITO'));
+        
+        if (deptNames.length > 0) {
+          setAllDepartments(deptNames as string[]);
+          return;
+        }
+      }
+    } catch (error) {
+      console.log('Using fallback departments list');
+    }
+    
+    // Fallback to hardcoded departments
+    setAllDepartments([
+      'PGSO', 'ODH', 'PTO', 'PACCO', 'PESO', 'PSWDO', 
+      'DILG', 'HRMO', 'ACCOUNTING', 'BUDGET', 'TREASURY',
+      'ENGINEERING', 'PLANNING', 'LEGAL', 'INFORMATION'
+    ]);
+  };
+
   useEffect(() => {
     fetchMyEvents();
+    fetchAllDepartments();
   }, []);
 
   // Get dynamic status based on dates
@@ -627,6 +692,349 @@ const MyEventsPage: React.FC = () => {
     setShowCustomLocationInput(false);
     setCustomLocation('');
     setShowEditModal(true);
+  };
+
+  // Handle edit requirement
+  const handleEditRequirement = (requirement: any, eventId: string, department: string) => {
+    setEditingRequirement({ ...requirement, eventId, department });
+    setEditRequirementData({
+      quantity: requirement.quantity || 0,
+      notes: requirement.notes || ''
+    });
+    setShowEditRequirementModal(true);
+  };
+
+  // Handle save edited requirement
+  const handleSaveEditedRequirement = async () => {
+    if (!editingRequirement) return;
+
+    // Validate quantity doesn't exceed available
+    if (editRequirementData.quantity > editingRequirement.totalQuantity) {
+      toast.error(`Quantity cannot exceed ${editingRequirement.totalQuantity} (available in database)`);
+      return;
+    }
+
+    if (editRequirementData.quantity < 1) {
+      toast.error('Quantity must be at least 1');
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await axios.patch(
+        `${API_BASE_URL}/events/${editingRequirement.eventId}/requirements/${editingRequirement.id}`,
+        {
+          quantity: editRequirementData.quantity,
+          notes: editRequirementData.notes
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      if (response.data.success) {
+        toast.success('Requirement updated successfully');
+        setShowEditRequirementModal(false);
+        setEditingRequirement(null);
+        
+        // Refresh events to show updated data
+        fetchMyEvents();
+        
+        // If the departments modal is open, refresh that event too
+        if (selectedEventDepartments) {
+          const updatedEvent = await axios.get(`${API_BASE_URL}/events/${selectedEventDepartments._id}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (updatedEvent.data.success) {
+            setSelectedEventDepartments(updatedEvent.data.data);
+          }
+        }
+      }
+    } catch (error: any) {
+      console.error('Error updating requirement:', error);
+      toast.error(error.response?.data?.message || 'Failed to update requirement');
+    }
+  };
+
+  // Handle change department
+  const handleChangeDepartment = (requirement: any, eventId: string, currentDepartment: string) => {
+    setChangingRequirement({ ...requirement, eventId, currentDepartment });
+    setSelectedDepartments([]); // Start with NO selection - user must choose
+    setDepartmentSearchQuery(''); // Reset search query
+    setShowChangeDepartmentModal(true);
+  };
+
+  // Handle save department change
+  const handleSaveDepartmentChange = async () => {
+    if (!changingRequirement || selectedDepartments.length === 0) {
+      toast.error('Please select at least one department');
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await axios.patch(
+        `${API_BASE_URL}/events/${changingRequirement.eventId}/requirements/${changingRequirement.id}/departments`,
+        {
+          departments: selectedDepartments
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      if (response.data.success) {
+        toast.success('Department tags updated successfully');
+        setShowChangeDepartmentModal(false);
+        setChangingRequirement(null);
+        setSelectedDepartments([]);
+        
+        // Refresh events
+        fetchMyEvents();
+        
+        // Refresh departments modal if open
+        if (selectedEventDepartments) {
+          const updatedEvent = await axios.get(`${API_BASE_URL}/events/${selectedEventDepartments._id}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (updatedEvent.data.success) {
+            setSelectedEventDepartments(updatedEvent.data.data);
+          }
+        }
+      }
+    } catch (error: any) {
+      console.error('Error updating departments:', error);
+      toast.error(error.response?.data?.message || 'Failed to update departments');
+    }
+  };
+
+  // Toggle department selection
+  const toggleDepartmentSelection = (department: string) => {
+    setSelectedDepartments(prev => {
+      if (prev.includes(department)) {
+        return prev.filter(d => d !== department);
+      } else {
+        return [...prev, department];
+      }
+    });
+  };
+
+  // Open add departments modal
+  const handleOpenAddDepartments = (event: any) => {
+    console.log('🎯 Opening add departments for event:', event.eventTitle);
+    console.log('📋 Already tagged departments:', event.taggedDepartments);
+    console.log('📊 Total available departments:', allDepartments.length);
+    const availableDepts = allDepartments.filter(dept => !event.taggedDepartments?.includes(dept));
+    console.log('✅ Departments available to add:', availableDepts);
+    
+    setAddingToEvent(event);
+    setAddDepartmentSearchQuery(''); // Reset search
+    setShowAddDepartmentsModal(true);
+  };
+
+  // Handle department selection for adding
+  const handleSelectDepartmentToAdd = async (deptName: string) => {
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await axios.get(`${API_BASE_URL}/departments/visible`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (response.data.success) {
+        const dept = response.data.data.find((d: any) => d.name === deptName);
+        if (dept && addingToEvent) {
+          setSelectedDepartmentData(dept);
+          
+          // Fetch availability for the event date
+          const eventDate = new Date(addingToEvent.startDate);
+          const year = eventDate.getFullYear();
+          const month = String(eventDate.getMonth() + 1).padStart(2, '0');
+          const day = String(eventDate.getDate()).padStart(2, '0');
+          const dateStr = `${year}-${month}-${day}`;
+          
+          console.log(`📅 Fetching availability for ${deptName} on ${dateStr}`);
+          
+          // Fetch resource availability for this department and date
+          const availResponse = await axios.get(
+            `${API_BASE_URL}/resource-availability/department/${dept._id}/availability?startDate=${dateStr}&endDate=${dateStr}`,
+            { headers: { 'Authorization': `Bearer ${token}` } }
+          );
+          
+          const availabilities = availResponse.data || [];
+          console.log(`📦 Found ${availabilities.length} availability records`);
+          
+          // Fetch conflicting events to calculate actual available quantity
+          const eventsResponse = await axios.get(`${API_BASE_URL}/events`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          
+          const allEvents = eventsResponse.data.data || [];
+          
+          console.log(`🔍 Current event time: ${addingToEvent.startTime} - ${addingToEvent.endTime}`);
+          console.log(`🔍 Checking ${allEvents.length} total events for conflicts`);
+          
+          const conflictingEvents = allEvents.filter((event: any) => {
+            if (event._id === addingToEvent._id) return false; // Exclude current event
+            if (!event.startDate || !event.startTime || !event.endTime) return false;
+            
+            const eventStartDate = new Date(event.startDate);
+            const isSameDate = eventStartDate.toDateString() === eventDate.toDateString();
+            
+            if (isSameDate) {
+              console.log(`📅 Same date event: "${event.eventTitle}" at ${event.startTime}-${event.endTime}`);
+            }
+            
+            if (!isSameDate) return false;
+            
+            // Check time overlap
+            const hasTimeOverlap = (
+              (addingToEvent.startTime >= event.startTime && addingToEvent.startTime < event.endTime) ||
+              (addingToEvent.endTime > event.startTime && addingToEvent.endTime <= event.endTime) ||
+              (addingToEvent.startTime <= event.startTime && addingToEvent.endTime >= event.endTime)
+            );
+            
+            if (hasTimeOverlap) {
+              console.log(`⚠️ TIME OVERLAP with "${event.eventTitle}"`);
+            }
+            
+            return hasTimeOverlap;
+          });
+          
+          console.log(`⚠️ Found ${conflictingEvents.length} conflicting events`);
+          if (conflictingEvents.length > 0) {
+            console.log('Conflicting events:', conflictingEvents.map((e: any) => e.eventTitle));
+          }
+          
+          // Map requirements with availability data and calculate actual available quantity
+          const reqs = dept.requirements
+            .filter((req: any) => {
+              // Only show requirements that have availability for this date
+              const avail = availabilities.find((a: any) => a.requirementId === req._id);
+              return avail !== undefined;
+            })
+            .map((req: any) => {
+              const avail = availabilities.find((a: any) => a.requirementId === req._id);
+              const baseQuantity = avail?.quantity || req.totalQuantity || 0;
+              
+              // Calculate how much is already booked by conflicting events AND current event
+              let bookedQuantity = 0;
+              
+              // First, check what THIS event has already booked
+              if (addingToEvent.departmentRequirements && addingToEvent.departmentRequirements[deptName]) {
+                const currentEventReqs = addingToEvent.departmentRequirements[deptName];
+                const alreadyBooked = currentEventReqs.find((r: any) => r.name === req.text);
+                if (alreadyBooked && alreadyBooked.quantity) {
+                  bookedQuantity += alreadyBooked.quantity;
+                  console.log(`  Current event already booked: ${alreadyBooked.quantity}`);
+                }
+              }
+              
+              // Then add what other conflicting events have booked
+              conflictingEvents.forEach((event: any) => {
+                if (event.departmentRequirements && event.departmentRequirements[deptName]) {
+                  const deptReqs = event.departmentRequirements[deptName];
+                  const matchingReq = deptReqs.find((r: any) => r.name === req.text);
+                  if (matchingReq && matchingReq.quantity) {
+                    bookedQuantity += matchingReq.quantity;
+                  }
+                }
+              });
+              
+              const actualAvailable = Math.max(0, baseQuantity - bookedQuantity);
+              
+              console.log(`${req.text}: Base=${baseQuantity}, Booked=${bookedQuantity}, Available=${actualAvailable}`);
+              
+              return {
+                id: req._id,
+                name: req.text,
+                type: req.type,
+                selected: false,
+                quantity: req.type === 'physical' ? 1 : undefined,
+                notes: '',
+                totalQuantity: actualAvailable, // Use actual available quantity
+                baseQuantity: baseQuantity, // Keep base for reference
+                bookedQuantity: bookedQuantity,
+                isAvailable: avail?.isAvailable && actualAvailable > 0,
+                availabilityNotes: avail?.notes || ''
+              };
+            });
+          
+          console.log(`✅ Showing ${reqs.length} requirements with availability`);
+          setDepartmentRequirements(reqs);
+          setShowDepartmentRequirementsModal(true);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching department:', error);
+      toast.error('Failed to load department requirements');
+    }
+  };
+
+  // Toggle requirement selection
+  const toggleRequirementSelection = (reqId: string) => {
+    setDepartmentRequirements(prev => 
+      prev.map(req => req.id === reqId ? { ...req, selected: !req.selected } : req)
+    );
+  };
+
+  // Update requirement quantity
+  const updateRequirementQuantity = (reqId: string, quantity: number) => {
+    setDepartmentRequirements(prev =>
+      prev.map(req => req.id === reqId ? { ...req, quantity } : req)
+    );
+  };
+
+  // Update requirement notes
+  const updateRequirementNotes = (reqId: string, notes: string) => {
+    setDepartmentRequirements(prev =>
+      prev.map(req => req.id === reqId ? { ...req, notes } : req)
+    );
+  };
+
+  // Save department with requirements
+  const handleSaveDepartmentRequirements = async () => {
+    const selectedReqs = departmentRequirements.filter(r => r.selected);
+    
+    if (selectedReqs.length === 0) {
+      toast.error('Please select at least one requirement');
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await axios.post(
+        `${API_BASE_URL}/events/${addingToEvent._id}/add-department`,
+        {
+          departmentName: selectedDepartmentData.name,
+          requirements: selectedReqs
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      if (response.data.success) {
+        toast.success(`Added ${selectedDepartmentData.name} with ${selectedReqs.length} requirement(s)`);
+        setShowDepartmentRequirementsModal(false);
+        setShowAddDepartmentsModal(false);
+        setSelectedDepartmentData(null);
+        setDepartmentRequirements([]);
+        setAddingToEvent(null);
+        fetchMyEvents();
+      }
+    } catch (error: any) {
+      console.error('Error adding department:', error);
+      toast.error(error.response?.data?.message || 'Failed to add department');
+    }
   };
 
   // Handle save edited event
@@ -1035,6 +1443,15 @@ const MyEventsPage: React.FC = () => {
                             Tagged Departments
                           </Button>
                           <Button
+                            variant="default"
+                            size="sm"
+                            onClick={() => handleOpenAddDepartments(event)}
+                            className="gap-1 h-7 px-2 text-xs bg-blue-600 hover:bg-blue-700"
+                          >
+                            <Plus className="w-3 h-3" />
+                            Tag More Departments
+                          </Button>
+                          <Button
                             variant="outline"
                             size="sm"
                             onClick={() => handleShowFiles(event)}
@@ -1367,13 +1784,38 @@ const MyEventsPage: React.FC = () => {
                                             <h5 className="font-medium text-gray-900 mb-1">
                                               {req.name || `Requirement ${reqIndex + 1}`}
                                             </h5>
-                                            {req.type && (
-                                              <Badge variant="outline" className="text-xs mb-2">
-                                                {req.type}
+                                            <div className="flex items-center gap-2">
+                                              {req.type && (
+                                                <Badge variant="outline" className="text-xs">
+                                                  {req.type}
+                                                </Badge>
+                                              )}
+                                              <Badge variant="secondary" className="text-xs">
+                                                {dept}
                                               </Badge>
-                                            )}
+                                            </div>
                                           </div>
                                           <div className="flex items-center gap-2 ml-3">
+                                            <Button
+                                              variant="outline"
+                                              size="sm"
+                                              onClick={() => handleChangeDepartment(req, selectedEventDepartments._id, dept)}
+                                              className="h-7 px-2 gap-1 bg-white"
+                                              title="Change Department"
+                                            >
+                                              <Building2 className="w-3.5 h-3.5" />
+                                              <span className="text-xs">Dept</span>
+                                            </Button>
+                                            <Button
+                                              variant="outline"
+                                              size="sm"
+                                              onClick={() => handleEditRequirement(req, selectedEventDepartments._id, dept)}
+                                              className="h-7 px-2 gap-1 bg-white"
+                                              title="Edit Requirement"
+                                            >
+                                              <Edit className="w-3.5 h-3.5" />
+                                              <span className="text-xs">Edit</span>
+                                            </Button>
                                             {getRequirementStatusIcon(req.status)}
                                             <Badge className={`text-xs ${statusBadge.className}`}>
                                               {statusBadge.label}
@@ -1588,16 +2030,18 @@ const MyEventsPage: React.FC = () => {
                             onClick={async () => {
                               try {
                                 const url = `${API_BASE_URL}/events/govfile/${selectedEventFiles.govFiles!.brieferTemplate!.filename}`;
-                                
-                                // Test if the file exists first
                                 const response = await fetch(url, { method: 'HEAD' });
                                 if (response.ok) {
                                   window.open(url, '_blank');
                                 } else {
-                                  toast.error(`File not found on server: ${selectedEventFiles.govFiles!.brieferTemplate!.originalName}`);
+                                  toast.error('File not available', {
+                                    description: 'This file may not exist in your local environment. It works in production.'
+                                  });
                                 }
                               } catch (error) {
-                                toast.error('Failed to access government file');
+                                toast.error('Cannot access file', {
+                                  description: 'File may not exist in localhost. Check production or upload files to test.'
+                                });
                               }
                             }}
                             className="gap-1"
@@ -1610,17 +2054,19 @@ const MyEventsPage: React.FC = () => {
                             size="sm"
                             onClick={async () => {
                               try {
-                                const url = `${API_BASE_URL}/events/govfile/${selectedEventFiles.govFiles!.brieferTemplate!.filename}?download=true`;
-                                
-                                // Test if the file exists first
-                                const response = await fetch(url.replace('?download=true', ''), { method: 'HEAD' });
+                                const url = `${API_BASE_URL}/events/govfile/${selectedEventFiles.govFiles!.brieferTemplate!.filename}`;
+                                const response = await fetch(url, { method: 'HEAD' });
                                 if (response.ok) {
-                                  window.open(url, '_blank');
+                                  window.open(`${url}?download=true`, '_blank');
                                 } else {
-                                  toast.error(`File not found: ${selectedEventFiles.govFiles!.brieferTemplate!.originalName}`);
+                                  toast.error('File not available', {
+                                    description: 'This file may not exist in your local environment. It works in production.'
+                                  });
                                 }
                               } catch (error) {
-                                toast.error('Failed to download government file');
+                                toast.error('Cannot download file', {
+                                  description: 'File may not exist in localhost. Check production or upload files to test.'
+                                });
                               }
                             }}
                             className="gap-1"
@@ -2053,6 +2499,427 @@ const MyEventsPage: React.FC = () => {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Requirement Modal */}
+      <Dialog open={showEditRequirementModal} onOpenChange={setShowEditRequirementModal}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Edit className="w-5 h-5 text-blue-600" />
+              Edit Requirement
+            </DialogTitle>
+            <DialogDescription>
+              Update the quantity and notes for this requirement
+            </DialogDescription>
+          </DialogHeader>
+
+          {editingRequirement && (
+            <div className="space-y-4 py-4">
+              {/* Requirement Info */}
+              <div className="bg-gray-50 rounded-lg p-3 border">
+                <p className="text-sm font-medium text-gray-900">{editingRequirement.name}</p>
+                <p className="text-xs text-gray-600 mt-1">
+                  Department: {editingRequirement.department}
+                </p>
+                {editingRequirement.type && (
+                  <Badge variant="outline" className="text-xs mt-2">
+                    {editingRequirement.type}
+                  </Badge>
+                )}
+              </div>
+
+              {/* Quantity Input */}
+              <div className="space-y-2">
+                <Label htmlFor="edit-quantity">
+                  Quantity <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  id="edit-quantity"
+                  type="number"
+                  min="1"
+                  max={editingRequirement.totalQuantity}
+                  value={editRequirementData.quantity}
+                  onChange={(e) => setEditRequirementData(prev => ({ 
+                    ...prev, 
+                    quantity: parseInt(e.target.value) || 0 
+                  }))}
+                  placeholder="Enter quantity"
+                />
+                <p className="text-xs text-gray-500">
+                  Current Available: <span className="font-medium text-gray-700">{editingRequirement.totalQuantity}</span>
+                </p>
+                {editRequirementData.quantity > editingRequirement.totalQuantity && (
+                  <p className="text-xs text-red-600 flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3" />
+                    Quantity cannot exceed available amount
+                  </p>
+                )}
+              </div>
+
+              {/* Notes Input */}
+              <div className="space-y-2">
+                <Label htmlFor="edit-notes">Notes (Optional)</Label>
+                <Textarea
+                  id="edit-notes"
+                  value={editRequirementData.notes}
+                  onChange={(e) => setEditRequirementData(prev => ({ 
+                    ...prev, 
+                    notes: e.target.value 
+                  }))}
+                  placeholder="Add any additional notes..."
+                  rows={4}
+                  className="resize-none"
+                />
+                <p className="text-xs text-gray-500">
+                  {editRequirementData.notes.length}/500 characters
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          <div className="flex justify-end gap-3 pt-4 border-t">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setShowEditRequirementModal(false);
+                setEditingRequirement(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleSaveEditedRequirement}
+              disabled={
+                !editRequirementData.quantity || 
+                editRequirementData.quantity < 1 ||
+                editRequirementData.quantity > editingRequirement?.totalQuantity
+              }
+            >
+              Save Changes
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Change Department Modal */}
+      <Dialog open={showChangeDepartmentModal} onOpenChange={setShowChangeDepartmentModal}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Building2 className="w-5 h-5 text-blue-600" />
+              Change Department Tags
+            </DialogTitle>
+            <DialogDescription>
+              Select the correct department(s) for this requirement
+            </DialogDescription>
+          </DialogHeader>
+
+          {changingRequirement && (
+            <div className="space-y-4 py-4">
+              {/* Requirement Info */}
+              <div className="bg-gray-50 rounded-lg p-3 border">
+                <p className="text-sm font-medium text-gray-900">{changingRequirement.name}</p>
+                <p className="text-xs text-gray-600 mt-1">
+                  Current Department: <span className="font-medium">{changingRequirement.currentDepartment}</span>
+                </p>
+              </div>
+
+              {/* Department Selection */}
+              <div className="space-y-3">
+                <Label className="text-sm font-medium">Select Department(s)</Label>
+                
+                {/* Search Input */}
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                  <Input
+                    placeholder="Search departments..."
+                    value={departmentSearchQuery}
+                    onChange={(e) => setDepartmentSearchQuery(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+
+                {/* Department List */}
+                <div className="max-h-[300px] overflow-y-auto border rounded-lg p-3 space-y-2">
+                  {allDepartments
+                    .filter((dept) => 
+                      dept.toLowerCase().includes(departmentSearchQuery.toLowerCase())
+                    )
+                    .sort((a, b) => {
+                      // Sort current department first
+                      if (a === changingRequirement.currentDepartment) return -1;
+                      if (b === changingRequirement.currentDepartment) return 1;
+                      // Then alphabetically
+                      return a.localeCompare(b);
+                    })
+                    .map((dept) => (
+                      <div
+                        key={dept}
+                        className="flex items-center space-x-3 p-2 rounded hover:bg-gray-50"
+                      >
+                        <Checkbox
+                          id={`dept-${dept}`}
+                          checked={selectedDepartments.includes(dept)}
+                          onCheckedChange={() => toggleDepartmentSelection(dept)}
+                          className="cursor-pointer"
+                        />
+                        <label
+                          htmlFor={`dept-${dept}`}
+                          className="text-sm flex-1 cursor-pointer"
+                          onClick={() => toggleDepartmentSelection(dept)}
+                        >
+                          {dept}
+                        </label>
+                      </div>
+                    ))}
+                  
+                  {/* No Results Message */}
+                  {allDepartments.filter((dept) => 
+                    dept.toLowerCase().includes(departmentSearchQuery.toLowerCase())
+                  ).length === 0 && (
+                    <div className="text-center py-8 text-gray-500">
+                      <p className="text-sm">No departments found</p>
+                      <p className="text-xs mt-1">Try a different search term</p>
+                    </div>
+                  )}
+                </div>
+                
+                <p className="text-xs text-gray-500">
+                  {selectedDepartments.length} department(s) selected
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          <div className="flex justify-end gap-3 pt-4 border-t">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setShowChangeDepartmentModal(false);
+                setChangingRequirement(null);
+                setSelectedDepartments([]);
+                setDepartmentSearchQuery('');
+              }}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleSaveDepartmentChange}
+              disabled={selectedDepartments.length === 0}
+            >
+              Save Changes
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Departments Modal - Select Department */}
+      <Dialog open={showAddDepartmentsModal} onOpenChange={setShowAddDepartmentsModal}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Plus className="w-5 h-5 text-blue-600" />
+              Add Department to Event
+            </DialogTitle>
+            <DialogDescription>
+              Select a department to tag to this event
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            {/* Event Info */}
+            {addingToEvent && (
+              <div className="bg-gray-50 rounded-lg p-3 border">
+                <p className="text-sm font-medium text-gray-900">{addingToEvent.eventTitle}</p>
+                <p className="text-xs text-gray-600 mt-1">
+                  {new Date(addingToEvent.startDate).toLocaleDateString()} • {addingToEvent.location}
+                </p>
+              </div>
+            )}
+
+            {/* Department List */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Select Department</Label>
+              
+              {/* Search Input */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <Input
+                  placeholder="Search departments..."
+                  value={addDepartmentSearchQuery}
+                  onChange={(e) => setAddDepartmentSearchQuery(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+
+              <div className="max-h-[400px] overflow-y-auto border rounded-lg p-3 space-y-2">
+                {allDepartments
+                  .filter(dept => dept.toLowerCase().includes(addDepartmentSearchQuery.toLowerCase()))
+                  .map((dept) => {
+                    const isAlreadyTagged = addingToEvent?.taggedDepartments?.includes(dept);
+                    return (
+                      <div
+                        key={dept}
+                        onClick={() => handleSelectDepartmentToAdd(dept)}
+                        className="flex items-center justify-between p-3 rounded hover:bg-gray-50 cursor-pointer border border-transparent hover:border-blue-200 transition-all"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium">{dept}</span>
+                          {isAlreadyTagged && (
+                            <Badge variant="secondary" className="text-xs">
+                              Already Tagged
+                            </Badge>
+                          )}
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-gray-400" />
+                      </div>
+                    );
+                  })}
+                
+                {allDepartments
+                  .filter(dept => dept.toLowerCase().includes(addDepartmentSearchQuery.toLowerCase()))
+                  .length === 0 && (
+                  <div className="text-center py-8 text-gray-500">
+                    <p className="text-sm">No departments found</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4 border-t">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setShowAddDepartmentsModal(false);
+                setAddingToEvent(null);
+                setAddDepartmentSearchQuery('');
+              }}
+            >
+              Cancel
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Department Requirements Modal */}
+      <Dialog open={showDepartmentRequirementsModal} onOpenChange={setShowDepartmentRequirementsModal}>
+        <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="w-5 h-5 text-blue-600" />
+              {selectedDepartmentData?.name} - Requirements
+            </DialogTitle>
+            <DialogDescription>
+              Select requirements for this department
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            {departmentRequirements.length > 0 ? (
+              <div className="space-y-3">
+                {departmentRequirements.map((req) => (
+                  <div key={req.id} className="border rounded-lg p-4">
+                    <div className="flex items-start gap-3">
+                      <Checkbox
+                        checked={req.selected}
+                        onCheckedChange={() => toggleRequirementSelection(req.id)}
+                        className="mt-1"
+                      />
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <p className="font-medium text-sm">{req.name}</p>
+                          <Badge variant="outline" className="text-xs">
+                            {req.type === 'physical' ? '📦 Physical' : '🔧 Service'}
+                          </Badge>
+                          {req.isAvailable !== undefined && (
+                            <Badge 
+                              variant={req.isAvailable ? "default" : "destructive"} 
+                              className="text-xs"
+                            >
+                              {req.isAvailable ? '✓ Available' : '✗ Unavailable'}
+                            </Badge>
+                          )}
+                        </div>
+                        
+                        {/* Show availability info ALWAYS */}
+                        {req.type === 'physical' && req.totalQuantity !== undefined && (
+                          <p className="text-xs text-gray-600 mb-2">
+                            Available: <span className="font-medium">{req.totalQuantity}</span>
+                          </p>
+                        )}
+                        {req.availabilityNotes && (
+                          <p className="text-xs text-gray-600 mb-2">
+                            Note: {req.availabilityNotes}
+                          </p>
+                        )}
+
+                        {req.selected && (
+                          <div className="space-y-2 mt-3">
+                            {req.type === 'physical' ? (
+                              <div>
+                                <Label className="text-xs">Quantity Needed</Label>
+                                <Input
+                                  type="number"
+                                  min="1"
+                                  max={req.totalQuantity}
+                                  value={req.quantity || ''}
+                                  onChange={(e) => updateRequirementQuantity(req.id, parseInt(e.target.value) || 0)}
+                                  className="mt-1"
+                                  placeholder="Enter quantity"
+                                />
+                                <p className="text-xs text-gray-500 mt-1">
+                                  Available: {req.totalQuantity || 'N/A'}
+                                </p>
+                              </div>
+                            ) : (
+                              <div>
+                                <Label className="text-xs">Notes</Label>
+                                <Textarea
+                                  value={req.notes}
+                                  onChange={(e) => updateRequirementNotes(req.id, e.target.value)}
+                                  className="mt-1"
+                                  placeholder="Add specific notes or requirements..."
+                                  rows={3}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                <p className="text-sm">No requirements found for this department</p>
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4 border-t">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setShowDepartmentRequirementsModal(false);
+                setSelectedDepartmentData(null);
+                setDepartmentRequirements([]);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleSaveDepartmentRequirements}
+              disabled={departmentRequirements.filter(r => r.selected).length === 0}
+            >
+              Add Department
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
         </CardContent>

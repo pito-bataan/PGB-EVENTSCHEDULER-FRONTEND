@@ -57,12 +57,13 @@ interface TaggedDepartmentsState {
   loading: boolean;
   showNotesMap: Record<string, boolean>;
   notesMap: Record<string, string>;
-  activeEventTab: 'ongoing' | 'completed';
+  activeEventTab: 'ongoing' | 'completed' | 'declined';
   statusDialog: {
     isOpen: boolean;
     eventId: string;
     requirementId: string;
     status: string;
+    requirementName?: string;
   };
   
   // Cache
@@ -72,11 +73,11 @@ interface TaggedDepartmentsState {
   // Actions
   fetchTaggedEvents: (force?: boolean) => Promise<void>;
   setSelectedEvent: (event: Event | null) => void;
-  setActiveEventTab: (tab: 'ongoing' | 'completed') => void;
+  setActiveEventTab: (tab: 'ongoing' | 'completed' | 'declined') => void;
   setShowNotes: (requirementId: string, show: boolean) => void;
   setNotes: (requirementId: string, notes: string) => void;
   setStatusDialog: (dialog: { isOpen: boolean; eventId: string; requirementId: string; status: string }) => void;
-  updateRequirementStatus: (eventId: string, requirementId: string, status: string) => Promise<void>;
+  updateRequirementStatus: (eventId: string, requirementId: string, status: string, declineReason?: string) => Promise<void>;
   updateRequirementNotes: (eventId: string, requirementId: string, notes: string) => Promise<void>;
   clearCache: () => void;
   
@@ -171,6 +172,7 @@ export const useTaggedDepartmentsStore = create<TaggedDepartmentsState>()(
           }
 
           const data = await response.json();
+          console.log('📦 Fetched events data:', data.data?.length, 'events');
           if (data.success && Array.isArray(data.data)) {
             set({
               events: data.data,
@@ -178,6 +180,7 @@ export const useTaggedDepartmentsStore = create<TaggedDepartmentsState>()(
               lastFetched: now,
               loading: false
             });
+            console.log('✅ Events updated in store');
           } else {
             set({ events: [], loading: false });
           }
@@ -191,7 +194,7 @@ export const useTaggedDepartmentsStore = create<TaggedDepartmentsState>()(
         set({ selectedEvent: event });
       },
       
-      setActiveEventTab: (tab: 'ongoing' | 'completed') => {
+      setActiveEventTab: (tab: 'ongoing' | 'completed' | 'declined') => {
         set({ activeEventTab: tab });
       },
       
@@ -217,7 +220,7 @@ export const useTaggedDepartmentsStore = create<TaggedDepartmentsState>()(
         set({ statusDialog: dialog });
       },
       
-      updateRequirementStatus: async (eventId: string, requirementId: string, status: string) => {
+      updateRequirementStatus: async (eventId: string, requirementId: string, status: string, declineReason?: string) => {
         try {
           const token = localStorage.getItem('authToken');
           
@@ -225,14 +228,18 @@ export const useTaggedDepartmentsStore = create<TaggedDepartmentsState>()(
             throw new Error('Please log in to update requirements');
           }
 
+          console.log('🔄 Updating requirement status:', { eventId, requirementId, status, declineReason });
+
           const response = await fetch(`${API_BASE_URL}/api/events/${eventId}/requirements/${requirementId}/status`, {
             method: 'PATCH',
             headers: {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${token}`
             },
-            body: JSON.stringify({ status })
+            body: JSON.stringify({ status, declineReason })
           });
+
+          console.log('📡 API Response status:', response.status);
 
           if (response.status === 403) {
             throw new Error('You do not have permission to update this requirement');
@@ -243,13 +250,33 @@ export const useTaggedDepartmentsStore = create<TaggedDepartmentsState>()(
           }
 
           if (!response.ok) {
-            throw new Error('Failed to update requirement status');
+            const errorData = await response.json().catch(() => ({}));
+            console.error('❌ API Error:', errorData);
+            throw new Error(errorData.message || 'Failed to update requirement status');
           }
 
-          // Refresh the events list to get updated data
-          await get().fetchTaggedEvents(true);
+          const responseData = await response.json();
+          console.log('✅ API Success:', responseData);
+
+          // Update the specific event in the store with the returned data
+          if (responseData.success && responseData.data) {
+            const currentEvents = get().events;
+            const updatedEvents = currentEvents.map(event => 
+              event._id === eventId ? responseData.data : event
+            );
+            set({ events: updatedEvents });
+            console.log('🔄 Event updated in store with API response data');
+            
+            // DON'T fetch again immediately - it returns stale data from backend!
+            // The backend needs time to save. We'll rely on Socket.IO for updates.
+            console.log('⚠️ Skipping immediate fetch - using API response data');
+          } else {
+            // Only fetch if we didn't get updated data in response
+            await get().fetchTaggedEvents(true);
+          }
           
         } catch (error) {
+          console.error('❌ Update error:', error);
           throw error;
         }
       },

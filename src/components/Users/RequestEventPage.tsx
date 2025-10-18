@@ -51,7 +51,8 @@ import {
   AlertTriangle,
   Package,
   Settings,
-  Clock
+  Clock,
+  Loader2
 } from 'lucide-react';
 
 interface DepartmentRequirement {
@@ -134,6 +135,7 @@ const RequestEventPage: React.FC = () => {
     programme: null
   });
   const [conflictingEvents, setConflictingEvents] = useState<any[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   // Dynamic data from database
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -913,10 +915,18 @@ const RequestEventPage: React.FC = () => {
 
   // Handle final form submission
   const handleSubmitEventRequest = async () => {
+    // Prevent multiple submissions
+    if (isSubmitting) {
+      return;
+    }
+    
+    setIsSubmitting(true);
+    
     try {
       const token = localStorage.getItem('authToken');
       if (!token) {
         toast.error('Please login to submit an event request.');
+        setIsSubmitting(false);
         return;
       }
 
@@ -1019,6 +1029,7 @@ const RequestEventPage: React.FC = () => {
       toast.error('Failed to submit event request', {
         description: error.response?.data?.message || 'Please try again later.'
       });
+      setIsSubmitting(false);
     }
   };
 
@@ -1964,11 +1975,20 @@ const RequestEventPage: React.FC = () => {
           </Button>
           <Button 
             onClick={handleSubmitEventRequest}
-            disabled={!isFormReadyToSubmit()}
+            disabled={!isFormReadyToSubmit() || isSubmitting}
             className="bg-green-600 hover:bg-green-700 gap-2"
           >
-            <Send className="w-4 h-4" />
-            Submit Request
+            {isSubmitting ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Submitting...
+              </>
+            ) : (
+              <>
+                <Send className="w-4 h-4" />
+                Submit Request
+              </>
+            )}
           </Button>
         </motion.div>
       )}

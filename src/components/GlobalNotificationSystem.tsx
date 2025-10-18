@@ -115,10 +115,14 @@ export default function GlobalNotificationSystem() {
   // Global real-time notification popup system
   useEffect(() => {
     if (typeof onNewNotification !== 'function') {
+      console.warn('⚠️ [NOTIFICATION] onNewNotification is not a function');
       return;
     }
     
+    console.log('✅ [NOTIFICATION] Setting up global notification listener for user:', userId);
+    
     const handleGlobalNewNotification = (notificationData: any) => {
+      console.log('🔔 [NOTIFICATION] Received new notification:', notificationData);
       const now = Date.now();
       
       // Throttle notifications - prevent spam (minimum 1 second between notifications)
@@ -134,8 +138,11 @@ export default function GlobalNotificationSystem() {
       
       // Check if we've already shown this notification
       if (shownNotifications.has(notificationId)) {
+        console.log('⏭️ [NOTIFICATION] Already shown notification:', notificationId);
         return;
       }
+      
+      console.log('✅ [NOTIFICATION] Showing new notification:', notificationId);
       
       // Add to shown notifications set and update timestamp
       setShownNotifications(prev => {
@@ -183,10 +190,10 @@ export default function GlobalNotificationSystem() {
       }
       
       
-      // Dispatch global event to refresh Dashboard notifications (DISABLED - was causing infinite loops)
-      // window.dispatchEvent(new CustomEvent('notificationUpdate', { 
-      //   detail: { type: 'new', data: notificationData } 
-      // }));
+      // Dispatch global event to refresh Dashboard notifications
+      window.dispatchEvent(new CustomEvent('notificationUpdate', { 
+        detail: { type: 'new', data: notificationData } 
+      }));
       
       // Create a custom toast with Framer Motion animation
       toast.custom((t) => (
