@@ -228,8 +228,15 @@ const RequestEventPage: React.FC = () => {
         const response = await axios.get(`${API_BASE_URL}/location-availability`, { headers });
 
         if (response.data.success) {
-          // Extract unique location names
-          const uniqueLocations = [...new Set(response.data.data.map((item: any) => item.locationName))] as string[];
+          // Extract unique location names and clean them
+          const uniqueLocations = [...new Set(response.data.data.map((item: any) => {
+            // Remove "Bookings for " prefix if it exists
+            let locationName = item.locationName;
+            if (locationName.startsWith('Bookings for ')) {
+              locationName = locationName.replace('Bookings for ', '');
+            }
+            return locationName;
+          }))] as string[];
           // Add "Add Custom Location" at the beginning
           setLocations(['Add Custom Location', ...uniqueLocations]);
         }
@@ -1439,8 +1446,10 @@ const RequestEventPage: React.FC = () => {
                           value={formData.location} 
                           onValueChange={handleLocationChange}
                         >
-                          <SelectTrigger className="mt-1 h-9 flex-1">
-                            <SelectValue placeholder="Select location" />
+                          <SelectTrigger className="mt-1 h-9 flex-1 max-w-[calc(100%-3rem)]">
+                            <div className="truncate w-full text-left">
+                              <SelectValue placeholder="Select location" />
+                            </div>
                           </SelectTrigger>
                           <SelectContent className="max-h-48">
                             {locations.map((location) => (

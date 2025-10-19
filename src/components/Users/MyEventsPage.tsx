@@ -342,20 +342,6 @@ const MyEventsPage: React.FC = () => {
             const newEndDateTime = new Date(endDateStr);
             newEndDateTime.setHours(endHours, endMinutes, 0, 0);
             
-            console.log('🔍 Checking requirement availability for:', {
-              newStartDateTime: newStartDateTime.toISOString(),
-              newStartDateTimeLocal: newStartDateTime.toString(),
-              newEndDateTime: newEndDateTime.toISOString(),
-              newEndDateTimeLocal: newEndDateTime.toString(),
-              currentEventId: selectedEditEvent._id,
-              formData: {
-                startDate: editFormData.startDate,
-                startTime: editFormData.startTime,
-                endDate: editFormData.endDate,
-                endTime: editFormData.endTime
-              }
-            });
-            
             // Find events that overlap with the new time range (excluding current event)
             const overlappingEvents = events.filter((event: any) => {
               if (!event.startDate || !event.startTime || !event.endDate || !event.endTime) return false;
@@ -378,20 +364,10 @@ const MyEventsPage: React.FC = () => {
               // Check if time ranges overlap
               const overlaps = (newStartDateTime < eventEnd && newEndDateTime > eventStart);
               
-              if (overlaps) {
-                console.log('📅 Found overlapping event:', {
-                  title: event.eventTitle,
-                  start: eventStart.toISOString(),
-                  startLocal: eventStart.toString(),
-                  end: eventEnd.toISOString(),
-                  endLocal: eventEnd.toString()
-                });
-              }
               
               return overlaps;
             });
             
-            console.log(`Found ${overlappingEvents.length} overlapping events`);
             
             // Fetch resource availability for the NEW date by checking other events on that date
             // Since we can't access /api/departments as a regular user, we'll look at other events
@@ -426,7 +402,6 @@ const MyEventsPage: React.FC = () => {
               }
             });
             
-            console.log(`📊 Found availability data from ${eventsOnNewDate.length} events on ${newDateStr}:`, Object.fromEntries(availabilityMap));
             
             // Check each tagged department's requirements
             const conflicts: any[] = [];
@@ -435,6 +410,11 @@ const MyEventsPage: React.FC = () => {
               const deptReqs = currentEventInDB.departmentRequirements[dept] || [];
               
               deptReqs.forEach((req: any) => {
+                // Skip custom requirements - they will be handled by the tagged department
+                if (req.isCustom) {
+                  return;
+                }
+                
                 if (req.type === 'physical' && req.quantity) {
                   // Get the total quantity for the NEW date from ResourceAvailability
                   const availKey = `${dept}-${req.id}`;
@@ -450,7 +430,6 @@ const MyEventsPage: React.FC = () => {
                         r.id === req.id || r.name === req.name
                       );
                       if (matchingReq && matchingReq.quantity) {
-                        console.log(`📦 ${event.eventTitle} booked ${matchingReq.quantity} ${req.name}`);
                         bookedQuantity += matchingReq.quantity;
                       }
                     }
@@ -458,14 +437,9 @@ const MyEventsPage: React.FC = () => {
                   
                   const availableQuantity = totalQuantityForNewDate - bookedQuantity;
                   
-                  console.log(`🔢 ${req.name}: Requested=${req.quantity}, Booked=${bookedQuantity}, Available=${availableQuantity}, Total=${totalQuantityForNewDate} (for ${newDateStr})`, {
-                    needsMore: req.quantity > availableQuantity,
-                    calculation: `${req.quantity} > ${availableQuantity}?`
-                  });
                   
                   // If requested quantity exceeds available, add to conflicts
                   if (req.quantity > availableQuantity) {
-                    console.log(`❌ CONFLICT: ${req.name} - Need ${req.quantity} but only ${availableQuantity} available on ${newDateStr}`);
                     conflicts.push({
                       department: dept,
                       requirement: req.name,
@@ -479,7 +453,6 @@ const MyEventsPage: React.FC = () => {
               });
             });
             
-            console.log(`Total conflicts found: ${conflicts.length}`);
             setRequirementConflicts(conflicts);
             
             // Show conflict modal if there are conflicts
@@ -540,10 +513,6 @@ const MyEventsPage: React.FC = () => {
           .filter(Boolean)
           .sort(); // Sort alphabetically
         
-        console.log('📊 Total departments from API:', response.data.data.length);
-        console.log('✅ Loaded departments from database:', deptNames);
-        console.log('🔍 PGSO included?', deptNames.includes('PGSO'));
-        console.log('🔍 PITO included?', deptNames.includes('PITO'));
         
         if (deptNames.length > 0) {
           setAllDepartments(deptNames as string[]);
@@ -551,7 +520,6 @@ const MyEventsPage: React.FC = () => {
         }
       }
     } catch (error) {
-      console.log('Using fallback departments list');
     }
     
     // Fallback to hardcoded departments
@@ -955,15 +923,24 @@ const MyEventsPage: React.FC = () => {
   const handleSaveEditedRequirement = async () => {
     if (!editingRequirement) return;
 
-    // Validate quantity doesn't exceed available
-    if (editRequirementData.quantity > editingRequirement.totalQuantity) {
-      toast.error(`Quantity cannot exceed ${editingRequirement.totalQuantity} (available in database)`);
-      return;
-    }
+    // Validate based on requirement type
+    if (editingRequirement.type === 'physical') {
+      // Validate quantity for physical requirements
+      if (editRequirementData.quantity > editingRequirement.totalQuantity) {
+        toast.error(`Quantity cannot exceed ${editingRequirement.totalQuantity} (available in database)`);
+        return;
+      }
 
-    if (editRequirementData.quantity < 1) {
-      toast.error('Quantity must be at least 1');
-      return;
+      if (editRequirementData.quantity < 1) {
+        toast.error('Quantity must be at least 1');
+        return;
+      }
+    } else {
+      // Validate notes for service requirements
+      if (!editRequirementData.notes.trim()) {
+        toast.error('Notes are required for service requirements');
+        return;
+      }
     }
 
     try {
@@ -1102,11 +1079,7 @@ const MyEventsPage: React.FC = () => {
 
   // Open add departments modal
   const handleOpenAddDepartments = (event: any) => {
-    console.log('🎯 Opening add departments for event:', event.eventTitle);
-    console.log('📋 Already tagged departments:', event.taggedDepartments);
-    console.log('📊 Total available departments:', allDepartments.length);
     const availableDepts = allDepartments.filter(dept => !event.taggedDepartments?.includes(dept));
-    console.log('✅ Departments available to add:', availableDepts);
     
     setAddingToEvent(event);
     setAddDepartmentSearchQuery(''); // Reset search
@@ -1133,7 +1106,6 @@ const MyEventsPage: React.FC = () => {
           const day = String(eventDate.getDate()).padStart(2, '0');
           const dateStr = `${year}-${month}-${day}`;
           
-          console.log(`📅 Fetching availability for ${deptName} on ${dateStr}`);
           
           // Fetch resource availability for this department and date
           const availResponse = await axios.get(
@@ -1142,7 +1114,6 @@ const MyEventsPage: React.FC = () => {
           );
           
           const availabilities = availResponse.data || [];
-          console.log(`📦 Found ${availabilities.length} availability records`);
           
           // Fetch conflicting events to calculate actual available quantity
           const eventsResponse = await axios.get(`${API_BASE_URL}/events`, {
@@ -1151,8 +1122,6 @@ const MyEventsPage: React.FC = () => {
           
           const allEvents = eventsResponse.data.data || [];
           
-          console.log(`🔍 Current event time: ${addingToEvent.startTime} - ${addingToEvent.endTime}`);
-          console.log(`🔍 Checking ${allEvents.length} total events for conflicts`);
           
           const conflictingEvents = allEvents.filter((event: any) => {
             if (event._id === addingToEvent._id) return false; // Exclude current event
@@ -1161,9 +1130,6 @@ const MyEventsPage: React.FC = () => {
             const eventStartDate = new Date(event.startDate);
             const isSameDate = eventStartDate.toDateString() === eventDate.toDateString();
             
-            if (isSameDate) {
-              console.log(`📅 Same date event: "${event.eventTitle}" at ${event.startTime}-${event.endTime}`);
-            }
             
             if (!isSameDate) return false;
             
@@ -1174,17 +1140,10 @@ const MyEventsPage: React.FC = () => {
               (addingToEvent.startTime <= event.startTime && addingToEvent.endTime >= event.endTime)
             );
             
-            if (hasTimeOverlap) {
-              console.log(`⚠️ TIME OVERLAP with "${event.eventTitle}"`);
-            }
             
             return hasTimeOverlap;
           });
           
-          console.log(`⚠️ Found ${conflictingEvents.length} conflicting events`);
-          if (conflictingEvents.length > 0) {
-            console.log('Conflicting events:', conflictingEvents.map((e: any) => e.eventTitle));
-          }
           
           // Map requirements with availability data and calculate actual available quantity
           const reqs = dept.requirements
@@ -1206,7 +1165,6 @@ const MyEventsPage: React.FC = () => {
                 const alreadyBooked = currentEventReqs.find((r: any) => r.name === req.text);
                 if (alreadyBooked && alreadyBooked.quantity) {
                   bookedQuantity += alreadyBooked.quantity;
-                  console.log(`  Current event already booked: ${alreadyBooked.quantity}`);
                 }
               }
               
@@ -1223,7 +1181,6 @@ const MyEventsPage: React.FC = () => {
               
               const actualAvailable = Math.max(0, baseQuantity - bookedQuantity);
               
-              console.log(`${req.text}: Base=${baseQuantity}, Booked=${bookedQuantity}, Available=${actualAvailable}`);
               
               return {
                 id: req._id,
@@ -1240,7 +1197,6 @@ const MyEventsPage: React.FC = () => {
               };
             });
           
-          console.log(`✅ Showing ${reqs.length} requirements with availability`);
           setDepartmentRequirements(reqs);
           setShowDepartmentRequirementsModal(true);
         }
@@ -1377,7 +1333,12 @@ const MyEventsPage: React.FC = () => {
         startDate: editFormData.startDate,
         startTime: editFormData.startTime,
         endDate: editFormData.endDate,
-        endTime: editFormData.endTime
+        endTime: editFormData.endTime,
+        previousLocation: selectedEditEvent.location, // Store previous location for reschedule log
+        previousStartDate: selectedEditEvent.startDate,
+        previousStartTime: selectedEditEvent.startTime,
+        previousEndDate: selectedEditEvent.endDate,
+        previousEndTime: selectedEditEvent.endTime
       };
 
       const response = await axios.put(
@@ -2126,21 +2087,21 @@ const MyEventsPage: React.FC = () => {
                                               variant="outline"
                                               size="sm"
                                               onClick={() => handleChangeDepartment(req, selectedEventDepartments._id, dept)}
-                                              className="h-7 px-2 gap-1 bg-white"
+                                              className="h-7 px-2 gap-1 bg-white text-black border-gray-300 hover:bg-gray-100 hover:border-gray-400"
                                               title="Change Department"
                                             >
                                               <Building2 className="w-3.5 h-3.5" />
-                                              <span className="text-xs">Dept</span>
+                                              <span className="text-xs">Change Dept</span>
                                             </Button>
                                             <Button
                                               variant="outline"
                                               size="sm"
                                               onClick={() => handleEditRequirement(req, selectedEventDepartments._id, dept)}
-                                              className="h-7 px-2 gap-1 bg-white"
-                                              title="Edit Requirement"
+                                              className="h-7 px-2 gap-1 bg-black text-white border-gray-700 hover:bg-gray-800 hover:border-gray-600 hover:text-white"
+                                              title="Edit Quantity/Notes"
                                             >
-                                              <Edit className="w-3.5 h-3.5" />
-                                              <span className="text-xs">Edit</span>
+                                              <Edit className="w-3.5 h-3.5 text-white" />
+                                              <span className="text-xs text-white">Quantity/Notes</span>
                                             </Button>
                                             {getRequirementStatusIcon(req.status)}
                                             <Badge className={`text-xs ${statusBadge.className}`}>
@@ -2911,52 +2872,80 @@ const MyEventsPage: React.FC = () => {
                 )}
               </div>
 
-              {/* Quantity Input */}
-              <div className="space-y-2">
-                <Label htmlFor="edit-quantity">
-                  Quantity <span className="text-red-500">*</span>
-                </Label>
-                <Input
-                  id="edit-quantity"
-                  type="number"
-                  min="1"
-                  max={editingRequirement.totalQuantity}
-                  value={editRequirementData.quantity}
-                  onChange={(e) => setEditRequirementData(prev => ({ 
-                    ...prev, 
-                    quantity: parseInt(e.target.value) || 0 
-                  }))}
-                  placeholder="Enter quantity"
-                />
-                <p className="text-xs text-gray-500">
-                  Current Available: <span className="font-medium text-gray-700">{editingRequirement.totalQuantity}</span>
-                </p>
-                {editRequirementData.quantity > editingRequirement.totalQuantity && (
-                  <p className="text-xs text-red-600 flex items-center gap-1">
-                    <AlertTriangle className="w-3 h-3" />
-                    Quantity cannot exceed available amount
-                  </p>
-                )}
-              </div>
+              {/* Conditional: Quantity for Physical, Notes for Service */}
+              {editingRequirement.type === 'physical' ? (
+                <>
+                  {/* Quantity Input - Physical Requirements */}
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-quantity">
+                      Quantity <span className="text-red-500">*</span>
+                    </Label>
+                    <Input
+                      id="edit-quantity"
+                      type="number"
+                      min="1"
+                      max={editingRequirement.totalQuantity}
+                      value={editRequirementData.quantity}
+                      onChange={(e) => setEditRequirementData(prev => ({ 
+                        ...prev, 
+                        quantity: parseInt(e.target.value) || 0 
+                      }))}
+                      placeholder="Enter quantity"
+                    />
+                    <p className="text-xs text-gray-500">
+                      Current Available: <span className="font-medium text-gray-700">{editingRequirement.totalQuantity}</span>
+                    </p>
+                    {editRequirementData.quantity > editingRequirement.totalQuantity && (
+                      <p className="text-xs text-red-600 flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3" />
+                        Quantity cannot exceed available amount
+                      </p>
+                    )}
+                  </div>
 
-              {/* Notes Input */}
-              <div className="space-y-2">
-                <Label htmlFor="edit-notes">Notes (Optional)</Label>
-                <Textarea
-                  id="edit-notes"
-                  value={editRequirementData.notes}
-                  onChange={(e) => setEditRequirementData(prev => ({ 
-                    ...prev, 
-                    notes: e.target.value 
-                  }))}
-                  placeholder="Add any additional notes..."
-                  rows={4}
-                  className="resize-none"
-                />
-                <p className="text-xs text-gray-500">
-                  {editRequirementData.notes.length}/500 characters
-                </p>
-              </div>
+                  {/* Notes Input (Optional for Physical) */}
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-notes">Notes (Optional)</Label>
+                    <Textarea
+                      id="edit-notes"
+                      value={editRequirementData.notes}
+                      onChange={(e) => setEditRequirementData(prev => ({ 
+                        ...prev, 
+                        notes: e.target.value 
+                      }))}
+                      placeholder="Add any additional notes..."
+                      rows={4}
+                      className="resize-none"
+                    />
+                    <p className="text-xs text-gray-500">
+                      {editRequirementData.notes.length}/500 characters
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* Notes Input - Service Requirements */}
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-notes">
+                      Notes <span className="text-red-500">*</span>
+                    </Label>
+                    <Textarea
+                      id="edit-notes"
+                      value={editRequirementData.notes}
+                      onChange={(e) => setEditRequirementData(prev => ({ 
+                        ...prev, 
+                        notes: e.target.value 
+                      }))}
+                      placeholder="Enter service details and requirements..."
+                      rows={6}
+                      className="resize-none"
+                    />
+                    <p className="text-xs text-gray-500">
+                      {editRequirementData.notes.length}/500 characters
+                    </p>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
@@ -2974,9 +2963,11 @@ const MyEventsPage: React.FC = () => {
             <Button 
               onClick={handleSaveEditedRequirement}
               disabled={
-                !editRequirementData.quantity || 
-                editRequirementData.quantity < 1 ||
-                editRequirementData.quantity > editingRequirement?.totalQuantity
+                editingRequirement?.type === 'physical' 
+                  ? (!editRequirementData.quantity || 
+                     editRequirementData.quantity < 1 ||
+                     editRequirementData.quantity > editingRequirement?.totalQuantity)
+                  : !editRequirementData.notes.trim()
               }
             >
               Save Changes
