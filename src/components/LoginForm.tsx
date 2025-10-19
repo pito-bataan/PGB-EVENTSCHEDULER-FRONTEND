@@ -42,14 +42,16 @@ const LoginForm = () => {
         // Normalize role to lowercase for consistent checking
         const userRole = user.role?.toLowerCase();
         
-        // Create login log (skip for admin/superadmin users)
+        // Create user activity log for login (only for regular users, not admin/superadmin)
         if (userRole !== 'admin' && userRole !== 'superadmin') {
           try {
-            await axios.post(`${API_BASE_URL}/login-logs`, {
+            await axios.post(`${API_BASE_URL}/user-activity-logs`, {
               userId: user._id,
               username: user.username,
               email: user.email,
               department: user.department,
+              action: 'login',
+              description: `${user.username} logged in`,
               ipAddress: '', // Can be populated from backend
               userAgent: navigator.userAgent
             });
@@ -61,7 +63,12 @@ const LoginForm = () => {
         // Navigate based on user role
         if (userRole === 'admin' || userRole === 'superadmin') {
           toast.success(`Welcome back, ${user.username}! Redirecting to Admin Panel...`);
-          navigate('/admin/dashboard');
+          // Admin goes to all-events, SuperAdmin goes to dashboard
+          if (userRole === 'admin') {
+            navigate('/admin/all-events');
+          } else {
+            navigate('/admin/dashboard');
+          }
         } else {
           toast.success(`Welcome back, ${user.username}! Redirecting to User Dashboard...`);
           navigate('/users/dashboard');

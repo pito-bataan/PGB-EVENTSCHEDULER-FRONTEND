@@ -6,13 +6,18 @@ import { io, Socket } from 'socket.io-client';
 const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api`;
 let socket: Socket | null = null;
 
-interface LoginLog {
+interface ActivityLog {
   _id: string;
   userId: string;
   username: string;
   email: string;
   department: string;
-  loginTime: string;
+  action: string;
+  description: string;
+  eventId?: string;
+  eventTitle?: string;
+  details?: any;
+  timestamp: string;
   ipAddress?: string;
   userAgent?: string;
   createdAt: string;
@@ -30,10 +35,10 @@ interface EventLog {
 }
 
 interface UserLogsState {
-  // Login logs
-  loginLogs: LoginLog[];
-  loginLogsLoading: boolean;
-  loginLogsLastFetched: number | null;
+  // Activity logs (includes login, reschedule, etc.)
+  activityLogs: ActivityLog[];
+  activityLogsLoading: boolean;
+  activityLogsLastFetched: number | null;
   
   // Event logs (submitted events)
   eventLogs: EventLog[];
@@ -42,7 +47,7 @@ interface UserLogsState {
   
   // Filters
   searchQuery: string;
-  actionFilter: 'all' | 'login' | 'event';
+  actionFilter: 'all' | 'login' | 'event' | 'reschedule_event';
   departmentFilter: string;
   dateFilter: 'all' | 'today' | 'week' | 'month';
   
@@ -50,23 +55,28 @@ interface UserLogsState {
   CACHE_DURATION: number;
   
   // Actions
-  fetchLoginLogs: (force?: boolean) => Promise<void>;
+  fetchActivityLogs: (force?: boolean) => Promise<void>;
   fetchEventLogs: (force?: boolean) => Promise<void>;
   setSearchQuery: (query: string) => void;
-  setActionFilter: (filter: 'all' | 'login' | 'event') => void;
+  setActionFilter: (filter: 'all' | 'login' | 'event' | 'reschedule_event') => void;
   setDepartmentFilter: (department: string) => void;
   setDateFilter: (filter: 'all' | 'today' | 'week' | 'month') => void;
   clearFilters: () => void;
-  getFilteredLogs: () => (LoginLog | EventLog)[];
+  getFilteredLogs: () => (ActivityLog | EventLog)[];
   getStats: () => {
     totalLogs: number;
     totalLogins: number;
+    totalReschedules: number;
     totalEvents: number;
     uniqueUsers: number;
   };
   initializeSocketListeners: () => void;
-  addNewLoginLog: (log: LoginLog) => void;
+  addNewActivityLog: (log: ActivityLog) => void;
   addNewEventLog: (log: EventLog) => void;
+  // Backward compatibility
+  loginLogs: ActivityLog[];
+  loginLogsLoading: boolean;
+  fetchLoginLogs: (force?: boolean) => Promise<void>;
 }
 
 const getAuthHeaders = () => {
@@ -81,9 +91,9 @@ export const useUserLogsStore = create<UserLogsState>()(
   devtools(
     (set, get) => ({
       // Initial state
-      loginLogs: [],
-      loginLogsLoading: false,
-      loginLogsLastFetched: null,
+      activityLogs: [],
+      activityLogsLoading: false,
+      activityLogsLastFetched: null,
       
       eventLogs: [],
       eventLogsLoading: false,
@@ -96,34 +106,43 @@ export const useUserLogsStore = create<UserLogsState>()(
       
       CACHE_DURATION: 5 * 60 * 1000, // 5 minutes
       
-      // Fetch login logs
-      fetchLoginLogs: async (force = false) => {
-        const { loginLogsLastFetched, CACHE_DURATION } = get();
+      // Backward compatibility
+      get loginLogs() { return get().activityLogs.filter(log => log.action === 'login'); },
+      get loginLogsLoading() { return get().activityLogsLoading; },
+      
+      // Fetch activity logs (login, reschedule, etc.)
+      fetchActivityLogs: async (force = false) => {
+        const { activityLogsLastFetched, CACHE_DURATION } = get();
         const now = Date.now();
         
         // Check cache
-        if (!force && loginLogsLastFetched && (now - loginLogsLastFetched < CACHE_DURATION)) {
+        if (!force && activityLogsLastFetched && (now - activityLogsLastFetched < CACHE_DURATION)) {
           return;
         }
         
-        set({ loginLogsLoading: true });
+        set({ activityLogsLoading: true });
         
         try {
-          const response = await axios.get(`${API_BASE_URL}/login-logs`, {
+          const response = await axios.get(`${API_BASE_URL}/user-activity-logs`, {
             headers: getAuthHeaders()
           });
           
           if (response.data.success) {
             set({
-              loginLogs: response.data.data,
-              loginLogsLastFetched: now,
-              loginLogsLoading: false
+              activityLogs: response.data.data,
+              activityLogsLastFetched: now,
+              activityLogsLoading: false
             });
           }
         } catch (error) {
-          console.error('Error fetching login logs:', error);
-          set({ loginLogsLoading: false });
+          console.error('Error fetching activity logs:', error);
+          set({ activityLogsLoading: false });
         }
+      },
+      
+      // Backward compatibility
+      fetchLoginLogs: async (force = false) => {
+        return get().fetchActivityLogs(force);
       },
       
       // Fetch event logs (submitted events)
@@ -184,7 +203,7 @@ export const useUserLogsStore = create<UserLogsState>()(
       // Get filtered logs
       getFilteredLogs: () => {
         const {
-          loginLogs,
+          activityLogs,
           eventLogs,
           searchQuery,
           actionFilter,
@@ -192,25 +211,28 @@ export const useUserLogsStore = create<UserLogsState>()(
           dateFilter
         } = get();
         
-        let allLogs: (LoginLog | EventLog)[] = [];
+        let allLogs: (ActivityLog | EventLog)[] = [];
         
         // Combine logs based on action filter
-        if (actionFilter === 'all' || actionFilter === 'login') {
-          allLogs = [...allLogs, ...loginLogs];
-        }
-        if (actionFilter === 'all' || actionFilter === 'event') {
-          allLogs = [...allLogs, ...eventLogs];
+        if (actionFilter === 'all') {
+          allLogs = [...activityLogs, ...eventLogs];
+        } else if (actionFilter === 'login' || actionFilter === 'reschedule_event') {
+          allLogs = activityLogs.filter(log => log.action === actionFilter);
+        } else if (actionFilter === 'event') {
+          allLogs = [...eventLogs];
         }
         
         // Apply search filter
         if (searchQuery) {
           allLogs = allLogs.filter(log => {
-            if ('username' in log) {
-              // Login log
+            if ('action' in log) {
+              // Activity log
               return (
                 log.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
                 log.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                log.department.toLowerCase().includes(searchQuery.toLowerCase())
+                log.department.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                log.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                (log.eventTitle && log.eventTitle.toLowerCase().includes(searchQuery.toLowerCase()))
               );
             } else {
               // Event log
@@ -227,7 +249,7 @@ export const useUserLogsStore = create<UserLogsState>()(
         // Apply department filter
         if (departmentFilter !== 'all') {
           allLogs = allLogs.filter(log => {
-            if ('username' in log) {
+            if ('action' in log) {
               return log.department === departmentFilter;
             } else {
               return log.requestorDepartment === departmentFilter;
@@ -243,7 +265,7 @@ export const useUserLogsStore = create<UserLogsState>()(
           const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
           
           allLogs = allLogs.filter(log => {
-            const logDate = new Date('loginTime' in log ? log.loginTime : log.submittedAt);
+            const logDate = new Date('action' in log ? log.timestamp : log.submittedAt);
             
             switch (dateFilter) {
               case 'today':
@@ -260,8 +282,8 @@ export const useUserLogsStore = create<UserLogsState>()(
         
         // Sort by date (newest first)
         allLogs.sort((a, b) => {
-          const dateA = new Date('loginTime' in a ? a.loginTime : a.submittedAt);
-          const dateB = new Date('loginTime' in b ? b.loginTime : b.submittedAt);
+          const dateA = new Date('action' in a ? a.timestamp : a.submittedAt);
+          const dateB = new Date('action' in b ? b.timestamp : b.submittedAt);
           return dateB.getTime() - dateA.getTime();
         });
         
@@ -270,16 +292,20 @@ export const useUserLogsStore = create<UserLogsState>()(
       
       // Get stats
       getStats: () => {
-        const { loginLogs, eventLogs } = get();
+        const { activityLogs, eventLogs } = get();
+        
+        const loginLogs = activityLogs.filter(log => log.action === 'login');
+        const rescheduleLogs = activityLogs.filter(log => log.action === 'reschedule_event');
         
         const uniqueUsers = new Set([
-          ...loginLogs.map(log => log.userId),
+          ...activityLogs.map(log => log.userId),
           ...eventLogs.map(log => log.requestor)
         ]).size;
         
         return {
-          totalLogs: loginLogs.length + eventLogs.length,
+          totalLogs: activityLogs.length + eventLogs.length,
           totalLogins: loginLogs.length,
+          totalReschedules: rescheduleLogs.length,
           totalEvents: eventLogs.length,
           uniqueUsers
         };
@@ -293,9 +319,9 @@ export const useUserLogsStore = create<UserLogsState>()(
           transports: ['websocket', 'polling']
         });
         
-        // Listen for new login logs
-        socket.on('new-login-log', (loginLog: LoginLog) => {
-          get().addNewLoginLog(loginLog);
+        // Listen for new activity logs
+        socket.on('new-activity-log', (activityLog: ActivityLog) => {
+          get().addNewActivityLog(activityLog);
         });
         
         // Listen for new event submissions
@@ -306,10 +332,10 @@ export const useUserLogsStore = create<UserLogsState>()(
         });
       },
       
-      // Add new login log to the list
-      addNewLoginLog: (log: LoginLog) => {
+      // Add new activity log to the list
+      addNewActivityLog: (log: ActivityLog) => {
         set((state) => ({
-          loginLogs: [log, ...state.loginLogs]
+          activityLogs: [log, ...state.activityLogs]
         }));
       },
       

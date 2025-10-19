@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/dialog';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Label } from '@/components/ui/label';
 import {
   Calendar as CalendarIcon,
@@ -97,6 +98,7 @@ interface Event {
   taggedDepartments: string[];
   departmentRequirements: any;
   status: 'draft' | 'submitted' | 'approved' | 'rejected' | 'completed' | 'cancelled' | 'ongoing';
+  reason?: string;
   submittedAt?: string;
   createdAt: string;
   updatedAt: string;
@@ -391,6 +393,41 @@ const MyEventsPage: React.FC = () => {
             
             console.log(`Found ${overlappingEvents.length} overlapping events`);
             
+            // Fetch resource availability for the NEW date by checking other events on that date
+            // Since we can't access /api/departments as a regular user, we'll look at other events
+            // on the new date to find the most recent totalQuantity values
+            const newDateStr = startDateStr; // Use the new start date
+            const availabilityMap = new Map();
+            
+            // Find events on the new date to get the latest totalQuantity values
+            const eventsOnNewDate = events.filter((event: any) => {
+              if (!event.startDate) return false;
+              const eventDateStr = event.startDate.includes('T') ? event.startDate.split('T')[0] : event.startDate;
+              return eventDateStr === newDateStr;
+            });
+            
+            // Build a map of requirement ID -> highest totalQuantity found on the new date
+            eventsOnNewDate.forEach((event: any) => {
+              if (event.departmentRequirements) {
+                Object.entries(event.departmentRequirements).forEach(([dept, reqs]: [string, any]) => {
+                  if (Array.isArray(reqs)) {
+                    reqs.forEach((req: any) => {
+                      if (req.id && req.totalQuantity) {
+                        const key = `${dept}-${req.id}`;
+                        const currentMax = availabilityMap.get(key) || 0;
+                        // Use the highest totalQuantity we find (most recent/accurate)
+                        if (req.totalQuantity > currentMax) {
+                          availabilityMap.set(key, req.totalQuantity);
+                        }
+                      }
+                    });
+                  }
+                });
+              }
+            });
+            
+            console.log(`📊 Found availability data from ${eventsOnNewDate.length} events on ${newDateStr}:`, Object.fromEntries(availabilityMap));
+            
             // Check each tagged department's requirements
             const conflicts: any[] = [];
             
@@ -398,7 +435,11 @@ const MyEventsPage: React.FC = () => {
               const deptReqs = currentEventInDB.departmentRequirements[dept] || [];
               
               deptReqs.forEach((req: any) => {
-                if (req.type === 'physical' && req.quantity && req.totalQuantity) {
+                if (req.type === 'physical' && req.quantity) {
+                  // Get the total quantity for the NEW date from ResourceAvailability
+                  const availKey = `${dept}-${req.id}`;
+                  const totalQuantityForNewDate = availabilityMap.get(availKey) || req.totalQuantity || 0;
+                  
                   // Calculate how much is already booked during the new time slot
                   let bookedQuantity = 0;
                   
@@ -415,22 +456,22 @@ const MyEventsPage: React.FC = () => {
                     }
                   });
                   
-                  const availableQuantity = req.totalQuantity - bookedQuantity;
+                  const availableQuantity = totalQuantityForNewDate - bookedQuantity;
                   
-                  console.log(`🔢 ${req.name}: Requested=${req.quantity}, Booked=${bookedQuantity}, Available=${availableQuantity}, Total=${req.totalQuantity}`, {
+                  console.log(`🔢 ${req.name}: Requested=${req.quantity}, Booked=${bookedQuantity}, Available=${availableQuantity}, Total=${totalQuantityForNewDate} (for ${newDateStr})`, {
                     needsMore: req.quantity > availableQuantity,
                     calculation: `${req.quantity} > ${availableQuantity}?`
                   });
                   
                   // If requested quantity exceeds available, add to conflicts
                   if (req.quantity > availableQuantity) {
-                    console.log(`❌ CONFLICT: ${req.name} - Need ${req.quantity} but only ${availableQuantity} available`);
+                    console.log(`❌ CONFLICT: ${req.name} - Need ${req.quantity} but only ${availableQuantity} available on ${newDateStr}`);
                     conflicts.push({
                       department: dept,
                       requirement: req.name,
                       requested: req.quantity,
                       available: availableQuantity,
-                      total: req.totalQuantity,
+                      total: totalQuantityForNewDate,
                       booked: bookedQuantity
                     });
                   }
@@ -565,7 +606,10 @@ const MyEventsPage: React.FC = () => {
                            event.location.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            event.requestor.toLowerCase().includes(searchTerm.toLowerCase());
       
-      const matchesStatus = statusFilter === 'all' || event.dynamicStatus === statusFilter;
+      // Match by either dynamic status OR actual status
+      const matchesStatus = statusFilter === 'all' || 
+                           event.dynamicStatus === statusFilter || 
+                           event.status === statusFilter;
       
       return matchesSearch && matchesStatus;
     })
@@ -924,11 +968,40 @@ const MyEventsPage: React.FC = () => {
 
     try {
       const token = localStorage.getItem('authToken');
-      const response = await axios.patch(
-        `${API_BASE_URL}/events/${editingRequirement.eventId}/requirements/${editingRequirement.id}`,
+      
+      // First, get the current event data
+      const eventResponse = await axios.get(`${API_BASE_URL}/events/${editingRequirement.eventId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (!eventResponse.data.success) {
+        toast.error('Failed to fetch event data');
+        return;
+      }
+      
+      const event = eventResponse.data.data;
+      const updatedDepartmentRequirements = { ...event.departmentRequirements };
+      
+      // Find and update the specific requirement
+      if (updatedDepartmentRequirements[editingRequirement.department]) {
+        const deptReqs = updatedDepartmentRequirements[editingRequirement.department];
+        const reqIndex = deptReqs.findIndex((r: any) => r.id === editingRequirement.id);
+        
+        if (reqIndex !== -1) {
+          deptReqs[reqIndex] = {
+            ...deptReqs[reqIndex],
+            quantity: editRequirementData.quantity,
+            // DON'T update totalQuantity - that's the system's total availability!
+            notes: editRequirementData.notes
+          };
+        }
+      }
+      
+      // Update the event with the modified departmentRequirements
+      const response = await axios.put(
+        `${API_BASE_URL}/events/${editingRequirement.eventId}`,
         {
-          quantity: editRequirementData.quantity,
-          notes: editRequirementData.notes
+          departmentRequirements: updatedDepartmentRequirements
         },
         {
           headers: {
@@ -957,7 +1030,6 @@ const MyEventsPage: React.FC = () => {
         }
       }
     } catch (error: any) {
-      console.error('Error updating requirement:', error);
       toast.error(error.response?.data?.message || 'Failed to update requirement');
     }
   };
@@ -1454,15 +1526,60 @@ const MyEventsPage: React.FC = () => {
                       <SelectValue placeholder="Filter by status" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All Status</SelectItem>
-                      <SelectItem value="draft">Draft</SelectItem>
-                      <SelectItem value="submitted">Submitted</SelectItem>
-                      <SelectItem value="approved">Approved</SelectItem>
-                      <SelectItem value="incoming">Incoming</SelectItem>
-                      <SelectItem value="ongoing">Ongoing</SelectItem>
-                      <SelectItem value="completed">Completed</SelectItem>
-                      <SelectItem value="rejected">Rejected</SelectItem>
-                      <SelectItem value="cancelled">Cancelled</SelectItem>
+                      <SelectItem value="all">
+                        <div className="flex items-center justify-between w-full gap-4">
+                          <span>All Status</span>
+                          <Badge variant="secondary" className="ml-auto">{events.length}</Badge>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="draft">
+                        <div className="flex items-center justify-between w-full gap-4">
+                          <span>Draft</span>
+                          <Badge variant="secondary" className="ml-auto">{events.filter(e => e.status === 'draft').length}</Badge>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="submitted">
+                        <div className="flex items-center justify-between w-full gap-4">
+                          <span>Submitted</span>
+                          <Badge variant="secondary" className="ml-auto">{events.filter(e => e.status === 'submitted').length}</Badge>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="approved">
+                        <div className="flex items-center justify-between w-full gap-4">
+                          <span>Approved</span>
+                          <Badge variant="secondary" className="ml-auto">{events.filter(e => e.status === 'approved').length}</Badge>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="incoming">
+                        <div className="flex items-center justify-between w-full gap-4">
+                          <span>Incoming</span>
+                          <Badge variant="secondary" className="ml-auto">{events.filter(e => getDynamicStatus(e) === 'incoming').length}</Badge>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="ongoing">
+                        <div className="flex items-center justify-between w-full gap-4">
+                          <span>Ongoing</span>
+                          <Badge variant="secondary" className="ml-auto">{events.filter(e => getDynamicStatus(e) === 'ongoing').length}</Badge>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="completed">
+                        <div className="flex items-center justify-between w-full gap-4">
+                          <span>Completed</span>
+                          <Badge variant="secondary" className="ml-auto">{events.filter(e => getDynamicStatus(e) === 'completed').length}</Badge>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="rejected">
+                        <div className="flex items-center justify-between w-full gap-4">
+                          <span>Rejected</span>
+                          <Badge variant="secondary" className="ml-auto">{events.filter(e => e.status === 'rejected').length}</Badge>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="cancelled">
+                        <div className="flex items-center justify-between w-full gap-4">
+                          <span>Cancelled</span>
+                          <Badge variant="secondary" className="ml-auto">{events.filter(e => e.status === 'cancelled').length}</Badge>
+                        </div>
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -1542,17 +1659,44 @@ const MyEventsPage: React.FC = () => {
                         {/* Status Badge and Right Actions */}
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
-                            <Badge 
-                              variant={statusInfo.variant}
-                              className={`gap-1 ${statusInfo.className || ''}`}
-                            >
-                              {statusInfo.icon}
-                              {statusInfo.label}
-                            </Badge>
-                            {event.dynamicStatus !== event.status && (
-                              <span className="text-xs text-gray-500">
-                                (Auto-updated)
-                              </span>
+                            {event.status === 'rejected' ? (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Badge 
+                                      variant={statusInfo.variant}
+                                      className={`gap-1 ${statusInfo.className || ''} cursor-help`}
+                                    >
+                                      {statusInfo.icon}
+                                      {statusInfo.label}
+                                    </Badge>
+                                  </TooltipTrigger>
+                                  <TooltipContent className="max-w-xs bg-white border shadow-lg p-3">
+                                    <p className="font-semibold mb-1 text-gray-900">Rejection Reason:</p>
+                                    <p className="text-sm text-gray-700">
+                                      {event.reason || 'No reason provided.'}
+                                    </p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            ) : (
+                              <Badge 
+                                variant={statusInfo.variant}
+                                className={`gap-1 ${statusInfo.className || ''}`}
+                              >
+                                {statusInfo.icon}
+                                {statusInfo.label}
+                              </Badge>
+                            )}
+                            {/* Show actual status if different from dynamic status */}
+                            {event.dynamicStatus !== event.status && event.status !== 'rejected' && (
+                              <Badge 
+                                variant="outline"
+                                className="gap-1 bg-green-100 text-green-800 border-green-200"
+                              >
+                                <CheckCircle className="w-3 h-3" />
+                                {event.status.charAt(0).toUpperCase() + event.status.slice(1)}
+                              </Badge>
                             )}
                           </div>
                           
@@ -1565,7 +1709,7 @@ const MyEventsPage: React.FC = () => {
                               className="gap-1 h-7 px-2 text-xs"
                             >
                               <Edit className="w-3 h-3" />
-                              Edit
+                              Edit Schedule
                             </Button>
                             {(event.status === 'draft' || event.status === 'rejected') && (
                               <Button

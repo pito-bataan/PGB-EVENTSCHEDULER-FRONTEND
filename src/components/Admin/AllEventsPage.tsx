@@ -45,6 +45,15 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from '@/components/ui/pagination';
+import {
   Calendar,
   Clock,
   MapPin,
@@ -98,12 +107,18 @@ const AllEventsPage: React.FC = () => {
   // Local state for UI
   const [showDescription, setShowDescription] = useState(false);
   const [selectedEvents, setSelectedEvents] = useState<string[]>([]);
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 12;
   const [showPdfOptions, setShowPdfOptions] = useState(false);
   const [showPdfPreview, setShowPdfPreview] = useState(false);
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string>('');
   const [showStatusDialog, setShowStatusDialog] = useState(false);
   const [statusAction, setStatusAction] = useState<'approve' | 'disapprove' | null>(null);
   const [cancelReason, setCancelReason] = useState<string>('');
+  const [showRejectDialog, setShowRejectDialog] = useState(false);
+  const [rejectReason, setRejectReason] = useState<string>('');
   
   // Use store's selected event or local state for status dialog
   const selectedEvent = storeSelectedEvent;
@@ -235,6 +250,17 @@ const AllEventsPage: React.FC = () => {
 
   // Get filtered events from store (all filtering done in Zustand)
   const filteredEvents = getFilteredEvents();
+  
+  // Pagination calculations
+  const totalPages = Math.ceil(filteredEvents.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedEvents = filteredEvents.slice(startIndex, endIndex);
+  
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, statusFilter, departmentFilter]);
 
   // Get status info
   const getStatusInfo = (status: string) => {
@@ -318,15 +344,20 @@ const AllEventsPage: React.FC = () => {
   };
 
   // Handle status change
-  const handleStatusChange = async (newStatus: 'approved' | 'rejected' | 'cancelled') => {
+  const handleStatusChange = async (newStatus: 'approved' | 'rejected' | 'cancelled', reason?: string) => {
     if (!selectedEvent) return;
     
     try {
       const token = localStorage.getItem('authToken');
       
+      const payload: any = { status: newStatus };
+      if (reason) {
+        payload.reason = reason;
+      }
+      
       const response = await axios.patch(
         `${API_BASE_URL}/events/${selectedEvent._id}/status`,
-        { status: newStatus },
+        payload,
         {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -339,7 +370,9 @@ const AllEventsPage: React.FC = () => {
         const statusText = newStatus === 'approved' ? 'approved' : newStatus === 'rejected' ? 'rejected' : 'cancelled';
         toast.success(`Event ${statusText} successfully!`);
         setShowStatusDialog(false);
+        setShowRejectDialog(false);
         setStatusAction(null);
+        setRejectReason('');
         fetchAllEvents(true); // Force refresh to get updated data
       }
     } catch (error: any) {
@@ -825,7 +858,7 @@ const AllEventsPage: React.FC = () => {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    filteredEvents.map((event) => {
+                    paginatedEvents.map((event) => {
                       const statusInfo = getStatusInfo(event.status);
                       return (
                         <TableRow key={event._id} className="hover:bg-gray-50">
@@ -1306,25 +1339,80 @@ const AllEventsPage: React.FC = () => {
             </motion.div>
           )}
 
-          {/* Summary */}
+          {/* Summary and Pagination */}
           <div className="flex items-center justify-between text-sm text-gray-600 pt-4 border-t">
-            <div>
-              Showing {filteredEvents.length} of {(events || []).length} events
+            <div className="flex items-center gap-6">
+              <div>
+                Showing {startIndex + 1}-{Math.min(endIndex, filteredEvents.length)} of {filteredEvents.length} events
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                  <span>Submitted: {(events || []).filter(e => e.status === 'submitted').length}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                  <span>Approved: {(events || []).filter(e => e.status === 'approved').length}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                  <span>Rejected: {(events || []).filter(e => e.status === 'rejected').length}</span>
+                </div>
+              </div>
             </div>
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                <span>Submitted: {(events || []).filter(e => e.status === 'submitted').length}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                <span>Approved: {(events || []).filter(e => e.status === 'approved').length}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                <span>Rejected: {(events || []).filter(e => e.status === 'rejected').length}</span>
-              </div>
-            </div>
+            
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <Pagination>
+                <PaginationContent>
+                  <PaginationItem>
+                    <PaginationPrevious 
+                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                      className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                    />
+                  </PaginationItem>
+                  
+                  {[...Array(totalPages)].map((_, index) => {
+                    const pageNumber = index + 1;
+                    // Show first page, last page, current page, and pages around current
+                    if (
+                      pageNumber === 1 ||
+                      pageNumber === totalPages ||
+                      (pageNumber >= currentPage - 1 && pageNumber <= currentPage + 1)
+                    ) {
+                      return (
+                        <PaginationItem key={pageNumber}>
+                          <PaginationLink
+                            onClick={() => setCurrentPage(pageNumber)}
+                            isActive={currentPage === pageNumber}
+                            className="cursor-pointer"
+                          >
+                            {pageNumber}
+                          </PaginationLink>
+                        </PaginationItem>
+                      );
+                    } else if (
+                      pageNumber === currentPage - 2 ||
+                      pageNumber === currentPage + 2
+                    ) {
+                      return (
+                        <PaginationItem key={pageNumber}>
+                          <PaginationEllipsis />
+                        </PaginationItem>
+                      );
+                    }
+                    return null;
+                  })}
+                  
+                  <PaginationItem>
+                    <PaginationNext 
+                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                      className={currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                    />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -1523,7 +1611,7 @@ const AllEventsPage: React.FC = () => {
                 </Button>
                 <Button
                   className="bg-red-600 text-white hover:bg-red-700"
-                  onClick={() => handleStatusChange('rejected')}
+                  onClick={() => setShowRejectDialog(true)}
                 >
                   Reject Event
                 </Button>
@@ -1577,6 +1665,52 @@ const AllEventsPage: React.FC = () => {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Reject Event Dialog */}
+      <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <XCircle className="w-5 h-5" />
+              Reject Event
+            </DialogTitle>
+            <DialogDescription>
+              Please provide a reason for rejecting this event. This will be sent to the requestor.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Rejection Reason *</label>
+              <textarea
+                className="w-full min-h-[120px] px-3 py-2 text-sm border rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-red-500"
+                placeholder="Enter the reason for rejection..."
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowRejectDialog(false);
+                setRejectReason('');
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="bg-red-600 text-white hover:bg-red-700"
+              onClick={() => handleStatusChange('rejected', rejectReason)}
+              disabled={!rejectReason.trim()}
+            >
+              Confirm Rejection
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

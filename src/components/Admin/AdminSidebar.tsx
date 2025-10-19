@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import axios from 'axios';
+import { getGlobalSocket } from '@/hooks/useSocket';
 import { 
   LayoutDashboard, 
   Users, 
@@ -11,8 +13,11 @@ import {
   Shield,
   ChevronLeft,
   ChevronRight,
-  LogOut
+  LogOut,
+  List
 } from 'lucide-react';
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
 
 interface AdminSidebarProps {
   user?: {
@@ -33,6 +38,7 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ user }) => {
     role: "admin"
   };
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [calendarEventCount, setCalendarEventCount] = useState(0);
   const navigate = useNavigate();
   const location = useLocation();
   
@@ -65,6 +71,7 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ user }) => {
   const allNavigationItems = [
     { icon: LayoutDashboard, label: 'Dashboard', href: '/admin/dashboard', roles: ['superadmin'] },
     { icon: Calendar, label: 'All Events', href: '/admin/all-events', roles: ['superadmin', 'admin'] },
+    { icon: List, label: 'Overall Events', href: '/admin/overall-events', roles: ['superadmin', 'admin'] },
     { icon: CalendarDays, label: 'Calendar', href: '/admin/calendar', roles: ['superadmin', 'admin'] },
     { icon: Users, label: 'Users', href: '/admin/users', roles: ['superadmin'] },
     { icon: Activity, label: 'Users Logs', href: '/admin/users-logs', roles: ['superadmin'] },
@@ -79,6 +86,83 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ user }) => {
   const handleNavigation = (href: string) => {
     navigate(href);
   };
+
+  // Fetch calendar event count
+  const fetchCalendarEventCount = async () => {
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await axios.get(`${API_BASE_URL}/events`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (response.data.success) {
+        const events = response.data.data || [];
+        // Count all events (approved or submitted)
+        const count = events.filter((event: any) => 
+          event.status === 'approved' || event.status === 'submitted'
+        ).length;
+        setCalendarEventCount(count);
+      }
+    } catch (error) {
+      console.error('Error fetching calendar event count:', error);
+    }
+  };
+
+  // Fetch count on mount and when location changes
+  useEffect(() => {
+    fetchCalendarEventCount();
+    
+    // Refresh every 30 seconds as fallback
+    const interval = setInterval(fetchCalendarEventCount, 30000);
+    
+    return () => clearInterval(interval);
+  }, [location.pathname]);
+
+  // Socket.IO real-time updates
+  useEffect(() => {
+    const socket = getGlobalSocket();
+    
+    if (!socket) {
+      return;
+    }
+
+    const handleEventCreated = (data: any) => {
+      fetchCalendarEventCount();
+    };
+
+    const handleEventUpdated = (data: any) => {
+      fetchCalendarEventCount();
+    };
+
+    const handleEventDeleted = (data: any) => {
+      fetchCalendarEventCount();
+    };
+
+    const handleEventStatusUpdated = (data: any) => {
+      fetchCalendarEventCount();
+    };
+
+    // Remove existing listeners to prevent duplicates
+    socket.off('event-created');
+    socket.off('event-updated');
+    socket.off('event-deleted');
+    socket.off('event-status-updated');
+
+    // Add listeners
+    socket.on('event-created', handleEventCreated);
+    socket.on('event-updated', handleEventUpdated);
+    socket.on('event-deleted', handleEventDeleted);
+    socket.on('event-status-updated', handleEventStatusUpdated);
+
+    return () => {
+      socket.off('event-created', handleEventCreated);
+      socket.off('event-updated', handleEventUpdated);
+      socket.off('event-deleted', handleEventDeleted);
+      socket.off('event-status-updated', handleEventStatusUpdated);
+    };
+  }, []);
 
   const handleLogout = () => {
     // Clear authentication token and user data
@@ -132,12 +216,15 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ user }) => {
         {navigationItems.map((item, index) => {
           const Icon = item.icon;
           const isActive = location.pathname === item.href;
+          const isCalendar = item.href === '/admin/calendar';
+          const showBadge = isCalendar && calendarEventCount > 0;
+          
           return (
             <Button
               key={index}
               variant="ghost"
               onClick={() => handleNavigation(item.href)}
-              className={`w-full h-11 transition-colors ${
+              className={`w-full h-11 transition-colors relative ${
                 isActive 
                   ? 'bg-red-100 text-red-700 border-r-2 border-red-600'
                   : 'text-gray-700 hover:bg-red-50 hover:text-red-700'
@@ -150,6 +237,13 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ user }) => {
             >
               <Icon className="w-5 h-5" />
               {!isCollapsed && <span className="font-medium">{item.label}</span>}
+              
+              {/* Badge for Calendar */}
+              {showBadge && !isCollapsed && (
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 bg-red-500 text-white text-xs font-semibold rounded-full min-w-[20px] h-5 flex items-center justify-center px-1.5">
+                  {calendarEventCount > 99 ? '99+' : calendarEventCount}
+                </div>
+              )}
             </Button>
           );
         })}

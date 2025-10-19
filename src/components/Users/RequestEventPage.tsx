@@ -122,6 +122,7 @@ const RequestEventPage: React.FC = () => {
   const [showCustomLocation, setShowCustomLocation] = useState(false);
   const [departmentSearch, setDepartmentSearch] = useState('');
   const [showRequirementsModal, setShowRequirementsModal] = useState(false);
+  const [requirementsRefreshKey, setRequirementsRefreshKey] = useState(0);
   const [selectedDepartment, setSelectedDepartment] = useState<string>('');
   const [customRequirement, setCustomRequirement] = useState<string>('');
   const [customRequirementType, setCustomRequirementType] = useState<'physical' | 'service'>('service');
@@ -302,6 +303,12 @@ const RequestEventPage: React.FC = () => {
           const conflicts = events.filter((event: any) => {
             if (!event.startDate || !event.location || !formData.startDate) return false;
             
+            // Only check approved or submitted events
+            if (event.status !== 'approved' && event.status !== 'submitted') return false;
+            
+            // Must have time information for requirement conflict checking
+            if (!event.startTime || !event.endTime) return false;
+            
             const eventStartDate = new Date(event.startDate);
             const selectedDate = formData.startDate;
             
@@ -350,6 +357,11 @@ const RequestEventPage: React.FC = () => {
   };
 
   const handleScheduleSave = async () => {
+    console.log('🎯 === HANDLE SCHEDULE SAVE CALLED ===');
+    console.log('📍 selectedDepartment:', selectedDepartment);
+    console.log('📅 formData.startDate:', formData.startDate);
+    console.log('🏷️ formData.taggedDepartments:', formData.taggedDepartments);
+    
     // Check for venue conflicts before saving (location-specific)
     if (formData.startDate && formData.startTime && formData.endTime && formData.location) {
       const conflicts = await fetchVenueConflicts(
@@ -372,28 +384,89 @@ const RequestEventPage: React.FC = () => {
       }
     }
     
-    // Refresh resource availabilities for all tagged departments when schedule changes
-    if (formData.startDate && formData.taggedDepartments.length > 0) {
+    // Refresh resource availabilities for selected department or all tagged departments
+    if (formData.startDate && (selectedDepartment || formData.taggedDepartments.length > 0)) {
       const updatedRequirements = { ...formData.departmentRequirements };
       
-      for (const deptName of formData.taggedDepartments) {
+      // Determine which departments to refresh
+      const depsToRefresh = selectedDepartment 
+        ? [selectedDepartment] 
+        : formData.taggedDepartments;
+      
+      console.log('🔄 Departments to refresh:', depsToRefresh);
+      
+      for (const deptName of depsToRefresh) {
+        console.log(`📦 Fetching availabilities for ${deptName} on ${formData.startDate.toDateString()}`);
         const availabilities = await fetchResourceAvailabilities(deptName, formData.startDate);
+        console.log(`✅ Got ${availabilities.length} availabilities for ${deptName}`);
+        
         const department = departments.find(dept => dept.name === deptName);
         
-        if (department && department.requirements && updatedRequirements[deptName]) {
-          updatedRequirements[deptName] = updatedRequirements[deptName].map(req => {
-            const availability = availabilities.find((avail: any) => avail.requirementId === req.id);
-            return {
-              ...req,
-              totalQuantity: availability ? availability.quantity : department.requirements.find(deptReq => deptReq._id === req.id)?.totalQuantity || req.totalQuantity,
-              isAvailable: availability ? availability.isAvailable : department.requirements.find(deptReq => deptReq._id === req.id)?.isAvailable || req.isAvailable,
-              availabilityNotes: availability ? availability.notes : ''
-            };
-          });
+        if (department && department.requirements) {
+          // If requirements don't exist yet, create them from department requirements
+          if (!updatedRequirements[deptName] || updatedRequirements[deptName].length === 0) {
+            console.log(`📝 Creating new requirements array for ${deptName}`);
+            updatedRequirements[deptName] = department.requirements
+              .filter((req) => {
+                const availability = availabilities.find((avail: any) => avail.requirementId === req._id);
+                return availability !== undefined;
+              })
+              .map((req) => {
+                const availability = availabilities.find((avail: any) => avail.requirementId === req._id);
+                return {
+                  id: req._id,
+                  name: req.text,
+                  selected: false,
+                  notes: '',
+                  type: req.type,
+                  totalQuantity: availability?.quantity || req.totalQuantity || 1,
+                  quantity: availability?.quantity || req.totalQuantity || 1,
+                  isAvailable: availability?.isAvailable || false,
+                  responsiblePerson: req.responsiblePerson || '',
+                  availabilityNotes: availability?.notes || ''
+                };
+              });
+          } else {
+            // Update existing requirements
+            updatedRequirements[deptName] = updatedRequirements[deptName].map(req => {
+              const availability = availabilities.find((avail: any) => avail.requirementId === req.id);
+              return {
+                ...req,
+                totalQuantity: availability ? availability.quantity : department.requirements.find(deptReq => deptReq._id === req.id)?.totalQuantity || req.totalQuantity,
+                isAvailable: availability ? availability.isAvailable : department.requirements.find(deptReq => deptReq._id === req.id)?.isAvailable || req.isAvailable,
+                availabilityNotes: availability ? availability.notes : ''
+              };
+            });
+          }
+          console.log(`✅ Updated requirements for ${deptName}:`, updatedRequirements[deptName]);
         }
       }
       
-      handleInputChange('departmentRequirements', updatedRequirements);
+      // Save the selected department before any modal operations
+      const deptToRefresh = selectedDepartment;
+      
+      console.log('💾 Selected department before refresh:', deptToRefresh);
+      
+      // Update form data with new requirements
+      setFormData(prev => ({
+        ...prev,
+        departmentRequirements: updatedRequirements
+      }));
+      
+      // If there's a selected department (from "Use This Date" flow), re-trigger department selection
+      if (deptToRefresh) {
+        console.log('🔄 Re-triggering department selection for:', deptToRefresh);
+        
+        // Close modal first
+        setShowRequirementsModal(false);
+        
+        // Wait longer for state to fully update, then automatically "click" the department checkbox again
+        setTimeout(async () => {
+          console.log('🔄 Auto-clicking department checkbox for:', deptToRefresh);
+          await handleDepartmentToggle(deptToRefresh);
+          toast.success('Schedule saved! Requirements updated with conflicts.');
+        }, 800);
+      }
     }
     
     setShowScheduleModal(false);
@@ -1120,7 +1193,8 @@ const RequestEventPage: React.FC = () => {
 
   // Check if a specific time slot has requirement conflicts (any requirements used by existing events)
   const hasRequirementConflictAtTime = (timeSlot: string) => {
-    if (!formData.startDate || !formData.location || conflictingEvents.length === 0) {
+    // Only need startDate and conflictingEvents - location can be custom
+    if (!formData.startDate || conflictingEvents.length === 0) {
       return { hasConflict: false, conflictedRequirements: [] };
     }
 
@@ -1128,6 +1202,10 @@ const RequestEventPage: React.FC = () => {
 
     // Check each conflicting event to see if it uses any requirements at this time slot
     conflictingEvents.forEach(event => {
+      // Skip if event doesn't have time information
+      if (!event.startTime || !event.endTime) {
+        return;
+      }
       
       // Convert times to minutes for easier comparison
       const timeToMinutes = (time: string) => {
@@ -1147,20 +1225,25 @@ const RequestEventPage: React.FC = () => {
       }
 
       // Check if this event uses ANY requirements
-      if (event.taggedDepartments && event.departmentRequirements) {
+      if (event.taggedDepartments && Array.isArray(event.taggedDepartments) && event.departmentRequirements) {
         event.taggedDepartments.forEach((dept: string) => {
           const deptReqs = event.departmentRequirements[dept] || [];
-          deptReqs.forEach((eventReq: any) => {
-            const isSelected = eventReq.selected;
-            const hasQuantity = eventReq.quantity > 0;
-            
-            if (isSelected && hasQuantity) {
-              const reqName = `${eventReq.name} (${dept})`;
-              if (!conflictedRequirements.includes(reqName)) {
-                conflictedRequirements.push(reqName);
+          if (Array.isArray(deptReqs)) {
+            deptReqs.forEach((eventReq: any) => {
+              // Check if requirement is selected and has quantity
+              const isSelected = eventReq.selected === true;
+              // Check both quantity and totalQuantity fields
+              const quantity = eventReq.quantity || eventReq.totalQuantity || 0;
+              const hasQuantity = quantity > 0;
+              
+              if (isSelected && hasQuantity && eventReq.name) {
+                const reqName = `${eventReq.name} (${dept})`;
+                if (!conflictedRequirements.includes(reqName)) {
+                  conflictedRequirements.push(reqName);
+                }
               }
-            }
-          });
+            });
+          }
         });
       }
     });
@@ -2064,7 +2147,11 @@ const RequestEventPage: React.FC = () => {
       )}
 
       {/* Requirements Modal */}
-      <Dialog open={showRequirementsModal} onOpenChange={setShowRequirementsModal}>
+      <Dialog 
+        key={`requirements-${selectedDepartment}-${requirementsRefreshKey}`} 
+        open={showRequirementsModal} 
+        onOpenChange={setShowRequirementsModal}
+      >
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <div className="flex items-center justify-between">
@@ -2074,17 +2161,17 @@ const RequestEventPage: React.FC = () => {
                 </DialogTitle>
                 <DialogDescription className="text-sm text-muted-foreground">
                   Select requirements for this department
-                  {!formData.startDate && (
-                    <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-yellow-800 text-xs">
-                      ⚠️ No date selected - showing default quantities. Set schedule first for accurate availability.
-                    </div>
-                  )}
-                  {formData.startDate && (
-                    <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-blue-800 text-xs">
-                      📅 Showing availability for {formData.startDate.toDateString()}
-                    </div>
-                  )}
                 </DialogDescription>
+                {!formData.startDate && (
+                  <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-yellow-800 text-xs">
+                    ⚠️ No date selected - showing default quantities. Set schedule first for accurate availability.
+                  </div>
+                )}
+                {formData.startDate && (
+                  <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-blue-800 text-xs">
+                    📅 Showing availability for {formData.startDate.toDateString()}
+                  </div>
+                )}
               </div>
               <Button
                 variant="outline"
@@ -2983,63 +3070,19 @@ const RequestEventPage: React.FC = () => {
                           variant="outline"
                           size="sm"
                           onClick={async () => {
-                            // Set the date and close modal
+                            // Set the date first
                             const selectedDateObj = new Date(dateEntry.date);
                             handleInputChange('startDate', selectedDateObj);
                             handleInputChange('endDate', selectedDateObj);
+                            
+                            // Close ALL modals first
                             setShowAvailableDatesModal(false);
+                            setShowRequirementsModal(false);
                             
-                            // Refresh requirements modal data with new date
-                            if (selectedDepartment && formData.startDate) {
-                              console.log(`🔄 Refreshing requirements data for ${selectedDepartment} on new date:`, selectedDateObj);
-                              
-                              // Fetch resource availabilities for the new date
-                              const availabilities = await fetchResourceAvailabilities(selectedDepartment, selectedDateObj);
-                              console.log(`📦 New availabilities fetched:`, availabilities);
-                              
-                              // Update the requirements modal with new availability data
-                              const department = departments.find(dept => dept.name === selectedDepartment);
-                              if (department && department.requirements && availabilities.length > 0) {
-                                const dbRequirements = department.requirements
-                                  .filter((req) => {
-                                    const availability = availabilities.find((avail: any) => 
-                                      avail.requirementId === req._id
-                                    );
-                                    return availability !== undefined;
-                                  })
-                                  .map((req) => {
-                                    const availability = availabilities.find((avail: any) => 
-                                      avail.requirementId === req._id
-                                    );
-                                    
-                                    return {
-                                      id: req._id,
-                                      name: req.text,
-                                      selected: false,
-                                      notes: '',
-                                      type: req.type,
-                                      totalQuantity: availability?.quantity || req.totalQuantity || 1,
-                                      quantity: availability?.quantity || req.totalQuantity || 1,
-                                      isAvailable: availability?.isAvailable || false,
-                                      responsiblePerson: req.responsiblePerson || '',
-                                      availabilityNotes: availability?.notes || ''
-                                    };
-                                  });
-                                
-                                // Update the form data with refreshed requirements
-                                const updatedRequirements = { ...formData.departmentRequirements };
-                                updatedRequirements[selectedDepartment] = dbRequirements;
-                                
-                                setFormData(prev => ({
-                                  ...prev,
-                                  departmentRequirements: updatedRequirements
-                                }));
-                                
-                                console.log(`✅ Requirements modal refreshed with ${dbRequirements.length} available requirements`);
-                              }
-                            }
+                            // Open Edit Schedule modal to set start/end times
+                            setShowScheduleModal(true);
                             
-                            toast.success(`Date set to ${format(selectedDateObj, 'MMM dd, yyyy')} - Requirements updated!`);
+                            toast.info(`Date set to ${format(selectedDateObj, 'MMM dd, yyyy')} - Please set start and end times`);
                           }}
                           className="text-xs gap-1"
                         >

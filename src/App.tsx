@@ -16,6 +16,7 @@ import UserAllEventsPage from './components/Users/AllEventsPage'
 import AdminMainLayout from './components/Admin/AdminMainLayout'
 import AdminDashboard from './components/Admin/AdminDashboard'
 import AllEventsPage from './components/Admin/AllEventsPage'
+import OverallEventsPage from './components/Admin/OverallEventsPage'
 import AdminCalendarPage from './components/Admin/CalendarPage'
 import UsersManagement from './components/Admin/UsersManagement'
 import UsersLogsPage from './components/Admin/UsersLogsPage'
@@ -71,12 +72,39 @@ function App() {
                 <Routes>
                   <Route path="dashboard" element={<AdminDashboard />} />
                   <Route path="all-events" element={<AllEventsPage />} />
+                  <Route path="overall-events" element={<OverallEventsPage />} />
                   <Route path="calendar" element={<AdminCalendarPage />} />
                   <Route path="users" element={<UsersManagement />} />
                   <Route path="users-logs" element={<UsersLogsPage />} />
                   <Route path="departments" element={<DepartmentsManagement />} />
                   <Route path="reports" element={<div className="p-6"><h1 className="text-2xl font-bold">Reports</h1><p>Coming soon...</p></div>} />
-                  <Route path="" element={<Navigate to="dashboard" replace />} />
+                  <Route path="" element={
+                    <Navigate 
+                      to={
+                        (() => {
+                          const userData = localStorage.getItem('userData');
+                          if (userData) {
+                            try {
+                              const parsed = JSON.parse(userData);
+                              const role = (parsed.role || '').toLowerCase();
+                              // If admin role, redirect to all-events, if superadmin go to dashboard
+                              if (role === 'admin') {
+                                return 'all-events';
+                              } else if (role === 'superadmin') {
+                                return 'dashboard';
+                              }
+                              // Default fallback
+                              return 'all-events';
+                            } catch {
+                              return 'all-events';
+                            }
+                          }
+                          return 'all-events';
+                        })()
+                      } 
+                      replace 
+                    />
+                  } />
                 </Routes>
               </AdminMainLayout>
             </ProtectedRoute>

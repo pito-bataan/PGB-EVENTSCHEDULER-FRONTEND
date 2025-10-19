@@ -156,8 +156,8 @@ const TaggedDepartmentPage: React.FC = () => {
   } = useTaggedDepartmentsStore();
 
   useEffect(() => {
-    // Fetch tagged events using Zustand store
-    fetchTaggedEvents();
+    // Fetch tagged events using Zustand store (force refresh to get latest availability)
+    fetchTaggedEvents(true);
     
     // Set up Socket.IO listener for real-time updates (NO POLLING!)
     if (typeof onNewNotification === 'function') {
@@ -644,7 +644,13 @@ const TaggedDepartmentPage: React.FC = () => {
                           <div className="overflow-hidden">
                             <div className="flex items-start gap-2 mb-2">
                               <h3 className="font-medium text-sm flex-1 min-w-0 max-w-[240px] overflow-hidden text-ellipsis line-clamp-1" title={event.eventTitle}>{event.eventTitle}</h3>
-                              <Badge variant="secondary" className="text-[10px] h-4 flex-shrink-0">
+                              <Badge className={`text-xs px-2 py-1 flex-shrink-0 ${
+                                event.status === 'approved' ? 'bg-green-500 text-white' :
+                                event.status === 'submitted' ? 'bg-blue-500 text-white' :
+                                event.status === 'rejected' ? 'bg-red-500 text-white' :
+                                event.status === 'cancelled' ? 'bg-yellow-600 text-white' :
+                                'bg-gray-500 text-white'
+                              }`}>
                                 {event.status}
                               </Badge>
                             </div>
@@ -735,7 +741,13 @@ const TaggedDepartmentPage: React.FC = () => {
                                   <div className="overflow-hidden">
                                     <div className="flex items-start gap-2 mb-2">
                                       <h3 className="font-medium text-sm flex-1 min-w-0 max-w-[180px] overflow-hidden text-ellipsis line-clamp-1" title={event.eventTitle}>{event.eventTitle}</h3>
-                                      <Badge variant="secondary" className="text-[10px] h-4 flex-shrink-0">
+                                      <Badge className={`text-xs px-2 py-1 flex-shrink-0 ${
+                                        event.status === 'approved' ? 'bg-green-500 text-white' :
+                                        event.status === 'submitted' ? 'bg-blue-500 text-white' :
+                                        event.status === 'rejected' ? 'bg-red-500 text-white' :
+                                        event.status === 'cancelled' ? 'bg-yellow-600 text-white' :
+                                        'bg-gray-500 text-white'
+                                      }`}>
                                         {event.status}
                                       </Badge>
                                       <Badge className="text-[10px] h-4 bg-green-500 text-white flex-shrink-0">
@@ -820,7 +832,13 @@ const TaggedDepartmentPage: React.FC = () => {
                                   <div className="overflow-hidden">
                                     <div className="flex items-start gap-2 mb-2">
                                       <h3 className="font-medium text-sm flex-1 min-w-0 max-w-[180px] overflow-hidden text-ellipsis line-clamp-1" title={event.eventTitle}>{event.eventTitle}</h3>
-                                      <Badge variant="secondary" className="text-[10px] h-4 flex-shrink-0">
+                                      <Badge className={`text-xs px-2 py-1 flex-shrink-0 ${
+                                        event.status === 'approved' ? 'bg-green-500 text-white' :
+                                        event.status === 'submitted' ? 'bg-blue-500 text-white' :
+                                        event.status === 'rejected' ? 'bg-red-500 text-white' :
+                                        event.status === 'cancelled' ? 'bg-yellow-600 text-white' :
+                                        'bg-gray-500 text-white'
+                                      }`}>
                                         {event.status}
                                       </Badge>
                                       <Badge className="text-[10px] h-4 bg-red-500 text-white flex-shrink-0">

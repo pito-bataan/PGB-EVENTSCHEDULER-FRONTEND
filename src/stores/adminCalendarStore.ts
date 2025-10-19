@@ -114,13 +114,21 @@ export const useAdminCalendarStore = create<AdminCalendarState>()(
         const calEvents: CalendarEvent[] = [];
         
         events.forEach(event => {
+          // Determine color based on status
+          let color = '#E0E7FF'; // Default light blue
+          if (event.status === 'approved') {
+            color = '#D1FAE5'; // Light green for approved
+          } else if (event.status === 'submitted') {
+            color = '#DBEAFE'; // Light blue for submitted
+          }
+          
           // Add event for start date
           calEvents.push({
             id: event._id,
             date: event.startDate,
             title: event.eventTitle,
             type: 'booking',
-            color: '#E0E7FF', // Light blue
+            color: color,
             className: 'cursor-pointer hover:opacity-80 transition-opacity'
           });
         });

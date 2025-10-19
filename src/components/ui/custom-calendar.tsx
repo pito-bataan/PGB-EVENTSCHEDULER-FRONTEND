@@ -109,7 +109,8 @@ const CustomCalendar: React.FC<CustomCalendarProps> = ({
   // Default event renderer
   const defaultRenderEvent = (event: CalendarEvent) => {
     const getEventStyle = (type: string, customColor?: string) => {
-      if (customColor) return { backgroundColor: customColor };
+      // If custom color is provided, don't apply default background classes
+      if (customColor) return '';
       
       switch (type) {
         case 'available':
@@ -145,16 +146,15 @@ const CustomCalendar: React.FC<CustomCalendarProps> = ({
     };
 
     return (
-      <Badge 
+      <div
         key={event.id}
-        variant="outline"
-        className={`text-xs gap-1 mb-1 ${getEventStyle(event.type, event.color)} ${event.className || ''}`}
+        className={`inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md border mb-1 ${event.color ? 'text-gray-800 border-gray-300' : getEventStyle(event.type, event.color)} ${event.className || ''}`}
         style={event.color ? { backgroundColor: event.color } : undefined}
         title={event.title} // Show full title on hover
       >
         {getEventIcon(event.type)}
         <span className="truncate">{truncateTitle(event.title)}</span>
-      </Badge>
+      </div>
     );
   };
 

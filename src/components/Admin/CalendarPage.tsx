@@ -31,50 +31,51 @@ const AdminCalendarPage: React.FC = () => {
     const socket = getGlobalSocket();
     
     if (!socket) {
-      console.log('❌ Calendar: Global socket not available yet');
       return;
     }
 
-    console.log('✅ Calendar: Global socket available, setting up listeners');
+    const handleEventCreated = (data: any) => {
+      // Force refresh when new event is created
+      fetchEvents(true);
+    };
 
     const handleEventUpdated = (data: any) => {
-      console.log('📅 Calendar: Received event-updated:', data);
-      console.log('📅 Calendar: Calling fetchEvents(true) to force refresh');
       // Force refresh calendar events when any event is updated
       fetchEvents(true);
     };
 
+    const handleEventDeleted = (data: any) => {
+      // Force refresh when event is deleted
+      fetchEvents(true);
+    };
+
     const handleEventStatusUpdated = (data: any) => {
-      console.log('📅 Calendar: Received event-status-updated:', data);
-      console.log('📅 Calendar: Calling fetchEvents(true) to force refresh');
       // Also refresh on status updates
       fetchEvents(true);
     };
 
     const handleConnect = () => {
-      console.log('✅ Calendar: Socket connected');
+      // Socket connected
     };
 
     // Remove any existing listeners first to prevent duplicates
+    socket.off('event-created');
     socket.off('event-updated');
+    socket.off('event-deleted');
     socket.off('event-status-updated');
     socket.off('connect');
 
     // Set up listeners
+    socket.on('event-created', handleEventCreated);
     socket.on('event-updated', handleEventUpdated);
+    socket.on('event-deleted', handleEventDeleted);
     socket.on('event-status-updated', handleEventStatusUpdated);
     socket.on('connect', handleConnect);
 
-    // Check if already connected
-    if (socket.connected) {
-      console.log('✅ Calendar: Socket already connected');
-    } else {
-      console.log('⏳ Calendar: Waiting for socket to connect...');
-    }
-
     return () => {
-      console.log('🧹 Calendar: Cleaning up socket listeners');
+      socket.off('event-created', handleEventCreated);
       socket.off('event-updated', handleEventUpdated);
+      socket.off('event-deleted', handleEventDeleted);
       socket.off('event-status-updated', handleEventStatusUpdated);
       socket.off('connect', handleConnect);
     };
@@ -107,13 +108,23 @@ const AdminCalendarPage: React.FC = () => {
     const event = events.find(e => e._id === calEvent.id);
     if (!event) return null;
 
+    // Determine badge color based on event status
+    const getBadgeColor = (status: string) => {
+      if (status === 'approved') {
+        return 'bg-green-100 text-green-800 border-green-200 hover:bg-green-200';
+      } else if (status === 'submitted') {
+        return 'bg-blue-100 text-blue-800 border-blue-200 hover:bg-blue-200';
+      }
+      return 'bg-gray-100 text-gray-800 border-gray-200 hover:bg-gray-200';
+    };
+
     return (
       <Popover key={calEvent.id}>
         <PopoverTrigger asChild>
           <div className="mb-1">
             <Badge 
               variant="outline"
-              className="text-xs gap-1 bg-blue-100 text-blue-800 border-blue-200 cursor-pointer hover:bg-blue-200 transition-colors w-full justify-start"
+              className={`text-xs gap-1 ${getBadgeColor(event.status)} cursor-pointer transition-colors w-full justify-start`}
               title={event.eventTitle}
             >
               <span className="truncate">{event.eventTitle}</span>
@@ -221,14 +232,10 @@ const AdminCalendarPage: React.FC = () => {
             <p className="text-sm text-muted-foreground mt-1">View all events and bookings in calendar view</p>
           </div>
           <Button
-            onClick={() => {
-              console.log('🔄 Manual refresh triggered');
-              fetchEvents(true);
-            }}
+            onClick={() => fetchEvents(true)}
             variant="outline"
             size="sm"
             className="gap-2"
-            disabled={loading}
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh

@@ -77,10 +77,26 @@ const UsersLogsPage: React.FC = () => {
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 12;
+  
+  // Expanded rows state
+  const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
+  
+  // Toggle row expansion
+  const toggleRowExpansion = (index: number) => {
+    setExpandedRows(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(index)) {
+        newSet.delete(index);
+      } else {
+        newSet.add(index);
+      }
+      return newSet;
+    });
+  };
 
   // Fetch logs and initialize Socket.IO on mount
   useEffect(() => {
-    fetchLoginLogs();
+    fetchLoginLogs(); // This now fetches activity logs (login, reschedule, etc.)
     fetchEventLogs();
     initializeSocketListeners();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -109,6 +125,17 @@ const UsersLogsPage: React.FC = () => {
 
   const hasActiveFilters = searchQuery || actionFilter !== 'all' || departmentFilter !== 'all' || dateFilter !== 'all';
 
+  // Truncate event title in description
+  const truncateEventTitle = (description: string, maxLength: number = 50) => {
+    // Find text between quotes
+    const match = description.match(/"([^"]*)"/);
+    if (match && match[1].length > maxLength) {
+      const truncated = match[1].substring(0, maxLength) + '...';
+      return description.replace(match[1], truncated);
+    }
+    return description;
+  };
+
   // Refresh all logs
   const handleRefresh = () => {
     fetchLoginLogs(true);
@@ -131,7 +158,7 @@ const UsersLogsPage: React.FC = () => {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <Card className="border-none shadow-sm">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
@@ -155,6 +182,20 @@ const UsersLogsPage: React.FC = () => {
                 </div>
                 <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
                   <LogIn className="w-6 h-6 text-green-600" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-none shadow-sm">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Reschedules</p>
+                  <p className="text-2xl font-bold text-blue-600">{stats.totalReschedules}</p>
+                </div>
+                <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <Calendar className="w-6 h-6 text-blue-600" />
                 </div>
               </div>
             </CardContent>
@@ -231,6 +272,7 @@ const UsersLogsPage: React.FC = () => {
                 <SelectContent>
                   <SelectItem value="all">All Actions</SelectItem>
                   <SelectItem value="login">Login</SelectItem>
+                  <SelectItem value="reschedule_event">Reschedule Event</SelectItem>
                   <SelectItem value="event">Submitted Event</SelectItem>
                 </SelectContent>
               </Select>
@@ -303,7 +345,7 @@ const UsersLogsPage: React.FC = () => {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Type</TableHead>
-                        <TableHead>User / Event</TableHead>
+                        <TableHead>User / Event / Requestor / Email</TableHead>
                         <TableHead>Department</TableHead>
                         <TableHead>Details</TableHead>
                         <TableHead>Date & Time</TableHead>
@@ -311,61 +353,117 @@ const UsersLogsPage: React.FC = () => {
                     </TableHeader>
                     <TableBody>
                       {paginatedLogs.map((log, index) => {
-                      const isLoginLog = 'username' in log;
+                      const isActivityLog = 'action' in log;
+                      const isLoginLog = isActivityLog && log.action === 'login';
+                      const isRescheduleLog = isActivityLog && log.action === 'reschedule_event';
+                      const isExpanded = expandedRows.has(index);
                       
                       return (
-                        <TableRow key={index} className="hover:bg-gray-50">
-                          <TableCell>
-                            {isLoginLog ? (
-                              <Badge className="bg-green-100 text-green-800 border-green-200 gap-1">
-                                <LogIn className="w-3 h-3" />
-                                Login
-                              </Badge>
-                            ) : (
-                              <Badge className="bg-purple-100 text-purple-800 border-purple-200 gap-1">
-                                <Calendar className="w-3 h-3" />
-                                Event
-                              </Badge>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                                <User className="w-4 h-4 text-blue-600" />
+                        <>
+                          <TableRow key={index} className="hover:bg-gray-50">
+                            <TableCell>
+                              {isLoginLog ? (
+                                <Badge className="bg-green-100 text-green-800 border-green-200 gap-1">
+                                  <LogIn className="w-3 h-3" />
+                                  Login
+                                </Badge>
+                              ) : isRescheduleLog ? (
+                                <Badge className="bg-blue-100 text-blue-800 border-blue-200 gap-1">
+                                  <Calendar className="w-3 h-3" />
+                                  Reschedule
+                                </Badge>
+                              ) : isActivityLog ? (
+                                <Badge className="bg-gray-100 text-gray-800 border-gray-200 gap-1">
+                                  <Activity className="w-3 h-3" />
+                                  {log.action.replace('_', ' ')}
+                                </Badge>
+                              ) : (
+                                <Badge className="bg-purple-100 text-purple-800 border-purple-200 gap-1">
+                                  <Calendar className="w-3 h-3" />
+                                  Event
+                                </Badge>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                                  {isLoginLog ? (
+                                    <Building2 className="w-4 h-4 text-blue-600" />
+                                  ) : (
+                                    <User className="w-4 h-4 text-blue-600" />
+                                  )}
+                                </div>
+                                <div>
+                                  <p className="font-medium text-sm">
+                                    {isLoginLog ? log.department : isActivityLog ? log.username : log.requestor}
+                                  </p>
+                                  <p className="text-xs text-gray-500 truncate max-w-xs" title={isLoginLog ? log.email : isActivityLog ? log.email : log.eventTitle}>
+                                    {isLoginLog ? log.email : isActivityLog ? log.email : log.eventTitle}
+                                  </p>
+                                </div>
                               </div>
-                              <div>
-                                <p className="font-medium text-sm">
-                                  {isLoginLog ? log.username : log.requestor}
-                                </p>
-                                <p className="text-xs text-gray-500">
-                                  {isLoginLog ? log.email : log.eventTitle}
-                                </p>
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className="gap-1">
-                              <Building2 className="w-3 h-3" />
-                              {isLoginLog ? log.department : log.requestorDepartment}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            {isLoginLog ? (
-                              <p className="text-sm text-gray-600">User logged in</p>
-                            ) : (
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="gap-1">
+                                <Building2 className="w-3 h-3" />
+                                {isActivityLog ? log.department : log.requestorDepartment}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              {isLoginLog ? (
+                                <p className="text-sm text-gray-600">{log.department}</p>
+                              ) : isActivityLog ? (
+                                <div 
+                                  className="cursor-pointer hover:text-blue-600 transition-colors"
+                                  onClick={() => toggleRowExpansion(index)}
+                                >
+                                  <p className="text-sm text-gray-600 truncate max-w-md">{log.description}</p>
+                                  <span className="text-xs text-blue-500 mt-1 block">
+                                    {isExpanded ? '▲ Click to collapse' : '▼ Click to expand'}
+                                  </span>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-1 text-sm text-gray-600">
+                                  <MapPin className="w-3 h-3" />
+                                  {log.location}
+                                </div>
+                              )}
+                            </TableCell>
+                            <TableCell>
                               <div className="flex items-center gap-1 text-sm text-gray-600">
-                                <MapPin className="w-3 h-3" />
-                                {log.location}
+                                <Clock className="w-3 h-3" />
+                                {format(new Date(isActivityLog ? log.timestamp : log.submittedAt), 'MMM dd, yyyy hh:mm a')}
                               </div>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-1 text-sm text-gray-600">
-                              <Clock className="w-3 h-3" />
-                              {format(new Date(isLoginLog ? log.loginTime : log.submittedAt), 'MMM dd, yyyy hh:mm a')}
-                            </div>
-                          </TableCell>
-                        </TableRow>
+                            </TableCell>
+                          </TableRow>
+                          
+                          {/* Expanded Row */}
+                          {isExpanded && isActivityLog && (
+                            <TableRow key={`${index}-expanded`} className="bg-blue-50">
+                              <TableCell colSpan={5} className="py-4">
+                                <div className="pl-12">
+                                  <p className="text-sm font-medium text-gray-700 mb-2">Full Details:</p>
+                                  <p className="text-sm text-gray-600">
+                                    {log.description.split('"').map((part, i) => 
+                                      i % 2 === 1 ? <span key={i} className="font-bold">"{part}"</span> : part
+                                    ).reduce((acc: any[], curr, i) => {
+                                      if (i === 0) return [curr];
+                                      // Bold dates and times (e.g., "Oct 23, 2025", "8:00 AM")
+                                      const withBoldDatesAndTimes = typeof curr === 'string' 
+                                        ? curr.split(/(\w{3}\s+\d{1,2},\s+\d{4}|\d{1,2}:\d{2}\s*(?:AM|PM))/gi).map((segment, j) => 
+                                            /\w{3}\s+\d{1,2},\s+\d{4}|\d{1,2}:\d{2}\s*(?:AM|PM)/i.test(segment) 
+                                              ? <span key={`${i}-${j}`} className="font-bold">{segment}</span> 
+                                              : segment
+                                          )
+                                        : curr;
+                                      return [...acc, withBoldDatesAndTimes];
+                                    }, [])}
+                                  </p>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </>
                       );
                     })}
                   </TableBody>

@@ -41,11 +41,11 @@ const AdminDashboard: React.FC = () => {
   
   // User logs store
   const {
-    loginLogs,
+    activityLogs,
     eventLogs,
-    loginLogsLoading,
+    activityLogsLoading,
     eventLogsLoading,
-    fetchLoginLogs,
+    fetchActivityLogs,
     fetchEventLogs,
     getStats,
     initializeSocketListeners
@@ -97,7 +97,7 @@ const AdminDashboard: React.FC = () => {
 
   // Fetch data on mount
   useEffect(() => {
-    fetchLoginLogs();
+    fetchActivityLogs();
     fetchEventLogs();
     fetchUpcomingEvents();
     initializeSocketListeners();
@@ -105,13 +105,13 @@ const AdminDashboard: React.FC = () => {
   }, []);
 
   const stats = getStats();
-  const loading = loginLogsLoading || eventLogsLoading;
+  const loading = activityLogsLoading || eventLogsLoading;
 
-  // Get recent logs (combine login and event logs, sort by date, take 8)
-  const recentLogs = [...loginLogs, ...eventLogs]
+  // Get recent logs (combine activity logs and event logs, sort by date, take 8)
+  const recentLogs = [...activityLogs, ...eventLogs]
     .sort((a, b) => {
-      const dateA = 'loginTime' in a ? new Date(a.loginTime) : new Date(a.submittedAt);
-      const dateB = 'loginTime' in b ? new Date(b.loginTime) : new Date(b.submittedAt);
+      const dateA = 'action' in a ? new Date(a.timestamp) : new Date(a.submittedAt);
+      const dateB = 'action' in b ? new Date(b.timestamp) : new Date(b.submittedAt);
       return dateB.getTime() - dateA.getTime();
     })
     .slice(0, 8);
@@ -128,7 +128,7 @@ const AdminDashboard: React.FC = () => {
           <Button
             onClick={() => {
               console.log('🔄 Manual refresh triggered');
-              fetchLoginLogs(true);
+              fetchActivityLogs(true);
               fetchEventLogs(true);
               fetchUpcomingEvents(true);
             }}
@@ -243,28 +243,45 @@ const AdminDashboard: React.FC = () => {
               ) : (
                 <div className="space-y-3">
                   {recentLogs.map((log, index) => {
-                    const isLoginLog = 'username' in log;
+                    const isActivityLog = 'action' in log;
+                    const isLoginLog = isActivityLog && log.action === 'login';
+                    const isRescheduleLog = isActivityLog && log.action === 'reschedule_event';
+                    
                     return (
                       <div key={index} className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 transition-colors">
                         <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                          isLoginLog ? 'bg-green-100' : 'bg-purple-100'
+                          isLoginLog ? 'bg-green-100' : isRescheduleLog ? 'bg-blue-100' : 'bg-purple-100'
                         }`}>
                           {isLoginLog ? (
                             <LogIn className="w-5 h-5 text-green-600" />
+                          ) : isRescheduleLog ? (
+                            <Calendar className="w-5 h-5 text-blue-600" />
                           ) : (
                             <Calendar className="w-5 h-5 text-purple-600" />
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-gray-900 truncate">
-                            {isLoginLog ? log.username : log.requestor}
+                            {isLoginLog 
+                              ? log.department 
+                              : isActivityLog 
+                                ? log.username 
+                                : log.requestor
+                            }
                           </p>
                           <p className="text-xs text-gray-500 truncate">
-                            {isLoginLog ? `Logged in from ${log.department}` : `Submitted: ${log.eventTitle}`}
+                            {isLoginLog 
+                              ? `Logged in - ${log.email}` 
+                              : isRescheduleLog 
+                                ? `Rescheduled: ${log.eventTitle}`
+                                : isActivityLog
+                                  ? log.description
+                                  : `Submitted: ${log.eventTitle}`
+                            }
                           </p>
                         </div>
                         <div className="text-xs text-gray-500 whitespace-nowrap">
-                          {format(new Date(isLoginLog ? log.loginTime : log.submittedAt), 'hh:mm a')}
+                          {format(new Date(isActivityLog ? log.timestamp : log.submittedAt), 'hh:mm a')}
                         </div>
                       </div>
                     );
