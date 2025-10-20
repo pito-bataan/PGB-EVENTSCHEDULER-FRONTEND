@@ -334,7 +334,7 @@ const UsersLogsPage: React.FC = () => {
                           <TableCell>
                             <div className="flex items-center gap-1 text-sm text-gray-600">
                               <Clock className="w-3 h-3" />
-                              {format(new Date(isLoginLog ? log.loginTime : log.submittedAt), 'MMM dd, yyyy HH:mm')}
+                              {format(new Date(isLoginLog ? log.timestamp : log.submittedAt), 'MMM dd, yyyy HH:mm')}
                             </div>
                           </TableCell>
                         </TableRow>
