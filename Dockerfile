@@ -9,7 +9,7 @@ COPY package*.json ./
 
 # Install ALL dependencies (including devDependencies needed for build)
 # Use --legacy-peer-deps to handle React 19 peer dependency conflicts
-RUN npm ci --legacy-peer-deps || npm install --legacy-peer-deps
+RUN npm install --legacy-peer-deps
 
 # Copy source code
 COPY . .
