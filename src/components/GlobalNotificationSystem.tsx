@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { toast } from 'sonner'
 import { motion } from 'framer-motion'
 import { Bell } from 'lucide-react'
@@ -7,32 +7,77 @@ import { useSocket } from '@/hooks/useSocket'
 
 // Global AudioContext for notification sounds
 let globalAudioContext: AudioContext | null = null;
+let audioInitialized = false;
 
 // Initialize AudioContext on first user interaction
 const initializeAudioContext = async () => {
+  console.log('🔊 [AUDIO] Initializing AudioContext, current state:', globalAudioContext?.state);
+  
   if (!globalAudioContext) {
     try {
       globalAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      console.log('✅ [AUDIO] AudioContext created, state:', globalAudioContext.state);
     } catch (error) {
-      // Failed to initialize AudioContext
+      console.error('❌ [AUDIO] Failed to create AudioContext:', error);
+      return false;
     }
   }
   
-  if (globalAudioContext && globalAudioContext.state === 'suspended') {
-    try {
-      await globalAudioContext.resume();
-    } catch (error) {
-      // Failed to resume AudioContext
+  if (globalAudioContext) {
+    if (globalAudioContext.state === 'suspended') {
+      try {
+        console.log('🔄 [AUDIO] Attempting to resume suspended AudioContext...');
+        await globalAudioContext.resume();
+        console.log('✅ [AUDIO] AudioContext resumed, new state:', globalAudioContext.state);
+      } catch (error) {
+        console.error('❌ [AUDIO] Failed to resume AudioContext:', error);
+        return false;
+      }
     }
+    
+    // Check final state
+    audioInitialized = globalAudioContext.state === 'running';
+    console.log('🔊 [AUDIO] Initialization complete, state:', globalAudioContext.state, 'ready:', audioInitialized);
+    return audioInitialized;
   }
+  
+  return false;
 };
 
 // Global notification sound function with fallback
-const playGlobalNotificationSound = async () => {
-  try {
-    await initializeAudioContext();
-    
-    if (globalAudioContext && globalAudioContext.state === 'running') {
+const playGlobalNotificationSound = async (title: string = 'New Event Notification', body: string = 'You have a new event update') => {
+  console.log('🔔 [AUDIO] Attempting to play notification sound...');
+  
+  // ALWAYS try Web Notification API first if permission is granted (for desktop notifications)
+  if ('Notification' in window && Notification.permission === 'granted') {
+    try {
+      console.log('🔔 [AUDIO] Using Web Notification API for desktop notification + system sound');
+      console.log('🔔 [AUDIO] Title:', title, 'Body:', body);
+      // Create a notification that triggers system sound AND shows desktop notification
+      const notification = new Notification(title, {
+        body: body,
+        icon: '/notification-icon.png', // Optional: add an icon
+        silent: false,
+        tag: 'notification-sound-' + Date.now(),
+        requireInteraction: false
+      });
+      // Close it after 3 seconds
+      setTimeout(() => notification.close(), 3000);
+      console.log('✅ [AUDIO] Desktop notification shown with system sound');
+      return true;
+    } catch (e) {
+      console.error('❌ [AUDIO] Web Notification failed with error:', e);
+      console.log('ℹ️ [AUDIO] Trying AudioContext fallback...');
+    }
+  } else {
+    console.log('⚠️ [AUDIO] Web Notification not available. Permission:', Notification?.permission);
+  }
+  
+  // Fallback to AudioContext if Web Notification API is not available
+  if (globalAudioContext && globalAudioContext.state === 'running') {
+    try {
+      console.log('🎵 [AUDIO] Playing sound via AudioContext (fallback)');
+      
       const oscillator = globalAudioContext.createOscillator();
       const gainNode = globalAudioContext.createGain();
       
@@ -50,30 +95,61 @@ const playGlobalNotificationSound = async () => {
       oscillator.start(globalAudioContext.currentTime);
       oscillator.stop(globalAudioContext.currentTime + 0.4);
       
-    } else {
-      // Fallback: Try to play system notification sound
-      if ('Notification' in window && Notification.permission === 'granted') {
-        // Create a silent notification just to trigger system sound
-        new Notification('', { 
-          silent: false, 
-          tag: 'notification-sound',
-          icon: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
-        });
-      }
+      console.log('✅ [AUDIO] Sound played successfully via AudioContext');
+      return true;
+    } catch (error) {
+      console.error('❌ [AUDIO] AudioContext playback failed:', error);
+      return await playFallbackSound();
     }
-  } catch (error) {
-    // Try alternative sound method
+  } else {
+    // AudioContext is suspended or not initialized - use HTML5 Audio immediately
+    console.log('⚠️ [AUDIO] AudioContext not running (state:', globalAudioContext?.state, '), using fallback');
+    return await playFallbackSound();
+  }
+};
+
+// Fallback sound using HTML5 Audio or Web Notification
+const playFallbackSound = async () => {
+  console.log('🔄 [AUDIO] Using fallback sound method');
+  
+  // Try Web Notification API first (can play system sound without user interaction)
+  if ('Notification' in window && Notification.permission === 'granted') {
     try {
-      if ('speechSynthesis' in window) {
-        // Use speech synthesis as last resort for sound
-        const utterance = new SpeechSynthesisUtterance('');
-        utterance.volume = 0.01;
-        utterance.rate = 10;
-        speechSynthesis.speak(utterance);
-      }
+      console.log('🔔 [AUDIO] Using Web Notification API for system sound');
+      // Create a silent notification that triggers system sound
+      const notification = new Notification('', {
+        body: '',
+        silent: false,
+        tag: 'notification-sound-' + Date.now(),
+        requireInteraction: false
+      });
+      // Close it immediately so it doesn't show
+      setTimeout(() => notification.close(), 1);
+      console.log('✅ [AUDIO] System notification sound played');
+      return true;
     } catch (e) {
-      // All sound methods failed
+      console.log('ℹ️ [AUDIO] Web Notification failed, trying HTML5 Audio');
     }
+  }
+  
+  // Fallback to HTML5 Audio
+  try {
+    const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBTGH0fPTgjMGHm7A7+OZURE');
+    audio.volume = 0.5;
+    const playPromise = audio.play();
+    if (playPromise !== undefined) {
+      await playPromise;
+    }
+    console.log('✅ [AUDIO] HTML5 Audio played');
+    return true;
+  } catch (e: any) {
+    // Browser autoplay policy blocks audio until user interaction
+    if (e.name === 'NotAllowedError') {
+      console.log('ℹ️ [AUDIO] Audio blocked by browser. Click anywhere on the page, then sound will work for future notifications.');
+    } else {
+      console.error('❌ [AUDIO] Fallback sound failed:', e);
+    }
+    return false;
   }
 };
 
@@ -86,73 +162,141 @@ export default function GlobalNotificationSystem() {
   const currentUser = JSON.parse(localStorage.getItem('userData') || '{}');
   const userId = currentUser._id || currentUser.id || 'unknown';
   
+  console.log('🌐 [GLOBAL NOTIFICATION SYSTEM] Component mounted, userId:', userId);
+  
   // Initialize Socket.IO for global notifications
   const { onNewNotification, offNewNotification } = useSocket(userId);
+  
+  console.log('🔌 [GLOBAL NOTIFICATION SYSTEM] useSocket returned, onNewNotification:', typeof onNewNotification);
+
+  // Request notification permission on mount
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      console.log('🔔 [NOTIFICATION] Requesting notification permission...');
+      Notification.requestPermission().then(permission => {
+        console.log('🔔 [NOTIFICATION] Permission:', permission);
+      });
+    }
+  }, []);
 
   // Initialize AudioContext on any user interaction
   useEffect(() => {
     const initAudioOnInteraction = async () => {
-      await initializeAudioContext();
+      console.log('👆 [AUDIO] User interaction detected, initializing audio...');
+      const success = await initializeAudioContext();
       
-      // Remove listeners after first interaction
-      document.removeEventListener('click', initAudioOnInteraction);
-      document.removeEventListener('keydown', initAudioOnInteraction);
-      document.removeEventListener('touchstart', initAudioOnInteraction);
+      if (success) {
+        // Remove listeners after successful initialization
+        document.removeEventListener('click', initAudioOnInteraction);
+        document.removeEventListener('keydown', initAudioOnInteraction);
+        document.removeEventListener('touchstart', initAudioOnInteraction);
+        document.removeEventListener('scroll', initAudioOnInteraction);
+        console.log('✅ [AUDIO] Audio initialized, listeners removed');
+      }
     };
 
     // Listen for any user interaction to initialize audio
-    document.addEventListener('click', initAudioOnInteraction);
-    document.addEventListener('keydown', initAudioOnInteraction);
-    document.addEventListener('touchstart', initAudioOnInteraction);
+    document.addEventListener('click', initAudioOnInteraction, { once: false });
+    document.addEventListener('keydown', initAudioOnInteraction, { once: false });
+    document.addEventListener('touchstart', initAudioOnInteraction, { once: false });
+    document.addEventListener('scroll', initAudioOnInteraction, { once: false, passive: true });
+
+    // Try to initialize immediately (will fail if no user interaction yet)
+    initializeAudioContext().catch(() => {
+      console.log('ℹ️ [AUDIO] Waiting for user interaction to initialize audio');
+    });
 
     return () => {
       document.removeEventListener('click', initAudioOnInteraction);
       document.removeEventListener('keydown', initAudioOnInteraction);
       document.removeEventListener('touchstart', initAudioOnInteraction);
+      document.removeEventListener('scroll', initAudioOnInteraction);
     };
   }, []);
 
+  // Use refs to avoid stale closures
+  const shownNotificationsRef = useRef(shownNotifications);
+  const currentUserRef = useRef(currentUser);
+  
+  // Update refs when state changes
+  useEffect(() => {
+    shownNotificationsRef.current = shownNotifications;
+  }, [shownNotifications]);
+  
+  useEffect(() => {
+    currentUserRef.current = currentUser;
+  }, [currentUser]);
+  
   // Global real-time notification popup system
   useEffect(() => {
+    console.log('🔄 [NOTIFICATION] Setting up notification listener for userId:', userId);
+    
     if (typeof onNewNotification !== 'function') {
       console.warn('⚠️ [NOTIFICATION] onNewNotification is not a function');
       return;
     }
     
+    if (userId === 'unknown') {
+      console.warn('⚠️ [NOTIFICATION] userId is unknown, skipping listener setup');
+      return;
+    }
+    
     const handleGlobalNewNotification = (notificationData: any) => {
+      console.log('🔔 [GLOBAL NOTIFICATION] Received:', notificationData);
       const now = Date.now();
       
-      // Throttle notifications - prevent spam (minimum 1 second between notifications)
-      if (now - lastNotificationTime < 1000) {
-        return;
-      }
-      
-      // Create unique ID for this notification to prevent duplicates
+      // Create unique ID based on notification type and content
       const eventTitle = notificationData.eventTitle || notificationData.title || 'unknown';
       const eventId = notificationData.eventId || notificationData.id;
-      const notificationId = eventId ? `global-event-${eventId}` : `global-title-${eventTitle}`;
+      const notificationType = notificationData.type || notificationData.notificationType || 'event';
+      const timestamp = notificationData.timestamp || now;
       
+      // For status updates, include requirement ID and new status to allow multiple updates
+      let notificationId;
+      if (notificationType === 'status_update') {
+        const reqId = notificationData.requirementId || 'unknown';
+        const status = notificationData.newStatus || 'unknown';
+        notificationId = `status-${eventId}-${reqId}-${status}-${timestamp}`;
+      } else {
+        // For new events, use event ID + timestamp to allow re-notifications
+        notificationId = `event-${eventId}-${timestamp}`;
+      }
       
-      // Check if we've already shown this notification
-      if (shownNotifications.has(notificationId)) {
+      console.log('🆔 [NOTIFICATION ID]:', notificationId);
+      
+      // Check if we've shown this EXACT notification recently (within 2 seconds)
+      // Use ref to get current state
+      const recentNotifications = Array.from(shownNotificationsRef.current).filter(id => {
+        const parts = id.split('-');
+        const idTimestamp = parseInt(parts[parts.length - 1]);
+        return !isNaN(idTimestamp) && (now - idTimestamp) < 2000;
+      });
+      
+      if (recentNotifications.includes(notificationId)) {
+        console.log('⏭️ [NOTIFICATION] Skipping duplicate (shown within 2s)');
         return;
       }
       
-      // Add to shown notifications set and update timestamp
+      // Add to shown notifications set
       setShownNotifications(prev => {
         const newSet = new Set([...prev, notificationId]);
-        return newSet;
+        // Keep only recent notifications (last 5 minutes)
+        const fiveMinutesAgo = now - (5 * 60 * 1000);
+        const filtered = Array.from(newSet).filter(id => {
+          const parts = id.split('-');
+          const idTimestamp = parseInt(parts[parts.length - 1]);
+          return !isNaN(idTimestamp) && idTimestamp > fiveMinutesAgo;
+        });
+        return new Set(filtered);
       });
       
       // Update last notification time
       setLastNotificationTime(now);
       
-      // Play notification sound immediately
-      playGlobalNotificationSound().catch(e => {});
-      
       // Determine if this is user's own event or tagged event
-      const userName = currentUser.name || '';
-      const userDepartment = currentUser.department || currentUser.departmentName || '';
+      // Use ref to get current user data
+      const userName = currentUserRef.current.name || '';
+      const userDepartment = currentUserRef.current.department || currentUserRef.current.departmentName || '';
       
       // More reliable user event detection
       const isUserEventByName = userName && notificationData.requestor === userName;
@@ -182,6 +326,11 @@ export default function GlobalNotificationSystem() {
         notificationTitle = "Department Event Notification";
         notificationMessage = `New event "${eventTitle}" has tagged your department`;
       }
+      
+      console.log('✅ [NOTIFICATION] Showing notification:', notificationTitle);
+      
+      // Play notification sound immediately with dynamic title and message
+      playGlobalNotificationSound(notificationTitle, notificationMessage).catch(e => {});
       
       
       // Dispatch global event to refresh Dashboard notifications
@@ -236,13 +385,25 @@ export default function GlobalNotificationSystem() {
         offNewNotification();
       }
     };
+    // Only depend on the Socket.IO functions and userId - refs handle the rest
   }, [onNewNotification, offNewNotification, userId]);
 
-  // Clear old shown notifications every 5 minutes to prevent memory buildup
+  // Clear old shown notifications every 10 minutes to prevent memory buildup
   useEffect(() => {
     const interval = setInterval(() => {
-      setShownNotifications(new Set());
-    }, 5 * 60 * 1000); // 5 minutes
+      const now = Date.now();
+      const tenMinutesAgo = now - (10 * 60 * 1000);
+      
+      setShownNotifications(prev => {
+        const filtered = Array.from(prev).filter(id => {
+          const parts = id.split('-');
+          const idTimestamp = parseInt(parts[parts.length - 1]);
+          return !isNaN(idTimestamp) && idTimestamp > tenMinutesAgo;
+        });
+        console.log('🧹 [NOTIFICATION] Cleaned old notifications. Remaining:', filtered.length);
+        return new Set(filtered);
+      });
+    }, 10 * 60 * 1000); // 10 minutes
 
     return () => clearInterval(interval);
   }, []);

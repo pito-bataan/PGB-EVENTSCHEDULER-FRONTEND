@@ -263,23 +263,46 @@ export const useSocket = (userId?: string) => {
   };
 
   // Notification event listeners - Enhanced for reliability
+  // Store the callback ref to allow proper cleanup without removing other listeners
+  const notificationCallbackRef = useRef<((data: any) => void) | null>(null);
+  
   const onNewNotification = (callback: (data: any) => void) => {
     const socket = socketRef.current || globalSocket;
     
+    console.log('🎯 [SOCKET] onNewNotification called, socket exists:', !!socket, 'connected:', socket?.connected);
+    
     if (socket) {
-      // Remove any existing listeners to prevent duplicates
-      socket.off('new-notification');
+      // Remove ONLY this component's listener if it exists
+      if (notificationCallbackRef.current) {
+        socket.off('new-notification', notificationCallbackRef.current);
+      }
+      
+      // Wrap callback with logging
+      const wrappedCallback = (data: any) => {
+        console.log('📨 [SOCKET] new-notification event received:', data);
+        callback(data);
+      };
+      
+      // Store the wrapped callback for cleanup
+      notificationCallbackRef.current = wrappedCallback;
       
       if (socket.connected) {
-        socket.on('new-notification', callback);
+        console.log('✅ [SOCKET] Adding new-notification listener (socket connected)');
+        socket.on('new-notification', wrappedCallback);
       } else {
+        console.log('⏳ [SOCKET] Waiting for connection to add new-notification listener');
         // Wait for connection and then add listener
         socket.once('connect', () => {
-          socket.off('new-notification'); // Remove any duplicates
-          socket.on('new-notification', callback);
+          console.log('✅ [SOCKET] Adding new-notification listener (after connect)');
+          // Remove only this component's listener if it exists
+          if (notificationCallbackRef.current) {
+            socket.off('new-notification', notificationCallbackRef.current);
+          }
+          socket.on('new-notification', wrappedCallback);
         });
       }
     } else {
+      console.warn('⚠️ [SOCKET] No socket available, retrying in 500ms');
       // Retry after socket initialization
       setTimeout(() => {
         onNewNotification(callback);

@@ -149,6 +149,7 @@ export const useDashboardStore = create<DashboardState>()(
                       department: department,
                       eventTitle: event.eventTitle,
                       eventId: event._id,
+                      notes: req.notes || '', // Requestor's notes for service requirements
                       departmentNotes: req.departmentNotes || '',
                       lastUpdated: req.lastUpdated,
                       quantity: req.quantity,

@@ -68,7 +68,6 @@ interface DepartmentRequirement {
   responsiblePerson?: string;
   availabilityNotes?: string; // Notes from resource availability
   isCustom?: boolean; // Flag for custom requirements added by user
-  status?: string; // Status for custom requirements (pending_validation, pending, confirmed, declined)
 }
 
 interface DepartmentRequirements {
@@ -682,8 +681,7 @@ const RequestEventPage: React.FC = () => {
         notes: '',
         type: customRequirementType, // Use selected type (physical or service)
         quantity: customRequirementType === 'physical' ? 1 : undefined, // Default quantity for physical items
-        isCustom: true, // Flag to identify custom requirements
-        status: 'pending_validation' // Custom requirements need department validation
+        isCustom: true // Flag to identify custom requirements - status will default to 'For Validation'
       };
       
       const updatedReqs = [...currentReqs, newRequirement];

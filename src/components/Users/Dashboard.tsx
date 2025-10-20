@@ -832,10 +832,16 @@ const Dashboard: React.FC = () => {
                           
                           <p className="text-sm text-gray-600 mb-2">{req.eventTitle}</p>
                           
-                          {req.quantity && (
+                          {/* Show quantity for physical requirements, notes for service requirements */}
+                          {req.quantity ? (
                             <p className="text-sm text-gray-500 mb-2">
                               Quantity: <span className="font-medium">{req.quantity}</span> of {req.totalQuantity} available
                             </p>
+                          ) : req.notes && (
+                            <div className="bg-blue-50 rounded-lg p-3 mb-2">
+                              <p className="text-xs text-blue-600 font-medium mb-1">Requestor's Notes:</p>
+                              <p className="text-sm text-gray-700">{req.notes}</p>
+                            </div>
                           )}
                           
                           {req.departmentNotes && (

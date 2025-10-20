@@ -1025,7 +1025,7 @@ const TaggedDepartmentPage: React.FC = () => {
                         .map(([department, requirements]) => 
                         requirements.map((req: Requirement) => (
                         <motion.div
-                          key={`${req.id}-${getRequirementStatus(req)}-${req.lastUpdated || Date.now()}`}
+                          key={req.id}
                           initial={{ opacity: 0, y: 10 }}
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, x: -10 }}
@@ -1044,7 +1044,7 @@ const TaggedDepartmentPage: React.FC = () => {
                                   </p>
                                 </div>
                                 <Select 
-                                  key={`${req.id}-${getRequirementStatus(req)}`}
+                                  key={req.id}
                                   value={getRequirementStatus(req)}
                                   onValueChange={(value) => setStatusDialog({
                                     isOpen: true,
@@ -1210,7 +1210,7 @@ const TaggedDepartmentPage: React.FC = () => {
                                 .filter(req => getRequirementStatus(req) === status)
                                 .map((req: Requirement) => (
                                   <motion.div
-                                    key={`${req.id}-${getRequirementStatus(req)}-${req.lastUpdated || Date.now()}`}
+                                    key={req.id}
                                     initial={{ opacity: 0, y: 10 }}
                                     animate={{ opacity: 1, y: 0 }}
                                     exit={{ opacity: 0, x: -10 }}
