@@ -158,61 +158,107 @@ export default function GlobalNotificationSystem() {
   const [shownNotifications, setShownNotifications] = useState<Set<string>>(new Set());
   const [lastNotificationTime, setLastNotificationTime] = useState<number>(0);
   
-  // Get current user data
-  const currentUser = JSON.parse(localStorage.getItem('userData') || '{}');
-  const userId = currentUser._id || currentUser.id || 'unknown';
+  // Get current user data - use state to make it reactive
+  const [userId, setUserId] = useState<string>(() => {
+    const userData = localStorage.getItem('userData');
+    if (userData) {
+      try {
+        const user = JSON.parse(userData);
+        return user._id || user.id || 'unknown';
+      } catch {
+        return 'unknown';
+      }
+    }
+    return 'unknown';
+  });
+  
+  // Listen for localStorage changes (when user logs in)
+  useEffect(() => {
+    const handleStorageChange = () => {
+      const userData = localStorage.getItem('userData');
+      if (userData) {
+        try {
+          const user = JSON.parse(userData);
+          const newUserId = user._id || user.id || 'unknown';
+          if (newUserId !== userId) {
+            console.log('🔄 [NOTIFICATION] User data updated, new userId:', newUserId);
+            setUserId(newUserId);
+          }
+        } catch (e) {
+          console.error('❌ [NOTIFICATION] Failed to parse userData:', e);
+        }
+      }
+    };
+    
+    // Check for changes every 500ms (for same-window updates)
+    const interval = setInterval(handleStorageChange, 500);
+    
+    // Also listen for storage events (for cross-tab updates)
+    window.addEventListener('storage', handleStorageChange);
+    
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, [userId]);
   
   console.log('🌐 [GLOBAL NOTIFICATION SYSTEM] Component mounted, userId:', userId);
+  
+  // Get current user data for refs
+  const currentUser = JSON.parse(localStorage.getItem('userData') || '{}');
   
   // Initialize Socket.IO for global notifications
   const { onNewNotification, offNewNotification } = useSocket(userId);
   
   console.log('🔌 [GLOBAL NOTIFICATION SYSTEM] useSocket returned, onNewNotification:', typeof onNewNotification);
 
-  // Request notification permission on mount
+  // Request notification permission immediately on mount (ONCE)
   useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default') {
       console.log('🔔 [NOTIFICATION] Requesting notification permission...');
       Notification.requestPermission().then(permission => {
-        console.log('🔔 [NOTIFICATION] Permission:', permission);
+        console.log('🔔 [NOTIFICATION] Permission granted:', permission);
+        if (permission === 'granted') {
+          console.log('✅ [NOTIFICATION] Web notifications are now enabled!');
+        }
       });
+    } else if ('Notification' in window && Notification.permission === 'granted') {
+      console.log('✅ [NOTIFICATION] Web notifications already enabled');
     }
-  }, []);
+  }, []); // Empty deps - run only once on mount
 
-  // Initialize AudioContext on any user interaction
+  // Initialize AudioContext on first user interaction (ONCE)
   useEffect(() => {
+    let initialized = false;
+    
     const initAudioOnInteraction = async () => {
+      if (initialized) return; // Prevent multiple initializations
+      
       console.log('👆 [AUDIO] User interaction detected, initializing audio...');
       const success = await initializeAudioContext();
       
       if (success) {
-        // Remove listeners after successful initialization
+        initialized = true;
+        // Remove all listeners after successful initialization
         document.removeEventListener('click', initAudioOnInteraction);
         document.removeEventListener('keydown', initAudioOnInteraction);
         document.removeEventListener('touchstart', initAudioOnInteraction);
-        document.removeEventListener('scroll', initAudioOnInteraction);
         console.log('✅ [AUDIO] Audio initialized, listeners removed');
       }
     };
 
-    // Listen for any user interaction to initialize audio
-    document.addEventListener('click', initAudioOnInteraction, { once: false });
-    document.addEventListener('keydown', initAudioOnInteraction, { once: false });
-    document.addEventListener('touchstart', initAudioOnInteraction, { once: false });
-    document.addEventListener('scroll', initAudioOnInteraction, { once: false, passive: true });
-
-    // Try to initialize immediately (will fail if no user interaction yet)
-    initializeAudioContext().catch(() => {
-      console.log('ℹ️ [AUDIO] Waiting for user interaction to initialize audio');
-    });
+    // Listen for any user interaction to initialize audio (use { once: true } for auto-removal)
+    document.addEventListener('click', initAudioOnInteraction, { once: true });
+    document.addEventListener('keydown', initAudioOnInteraction, { once: true });
+    document.addEventListener('touchstart', initAudioOnInteraction, { once: true });
 
     return () => {
+      // Cleanup on unmount
       document.removeEventListener('click', initAudioOnInteraction);
       document.removeEventListener('keydown', initAudioOnInteraction);
       document.removeEventListener('touchstart', initAudioOnInteraction);
-      document.removeEventListener('scroll', initAudioOnInteraction);
     };
-  }, []);
+  }, []); // Empty deps - run only once on mount
 
   // Use refs to avoid stale closures
   const shownNotificationsRef = useRef(shownNotifications);
@@ -230,6 +276,7 @@ export default function GlobalNotificationSystem() {
   // Global real-time notification popup system
   useEffect(() => {
     console.log('🔄 [NOTIFICATION] Setting up notification listener for userId:', userId);
+    console.log('🔄 [NOTIFICATION] onNewNotification type:', typeof onNewNotification, 'userId:', userId);
     
     if (typeof onNewNotification !== 'function') {
       console.warn('⚠️ [NOTIFICATION] onNewNotification is not a function');
@@ -240,6 +287,8 @@ export default function GlobalNotificationSystem() {
       console.warn('⚠️ [NOTIFICATION] userId is unknown, skipping listener setup');
       return;
     }
+    
+    console.log('✅ [NOTIFICATION] All checks passed, setting up listener now...');
     
     const handleGlobalNewNotification = (notificationData: any) => {
       console.log('🔔 [GLOBAL NOTIFICATION] Received:', notificationData);
