@@ -99,9 +99,9 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ user }) => {
       
       if (response.data.success) {
         const events = response.data.data || [];
-        // Count all events (approved or submitted)
+        // Count all events except drafts (submitted, approved, rejected, cancelled, completed)
         const count = events.filter((event: any) => 
-          event.status === 'approved' || event.status === 'submitted'
+          event.status !== 'draft'
         ).length;
         setCalendarEventCount(count);
       }

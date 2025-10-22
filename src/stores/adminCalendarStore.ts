@@ -55,9 +55,11 @@ export const useAdminCalendarStore = create<AdminCalendarState>()(
         
         // Check cache (unless forced)
         if (!force && state.lastFetched && (now - state.lastFetched) < state.CACHE_DURATION) {
+          console.log('⚠️ Using cached events');
           return;
         }
         
+        console.log('🔄 Fetching fresh events from API');
         set({ loading: true });
         
         try {
@@ -72,9 +74,10 @@ export const useAdminCalendarStore = create<AdminCalendarState>()(
           if (response.data.success) {
             const allEvents = response.data.data;
             
-            // Filter only approved and submitted events
+            // Filter events (exclude only drafts)
+            // Show submitted, approved, rejected, cancelled, and completed events
             const filteredEvents = allEvents.filter(
-              (event: Event) => event.status === 'approved' || event.status === 'submitted'
+              (event: Event) => event.status !== 'draft'
             );
             
             // Convert to calendar events
@@ -115,12 +118,21 @@ export const useAdminCalendarStore = create<AdminCalendarState>()(
         
         events.forEach(event => {
           // Determine color based on status
+          console.log(`Event: ${event.eventTitle}, Status: "${event.status}"`);
           let color = '#E0E7FF'; // Default light blue
           if (event.status === 'approved') {
-            color = '#D1FAE5'; // Light green for approved
+            color = '#D1FAE5'; // Light green for approved (green-200)
           } else if (event.status === 'submitted') {
-            color = '#DBEAFE'; // Light blue for submitted
+            color = '#DBEAFE'; // Light blue for submitted (blue-200)
+          } else if (event.status === 'cancelled') {
+            color = '#FEF08A'; // Light yellow for cancelled (yellow-200) - SAME SHADE AS OTHERS!
+            console.log(`✅ Cancelled event detected: ${event.eventTitle}, color: ${color}`);
+          } else if (event.status === 'rejected') {
+            color = '#FECACA'; // Light red for rejected (red-200)
+          } else if (event.status === 'completed') {
+            color = '#E9D5FF'; // Light purple for completed (purple-200)
           }
+          console.log(`Final color for ${event.eventTitle}: ${color}`);
           
           // Add event for start date
           calEvents.push({

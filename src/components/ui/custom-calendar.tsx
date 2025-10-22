@@ -145,11 +145,20 @@ const CustomCalendar: React.FC<CustomCalendarProps> = ({
       return title.substring(0, maxLength - 3) + '...';
     };
 
+    // Debug logging
+    if (event.title.includes('Thermodynamics')) {
+      console.log('🎨 Rendering Thermodynamics event:', {
+        color: event.color,
+        className: `inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md border mb-1 ${event.color ? 'text-gray-800 border-transparent' : getEventStyle(event.type, event.color)} ${event.className || ''}`,
+        style: event.color ? { backgroundColor: event.color, background: event.color } : undefined
+      });
+    }
+
     return (
       <div
         key={event.id}
-        className={`inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md border mb-1 ${event.color ? 'text-gray-800 border-gray-300' : getEventStyle(event.type, event.color)} ${event.className || ''}`}
-        style={event.color ? { backgroundColor: event.color } : undefined}
+        className={`inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md border mb-1 ${event.color ? 'text-gray-800 border-transparent' : getEventStyle(event.type, event.color)} ${event.className || ''}`}
+        style={event.color ? { backgroundColor: event.color, background: event.color } : undefined}
         title={event.title} // Show full title on hover
       >
         {getEventIcon(event.type)}

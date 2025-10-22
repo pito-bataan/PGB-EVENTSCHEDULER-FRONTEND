@@ -98,6 +98,12 @@ const AdminCalendarPage: React.FC = () => {
         return <Badge className="bg-green-100 text-green-800 border-green-200">Approved</Badge>;
       case 'submitted':
         return <Badge className="bg-blue-100 text-blue-800 border-blue-200">Submitted</Badge>;
+      case 'cancelled':
+        return <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200">Cancelled</Badge>;
+      case 'rejected':
+        return <Badge className="bg-red-100 text-red-800 border-red-200">Rejected</Badge>;
+      case 'completed':
+        return <Badge className="bg-purple-100 text-purple-800 border-purple-200">Completed</Badge>;
       default:
         return <Badge variant="secondary">{status}</Badge>;
     }
@@ -114,6 +120,12 @@ const AdminCalendarPage: React.FC = () => {
         return 'bg-green-100 text-green-800 border-green-200 hover:bg-green-200';
       } else if (status === 'submitted') {
         return 'bg-blue-100 text-blue-800 border-blue-200 hover:bg-blue-200';
+      } else if (status === 'cancelled') {
+        return 'bg-yellow-100 text-yellow-800 border-yellow-200 hover:bg-yellow-200';
+      } else if (status === 'rejected') {
+        return 'bg-red-100 text-red-800 border-red-200 hover:bg-red-200';
+      } else if (status === 'completed') {
+        return 'bg-purple-100 text-purple-800 border-purple-200 hover:bg-purple-200';
       }
       return 'bg-gray-100 text-gray-800 border-gray-200 hover:bg-gray-200';
     };
@@ -289,6 +301,18 @@ const AdminCalendarPage: React.FC = () => {
               <div className="flex items-center gap-2">
                 <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-xs">Submitted</Badge>
                 <span>Submitted Event</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200 text-xs">Cancelled</Badge>
+                <span>Cancelled Event</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge className="bg-red-100 text-red-800 border-red-200 text-xs">Rejected</Badge>
+                <span>Rejected Event</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge className="bg-purple-100 text-purple-800 border-purple-200 text-xs">Completed</Badge>
+                <span>Completed Event</span>
               </div>
             </div>
           </CardContent>

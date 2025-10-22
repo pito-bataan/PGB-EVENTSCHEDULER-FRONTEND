@@ -1771,7 +1771,7 @@ const AllEventsPage: React.FC = () => {
               className="bg-yellow-500 hover:bg-yellow-600"
               onClick={() => {
                 setCancelReason(pendingCancelReason);
-                handleStatusChange('cancelled');
+                handleStatusChange('cancelled', pendingCancelReason);
                 setShowCancelConfirm(false);
               }}
             >

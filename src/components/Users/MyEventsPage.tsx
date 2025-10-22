@@ -1620,7 +1620,7 @@ const MyEventsPage: React.FC = () => {
                         {/* Status Badge and Right Actions */}
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
-                            {event.status === 'rejected' ? (
+                            {event.status === 'rejected' || event.status === 'cancelled' ? (
                               <TooltipProvider>
                                 <Tooltip>
                                   <TooltipTrigger asChild>
@@ -1633,7 +1633,9 @@ const MyEventsPage: React.FC = () => {
                                     </Badge>
                                   </TooltipTrigger>
                                   <TooltipContent className="max-w-xs bg-white border shadow-lg p-3">
-                                    <p className="font-semibold mb-1 text-gray-900">Rejection Reason:</p>
+                                    <p className="font-semibold mb-1 text-gray-900">
+                                      {event.status === 'rejected' ? 'Rejection Reason:' : 'Cancellation Reason:'}
+                                    </p>
                                     <p className="text-sm text-gray-700">
                                       {event.reason || 'No reason provided.'}
                                     </p>
@@ -1815,13 +1817,35 @@ const MyEventsPage: React.FC = () => {
                   <div>
                     <label className="text-sm font-medium text-gray-700">Status</label>
                     <div className="mt-1">
-                      <Badge 
-                        variant={getStatusInfo(selectedEvent.status).variant}
-                        className={`gap-1 ${getStatusInfo(selectedEvent.status).className || ''}`}
-                      >
-                        {getStatusInfo(selectedEvent.status).icon}
-                        {getStatusInfo(selectedEvent.status).label}
-                      </Badge>
+                      {selectedEvent.status === 'cancelled' && selectedEvent.reason ? (
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <div className="inline-block cursor-help">
+                              <Badge 
+                                variant={getStatusInfo(selectedEvent.status).variant}
+                                className={`gap-1 ${getStatusInfo(selectedEvent.status).className || ''}`}
+                              >
+                                {getStatusInfo(selectedEvent.status).icon}
+                                {getStatusInfo(selectedEvent.status).label}
+                              </Badge>
+                            </div>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-80">
+                            <div className="space-y-2">
+                              <h4 className="font-semibold text-sm">Cancellation Reason</h4>
+                              <p className="text-sm text-gray-600">{selectedEvent.reason}</p>
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                      ) : (
+                        <Badge 
+                          variant={getStatusInfo(selectedEvent.status).variant}
+                          className={`gap-1 ${getStatusInfo(selectedEvent.status).className || ''}`}
+                        >
+                          {getStatusInfo(selectedEvent.status).icon}
+                          {getStatusInfo(selectedEvent.status).label}
+                        </Badge>
+                      )}
                     </div>
                   </div>
                   <div>
