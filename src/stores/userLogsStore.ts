@@ -163,9 +163,10 @@ export const useUserLogsStore = create<UserLogsState>()(
           });
           
           if (response.data.success) {
-            // Filter only submitted events
+            // Show all events that were submitted (excluding drafts)
+            // This includes submitted, approved, rejected, cancelled, and completed events
             const submittedEvents = response.data.data.filter(
-              (event: EventLog) => event.status === 'submitted'
+              (event: EventLog) => event.status !== 'draft'
             );
             
             set({
