@@ -2,7 +2,7 @@ import React from 'react';
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import axios from 'axios';
-import { AlertCircle, Calendar } from 'lucide-react';
+import { AlertCircle, Calendar, CheckCircle, X } from 'lucide-react';
 
 const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api`;
 
@@ -33,6 +33,7 @@ interface Event {
   createdBy: string;
   taggedDepartments?: string[];
   departmentRequirements?: any;
+  submittedAt?: string;
 }
 
 interface Notification {
@@ -239,7 +240,35 @@ export const useDashboardStore = create<DashboardState>()(
                 departmentNotes: req.departmentNotes
               }));
             
-            const allNotifications = [...upcomingNotifications, ...statusNotifications];
+            // Event status notifications (approved/rejected/cancelled by admin)
+            const eventStatusNotifications = userEvents
+              .filter((event: Event) => {
+                // Show notifications for approved, rejected, or cancelled events
+                return event.status === 'approved' || event.status === 'rejected' || event.status === 'cancelled';
+              })
+              .map((event: Event) => ({
+                id: `event-status-${event._id}-${event.status}`,
+                title: event.status === 'approved' ? "Event Approved! 🎉" : 
+                       event.status === 'rejected' ? "Event Rejected" : 
+                       "Event Cancelled",
+                message: event.status === 'approved' ? `Your event "${event.eventTitle}" has been approved` :
+                         event.status === 'rejected' ? `Your event "${event.eventTitle}" has been rejected` :
+                         `Your event "${event.eventTitle}" has been cancelled`,
+                type: "event_status",
+                category: "status",
+                time: event.submittedAt ? new Date(event.submittedAt).toLocaleString() : 'Recently',
+                read: false,
+                icon: event.status === 'approved' ? CheckCircle : 
+                      event.status === 'rejected' ? X : 
+                      AlertCircle,
+                iconColor: event.status === 'approved' ? 'text-green-600' : 
+                           event.status === 'rejected' ? 'text-red-600' : 
+                           'text-orange-600',
+                eventId: event._id,
+                eventDate: event.startDate
+              }));
+            
+            const allNotifications = [...upcomingNotifications, ...statusNotifications, ...eventStatusNotifications];
             
             set({
               userEvents,

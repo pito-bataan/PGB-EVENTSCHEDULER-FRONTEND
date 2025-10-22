@@ -39,6 +39,16 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -119,6 +129,9 @@ const AllEventsPage: React.FC = () => {
   const [cancelReason, setCancelReason] = useState<string>('');
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [rejectReason, setRejectReason] = useState<string>('');
+  const [showApproveConfirm, setShowApproveConfirm] = useState(false);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [pendingCancelReason, setPendingCancelReason] = useState<string>('');
   
   // Use store's selected event or local state for status dialog
   const selectedEvent = storeSelectedEvent;
@@ -1605,7 +1618,7 @@ const AllEventsPage: React.FC = () => {
               <div className="grid grid-cols-3 gap-2 pt-2 border-t">
                 <Button
                   className="bg-green-600 text-white hover:bg-green-700"
-                  onClick={() => handleStatusChange('approved')}
+                  onClick={() => setShowApproveConfirm(true)}
                 >
                   Approve Event
                 </Button>
@@ -1625,38 +1638,38 @@ const AllEventsPage: React.FC = () => {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-56">
                     <DropdownMenuItem onClick={() => {
-                      setCancelReason('Conflict with other event');
-                      handleStatusChange('cancelled');
+                      setPendingCancelReason('Conflict with other event');
+                      setShowCancelConfirm(true);
                     }}>
                       Conflict with other event
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => {
-                      setCancelReason('Venue unavailable');
-                      handleStatusChange('cancelled');
+                      setPendingCancelReason('Venue unavailable');
+                      setShowCancelConfirm(true);
                     }}>
                       Venue unavailable
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => {
-                      setCancelReason('Requestor cancelled');
-                      handleStatusChange('cancelled');
+                      setPendingCancelReason('Requestor cancelled');
+                      setShowCancelConfirm(true);
                     }}>
                       Requestor cancelled
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => {
-                      setCancelReason('Insufficient resources');
-                      handleStatusChange('cancelled');
+                      setPendingCancelReason('Insufficient resources');
+                      setShowCancelConfirm(true);
                     }}>
                       Insufficient resources
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => {
-                      setCancelReason('Weather/Emergency');
-                      handleStatusChange('cancelled');
+                      setPendingCancelReason('Weather/Emergency');
+                      setShowCancelConfirm(true);
                     }}>
                       Weather/Emergency
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => {
-                      setCancelReason('Other reason');
-                      handleStatusChange('cancelled');
+                      setPendingCancelReason('Other reason');
+                      setShowCancelConfirm(true);
                     }}>
                       Other reason
                     </DropdownMenuItem>
@@ -1713,6 +1726,60 @@ const AllEventsPage: React.FC = () => {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Approve Confirmation Alert Dialog */}
+      <AlertDialog open={showApproveConfirm} onOpenChange={setShowApproveConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Approve Event?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to approve the event <strong>"{selectedEvent?.eventTitle}"</strong>? 
+              This action will notify the event creator and all tagged departments.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-green-600 hover:bg-green-700"
+              onClick={() => {
+                handleStatusChange('approved');
+                setShowApproveConfirm(false);
+              }}
+            >
+              Yes, Approve Event
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Cancel Confirmation Alert Dialog */}
+      <AlertDialog open={showCancelConfirm} onOpenChange={setShowCancelConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancel Event?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to cancel the event <strong>"{selectedEvent?.eventTitle}"</strong>?
+              <br /><br />
+              <strong>Reason:</strong> {pendingCancelReason}
+              <br /><br />
+              This will reset all department requirements to pending and notify the event creator.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Go Back</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-yellow-500 hover:bg-yellow-600"
+              onClick={() => {
+                setCancelReason(pendingCancelReason);
+                handleStatusChange('cancelled');
+                setShowCancelConfirm(false);
+              }}
+            >
+              Yes, Cancel Event
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

@@ -292,6 +292,8 @@ export default function GlobalNotificationSystem() {
     
     const handleGlobalNewNotification = (notificationData: any) => {
       console.log('🔔 [GLOBAL NOTIFICATION] Received:', notificationData);
+      console.log('🔔 [NOTIFICATION TYPE]:', notificationData.type || notificationData.notificationType);
+      console.log('🔔 [EVENT STATUS]:', notificationData.eventStatus || notificationData.status);
       const now = Date.now();
       
       // Create unique ID based on notification type and content
@@ -300,12 +302,17 @@ export default function GlobalNotificationSystem() {
       const notificationType = notificationData.type || notificationData.notificationType || 'event';
       const timestamp = notificationData.timestamp || now;
       
-      // For status updates, include requirement ID and new status to allow multiple updates
+      // Generate unique notification ID based on type
       let notificationId;
       if (notificationType === 'status_update') {
+        // Requirement status update
         const reqId = notificationData.requirementId || 'unknown';
         const status = notificationData.newStatus || 'unknown';
         notificationId = `status-${eventId}-${reqId}-${status}-${timestamp}`;
+      } else if (notificationType === 'event_status_update' || (notificationData.eventStatus || notificationData.status)) {
+        // Event status update (approved/rejected/cancelled)
+        const eventStatus = notificationData.eventStatus || notificationData.status || notificationData.newStatus || 'unknown';
+        notificationId = `event-status-${eventId}-${eventStatus}-${timestamp}`;
       } else {
         // For new events, use event ID + timestamp to allow re-notifications
         notificationId = `event-${eventId}-${timestamp}`;
@@ -355,15 +362,48 @@ export default function GlobalNotificationSystem() {
       // Check if user's department is tagged (but user didn't create the event)
       const isTaggedEvent = userDepartment && notificationData.taggedDepartments?.includes(userDepartment) && !isUserEvent;
       
-      // Check if this is a status update notification
+      // Check notification type
       const isStatusUpdate = notificationData.type === 'status_update' || notificationData.notificationType === 'status_update';
+      const isEventStatusUpdate = notificationData.type === 'event_status_update' || notificationData.notificationType === 'event_status_update';
+      
+      // Fallback: Check if this is an event status update by looking at the data
+      // If notification has eventStatus field or status field with approved/rejected/cancelled
+      const hasEventStatus = notificationData.eventStatus || 
+                            (notificationData.status && ['approved', 'rejected', 'cancelled'].includes(notificationData.status));
+      const isEventStatusUpdateFallback = !isStatusUpdate && hasEventStatus && isUserEvent;
       
       // Determine notification title and message
       let notificationTitle = "New Event Notification";
       let notificationMessage = notificationData.message || `New event "${eventTitle}" notification`;
       
-      if (isStatusUpdate) {
-        // Status update notification
+      if (isEventStatusUpdate || isEventStatusUpdateFallback) {
+        // Event status update (approved/rejected/cancelled by admin)
+        console.log('✅ [NOTIFICATION] Detected EVENT STATUS UPDATE!');
+        console.log('🔍 [NOTIFICATION] isEventStatusUpdate:', isEventStatusUpdate, 'isEventStatusUpdateFallback:', isEventStatusUpdateFallback);
+        
+        const eventStatus = notificationData.eventStatus || notificationData.status || notificationData.newStatus || 'updated';
+        const adminName = notificationData.adminName || notificationData.updatedBy || 'Admin';
+        
+        console.log('📊 [NOTIFICATION] Event Status:', eventStatus, 'Admin:', adminName);
+        
+        if (eventStatus === 'approved') {
+          notificationTitle = "Event Approved! 🎉";
+          notificationMessage = `Your event "${eventTitle}" has been approved by ${adminName}`;
+        } else if (eventStatus === 'rejected') {
+          notificationTitle = "Event Rejected";
+          notificationMessage = `Your event "${eventTitle}" has been rejected by ${adminName}`;
+        } else if (eventStatus === 'cancelled') {
+          notificationTitle = "Event Cancelled";
+          notificationMessage = `Your event "${eventTitle}" has been cancelled by ${adminName}`;
+        } else {
+          notificationTitle = "Event Status Updated";
+          notificationMessage = `Your event "${eventTitle}" status changed to "${eventStatus}" by ${adminName}`;
+        }
+        
+        console.log('📢 [NOTIFICATION] Title:', notificationTitle);
+        console.log('📢 [NOTIFICATION] Message:', notificationMessage);
+      } else if (isStatusUpdate) {
+        // Requirement status update
         notificationTitle = "Requirement Status Updated";
         notificationMessage = notificationData.message || `Requirement "${notificationData.requirementName}" status changed to "${notificationData.newStatus}"`;
       } else if (isUserEvent && !isTaggedEvent) {
