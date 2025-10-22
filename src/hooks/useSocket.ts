@@ -37,12 +37,10 @@ export const useSocket = (userId?: string) => {
         
         // Reset connecting flag when connection is established
         globalSocket.on('connect', () => {
-          console.log('🔗 [SOCKET] Connected to Socket.IO server');
           isConnecting = false;
         });
         
         globalSocket.on('disconnect', () => {
-          console.log('🔌 [SOCKET] Disconnected from Socket.IO server');
           isConnecting = false;
         });
         
@@ -85,14 +83,12 @@ export const useSocket = (userId?: string) => {
     // Only join user room if not already joined and userId provided
     if (userId && !joinedUserRooms.has(userId)) {
       if (socket.connected) {
-        console.log(`👤 [SOCKET] Joining user room for userId: ${userId}`);
         socket.emit('join-user-room', userId);
         joinedUserRooms.add(userId);
       } else {
         // If not connected yet, wait for connection
         socket.once('connect', () => {
           if (!joinedUserRooms.has(userId)) {
-            console.log(`👤 [SOCKET] Joining user room after connection for userId: ${userId}`);
             socket.emit('join-user-room', userId);
             joinedUserRooms.add(userId);
           }
@@ -269,17 +265,14 @@ export const useSocket = (userId?: string) => {
   const onNewNotification = (callback: (data: any) => void) => {
     const socket = socketRef.current || globalSocket;
     
-    console.log('🎯 [SOCKET] onNewNotification called, socket exists:', !!socket, 'connected:', socket?.connected);
-    
     if (socket) {
       // Remove ONLY this component's listener if it exists
       if (notificationCallbackRef.current) {
         socket.off('new-notification', notificationCallbackRef.current);
       }
       
-      // Wrap callback with logging
+      // Wrap callback
       const wrappedCallback = (data: any) => {
-        console.log('📨 [SOCKET] new-notification event received:', data);
         callback(data);
       };
       
@@ -287,13 +280,10 @@ export const useSocket = (userId?: string) => {
       notificationCallbackRef.current = wrappedCallback;
       
       if (socket.connected) {
-        console.log('✅ [SOCKET] Adding new-notification listener (socket connected)');
         socket.on('new-notification', wrappedCallback);
       } else {
-        console.log('⏳ [SOCKET] Waiting for connection to add new-notification listener');
         // Wait for connection and then add listener
         socket.once('connect', () => {
-          console.log('✅ [SOCKET] Adding new-notification listener (after connect)');
           // Remove only this component's listener if it exists
           if (notificationCallbackRef.current) {
             socket.off('new-notification', notificationCallbackRef.current);
@@ -302,7 +292,6 @@ export const useSocket = (userId?: string) => {
         });
       }
     } else {
-      console.warn('⚠️ [SOCKET] No socket available, retrying in 500ms');
       // Retry after socket initialization
       setTimeout(() => {
         onNewNotification(callback);
@@ -405,7 +394,6 @@ export const initializeGlobalMessageListeners = (addNewMessage: (conversationId:
     const { message, conversationId } = data;
     
     if (!message || !conversationId) {
-      console.error('❌ [GLOBAL] Invalid message data received:', data);
       return;
     }
     

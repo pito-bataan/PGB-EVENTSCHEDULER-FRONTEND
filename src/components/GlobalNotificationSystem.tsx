@@ -11,12 +11,9 @@ let audioInitialized = false;
 
 // Initialize AudioContext on first user interaction
 const initializeAudioContext = async () => {
-  console.log('🔊 [AUDIO] Initializing AudioContext, current state:', globalAudioContext?.state);
-  
   if (!globalAudioContext) {
     try {
       globalAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-      console.log('✅ [AUDIO] AudioContext created, state:', globalAudioContext.state);
     } catch (error) {
       console.error('❌ [AUDIO] Failed to create AudioContext:', error);
       return false;
@@ -26,9 +23,7 @@ const initializeAudioContext = async () => {
   if (globalAudioContext) {
     if (globalAudioContext.state === 'suspended') {
       try {
-        console.log('🔄 [AUDIO] Attempting to resume suspended AudioContext...');
         await globalAudioContext.resume();
-        console.log('✅ [AUDIO] AudioContext resumed, new state:', globalAudioContext.state);
       } catch (error) {
         console.error('❌ [AUDIO] Failed to resume AudioContext:', error);
         return false;
@@ -37,7 +32,6 @@ const initializeAudioContext = async () => {
     
     // Check final state
     audioInitialized = globalAudioContext.state === 'running';
-    console.log('🔊 [AUDIO] Initialization complete, state:', globalAudioContext.state, 'ready:', audioInitialized);
     return audioInitialized;
   }
   
@@ -46,13 +40,9 @@ const initializeAudioContext = async () => {
 
 // Global notification sound function with fallback
 const playGlobalNotificationSound = async (title: string = 'New Event Notification', body: string = 'You have a new event update') => {
-  console.log('🔔 [AUDIO] Attempting to play notification sound...');
-  
   // ALWAYS try Web Notification API first if permission is granted (for desktop notifications)
   if ('Notification' in window && Notification.permission === 'granted') {
     try {
-      console.log('🔔 [AUDIO] Using Web Notification API for desktop notification + system sound');
-      console.log('🔔 [AUDIO] Title:', title, 'Body:', body);
       // Create a notification that triggers system sound AND shows desktop notification
       const notification = new Notification(title, {
         body: body,
@@ -63,20 +53,15 @@ const playGlobalNotificationSound = async (title: string = 'New Event Notificati
       });
       // Close it after 3 seconds
       setTimeout(() => notification.close(), 3000);
-      console.log('✅ [AUDIO] Desktop notification shown with system sound');
       return true;
     } catch (e) {
       console.error('❌ [AUDIO] Web Notification failed with error:', e);
-      console.log('ℹ️ [AUDIO] Trying AudioContext fallback...');
     }
-  } else {
-    console.log('⚠️ [AUDIO] Web Notification not available. Permission:', Notification?.permission);
   }
   
   // Fallback to AudioContext if Web Notification API is not available
   if (globalAudioContext && globalAudioContext.state === 'running') {
     try {
-      console.log('🎵 [AUDIO] Playing sound via AudioContext (fallback)');
       
       const oscillator = globalAudioContext.createOscillator();
       const gainNode = globalAudioContext.createGain();
@@ -95,7 +80,6 @@ const playGlobalNotificationSound = async (title: string = 'New Event Notificati
       oscillator.start(globalAudioContext.currentTime);
       oscillator.stop(globalAudioContext.currentTime + 0.4);
       
-      console.log('✅ [AUDIO] Sound played successfully via AudioContext');
       return true;
     } catch (error) {
       console.error('❌ [AUDIO] AudioContext playback failed:', error);
@@ -103,19 +87,15 @@ const playGlobalNotificationSound = async (title: string = 'New Event Notificati
     }
   } else {
     // AudioContext is suspended or not initialized - use HTML5 Audio immediately
-    console.log('⚠️ [AUDIO] AudioContext not running (state:', globalAudioContext?.state, '), using fallback');
     return await playFallbackSound();
   }
 };
 
 // Fallback sound using HTML5 Audio or Web Notification
 const playFallbackSound = async () => {
-  console.log('🔄 [AUDIO] Using fallback sound method');
-  
   // Try Web Notification API first (can play system sound without user interaction)
   if ('Notification' in window && Notification.permission === 'granted') {
     try {
-      console.log('🔔 [AUDIO] Using Web Notification API for system sound');
       // Create a silent notification that triggers system sound
       const notification = new Notification('', {
         body: '',
@@ -125,10 +105,8 @@ const playFallbackSound = async () => {
       });
       // Close it immediately so it doesn't show
       setTimeout(() => notification.close(), 1);
-      console.log('✅ [AUDIO] System notification sound played');
       return true;
     } catch (e) {
-      console.log('ℹ️ [AUDIO] Web Notification failed, trying HTML5 Audio');
     }
   }
   
@@ -140,12 +118,11 @@ const playFallbackSound = async () => {
     if (playPromise !== undefined) {
       await playPromise;
     }
-    console.log('✅ [AUDIO] HTML5 Audio played');
     return true;
   } catch (e: any) {
     // Browser autoplay policy blocks audio until user interaction
     if (e.name === 'NotAllowedError') {
-      console.log('ℹ️ [AUDIO] Audio blocked by browser. Click anywhere on the page, then sound will work for future notifications.');
+      // Audio blocked by browser
     } else {
       console.error('❌ [AUDIO] Fallback sound failed:', e);
     }
@@ -181,7 +158,6 @@ export default function GlobalNotificationSystem() {
           const user = JSON.parse(userData);
           const newUserId = user._id || user.id || 'unknown';
           if (newUserId !== userId) {
-            console.log('🔄 [NOTIFICATION] User data updated, new userId:', newUserId);
             setUserId(newUserId);
           }
         } catch (e) {
@@ -202,28 +178,16 @@ export default function GlobalNotificationSystem() {
     };
   }, [userId]);
   
-  console.log('🌐 [GLOBAL NOTIFICATION SYSTEM] Component mounted, userId:', userId);
-  
   // Get current user data for refs
   const currentUser = JSON.parse(localStorage.getItem('userData') || '{}');
   
   // Initialize Socket.IO for global notifications
   const { onNewNotification, offNewNotification } = useSocket(userId);
-  
-  console.log('🔌 [GLOBAL NOTIFICATION SYSTEM] useSocket returned, onNewNotification:', typeof onNewNotification);
 
   // Request notification permission immediately on mount (ONCE)
   useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default') {
-      console.log('🔔 [NOTIFICATION] Requesting notification permission...');
-      Notification.requestPermission().then(permission => {
-        console.log('🔔 [NOTIFICATION] Permission granted:', permission);
-        if (permission === 'granted') {
-          console.log('✅ [NOTIFICATION] Web notifications are now enabled!');
-        }
-      });
-    } else if ('Notification' in window && Notification.permission === 'granted') {
-      console.log('✅ [NOTIFICATION] Web notifications already enabled');
+      Notification.requestPermission();
     }
   }, []); // Empty deps - run only once on mount
 
@@ -234,7 +198,6 @@ export default function GlobalNotificationSystem() {
     const initAudioOnInteraction = async () => {
       if (initialized) return; // Prevent multiple initializations
       
-      console.log('👆 [AUDIO] User interaction detected, initializing audio...');
       const success = await initializeAudioContext();
       
       if (success) {
@@ -243,7 +206,6 @@ export default function GlobalNotificationSystem() {
         document.removeEventListener('click', initAudioOnInteraction);
         document.removeEventListener('keydown', initAudioOnInteraction);
         document.removeEventListener('touchstart', initAudioOnInteraction);
-        console.log('✅ [AUDIO] Audio initialized, listeners removed');
       }
     };
 
@@ -275,25 +237,15 @@ export default function GlobalNotificationSystem() {
   
   // Global real-time notification popup system
   useEffect(() => {
-    console.log('🔄 [NOTIFICATION] Setting up notification listener for userId:', userId);
-    console.log('🔄 [NOTIFICATION] onNewNotification type:', typeof onNewNotification, 'userId:', userId);
-    
     if (typeof onNewNotification !== 'function') {
-      console.warn('⚠️ [NOTIFICATION] onNewNotification is not a function');
       return;
     }
     
     if (userId === 'unknown') {
-      console.warn('⚠️ [NOTIFICATION] userId is unknown, skipping listener setup');
       return;
     }
     
-    console.log('✅ [NOTIFICATION] All checks passed, setting up listener now...');
-    
     const handleGlobalNewNotification = (notificationData: any) => {
-      console.log('🔔 [GLOBAL NOTIFICATION] Received:', notificationData);
-      console.log('🔔 [NOTIFICATION TYPE]:', notificationData.type || notificationData.notificationType);
-      console.log('🔔 [EVENT STATUS]:', notificationData.eventStatus || notificationData.status);
       const now = Date.now();
       
       // Create unique ID based on notification type and content
@@ -318,8 +270,6 @@ export default function GlobalNotificationSystem() {
         notificationId = `event-${eventId}-${timestamp}`;
       }
       
-      console.log('🆔 [NOTIFICATION ID]:', notificationId);
-      
       // Check if we've shown this EXACT notification recently (within 2 seconds)
       // Use ref to get current state
       const recentNotifications = Array.from(shownNotificationsRef.current).filter(id => {
@@ -329,7 +279,6 @@ export default function GlobalNotificationSystem() {
       });
       
       if (recentNotifications.includes(notificationId)) {
-        console.log('⏭️ [NOTIFICATION] Skipping duplicate (shown within 2s)');
         return;
       }
       
@@ -378,13 +327,8 @@ export default function GlobalNotificationSystem() {
       
       if (isEventStatusUpdate || isEventStatusUpdateFallback) {
         // Event status update (approved/rejected/cancelled by admin)
-        console.log('✅ [NOTIFICATION] Detected EVENT STATUS UPDATE!');
-        console.log('🔍 [NOTIFICATION] isEventStatusUpdate:', isEventStatusUpdate, 'isEventStatusUpdateFallback:', isEventStatusUpdateFallback);
-        
         const eventStatus = notificationData.eventStatus || notificationData.status || notificationData.newStatus || 'updated';
         const adminName = notificationData.adminName || notificationData.updatedBy || 'Admin';
-        
-        console.log('📊 [NOTIFICATION] Event Status:', eventStatus, 'Admin:', adminName);
         
         if (eventStatus === 'approved') {
           notificationTitle = "Event Approved! 🎉";
@@ -399,9 +343,6 @@ export default function GlobalNotificationSystem() {
           notificationTitle = "Event Status Updated";
           notificationMessage = `Your event "${eventTitle}" status changed to "${eventStatus}" by ${adminName}`;
         }
-        
-        console.log('📢 [NOTIFICATION] Title:', notificationTitle);
-        console.log('📢 [NOTIFICATION] Message:', notificationMessage);
       } else if (isStatusUpdate) {
         // Requirement status update
         notificationTitle = "Requirement Status Updated";

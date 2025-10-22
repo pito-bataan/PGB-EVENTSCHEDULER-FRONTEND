@@ -260,12 +260,8 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
 
   // Socket.IO listener for real-time requirement status updates
   useEffect(() => {
-    console.log('🔌 [SIDEBAR] Setting up Socket.IO listener, onStatusUpdate available:', typeof onStatusUpdate === 'function');
-    
     if (typeof onStatusUpdate === 'function' && permissions.taggedDepartments) {
       const handleStatusUpdate = (data: any) => {
-        console.log('🔔 [SIDEBAR] ✅✅✅ SOCKET.IO EVENT RECEIVED! ✅✅✅');
-        console.log('📦 Event data:', data);
         
         // Immediately refresh badge count (non-blocking)
         setTimeout(() => {
@@ -287,11 +283,10 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
                     return totalCount === 0 || confirmedCount < totalCount;
                   });
                   setTaggedDepartmentsCount(ongoingEvents.length);
-                  console.log('✅ [SIDEBAR] Badge updated:', ongoingEvents.length);
                 }
               })
               .catch(error => {
-                console.error('Failed to update badge:', error);
+                // Failed to update badge
               });
             }
           }
@@ -344,7 +339,6 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
     // Listen for custom events for immediate updates
     const handleUnreadUpdate = () => {
       updateUnreadCount();
-      // console.log('🔔 Sidebar: Immediate unread count update');
     };
 
     const handleMessageRead = () => {
