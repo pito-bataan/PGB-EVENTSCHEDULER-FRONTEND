@@ -704,6 +704,20 @@ const RequestEventPage: React.FC = () => {
       return;
     }
 
+    // Check if physical requirements have quantity specified
+    const physicalReqsWithoutQuantity = selectedReqs.filter(req => 
+      req.type === 'physical' && (!req.quantity || req.quantity === 0)
+    );
+    
+    if (physicalReqsWithoutQuantity.length > 0) {
+      const reqNames = physicalReqsWithoutQuantity.map(req => req.name).join(', ');
+      toast.error('Missing Quantity!', {
+        description: `Please specify quantity for: ${reqNames}`,
+        duration: 5000
+      });
+      return;
+    }
+
     // Check for quantity over-requests (considering conflicts)
     const overRequests = selectedReqs.filter(req => {
       if (req.type !== 'physical' || !req.quantity) return false;
@@ -2465,7 +2479,7 @@ const RequestEventPage: React.FC = () => {
                           }
                         >
                           {requirement.type === 'physical' ? (
-                            <span className="text-xs font-bold">#</span>
+                            <span className="text-xs font-bold">Qty</span>
                           ) : (
                             <StickyNote className="w-3 h-3" />
                           )}
