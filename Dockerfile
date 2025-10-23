@@ -1,17 +1,19 @@
-# Multi-stage build for production optimization
+# syntax=docker/dockerfile:1.4
+# Multi-stage build for production optimization with BuildKit caching
 FROM node:18-alpine AS builder
 
 # Set working directory
 WORKDIR /app
 
-# Copy package files
+# Copy package files first (for better layer caching)
 COPY package*.json ./
 
-# Install ALL dependencies (including devDependencies needed for build)
-# Use --legacy-peer-deps to handle React 19 peer dependency conflicts
-RUN npm install --legacy-peer-deps
+# Install dependencies with cache mount for faster rebuilds
+# Cache npm packages between builds to speed up deployments
+RUN --mount=type=cache,target=/root/.npm \
+    npm install --legacy-peer-deps
 
-# Copy source code
+# Copy source code (this layer changes most often, so it's last)
 COPY . .
 
 # Accept build arguments for environment variables
@@ -24,8 +26,9 @@ ENV VITE_API_URL=$VITE_API_URL
 ENV VITE_SOCKET_URL=$VITE_SOCKET_URL
 ENV VITE_NODE_ENV=$VITE_NODE_ENV
 
-# Build the application
-RUN npm run build
+# Build the application with cache mount for faster builds
+RUN --mount=type=cache,target=/app/node_modules/.vite \
+    npm run build
 
 # Production stage with Nginx
 FROM nginx:alpine

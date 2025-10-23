@@ -3,6 +3,8 @@ import { motion } from 'framer-motion';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
+import jsPDF from 'jspdf';
+import { format as formatDate } from 'date-fns';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -94,6 +96,7 @@ interface FormData {
   endTime: string;
   contactNumber: string;
   contactEmail: string;
+  eventType: 'simple' | 'complex';
 }
 
 interface Department {
@@ -131,13 +134,29 @@ const RequestEventPage: React.FC = () => {
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [selectedLocation, setSelectedLocation] = useState<string>('');
   const [showGovModal, setShowGovModal] = useState(false);
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [templateType, setTemplateType] = useState<'briefer' | 'program'>('briefer');
+  const [showPdfPreview, setShowPdfPreview] = useState(false);
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string>('');
+  const [brieferData, setBrieferData] = useState({
+    eventTitle: '',
+    proponentOffice: '',
+    dateTime: '',
+    venue: '',
+    objectives: '',
+    targetAudience: '',
+    expectedParticipants: '',
+    briefDescription: ''
+  });
+  const [programFlowRows, setProgramFlowRows] = useState([
+    { time: '', activity: '', personResponsible: '', remarks: '' }
+  ]);
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [reviewStep, setReviewStep] = useState(1);
   const [govFiles, setGovFiles] = useState<{
     [key: string]: File | null;
   }>({
     brieferTemplate: null,
-    availableForDL: null,
     programme: null
   });
   const [conflictingEvents, setConflictingEvents] = useState<any[]>([]);
@@ -166,7 +185,8 @@ const RequestEventPage: React.FC = () => {
     endDate: undefined,
     endTime: '',
     contactNumber: '',
-    contactEmail: ''
+    contactEmail: '',
+    eventType: 'simple'
   });
 
   const steps = [
@@ -276,6 +296,19 @@ const RequestEventPage: React.FC = () => {
 
   // Check if a date should be disabled (not available for the selected location)
   const isDateDisabled = (date: Date) => {
+    // First, check if date meets minimum lead time requirement (including weekends)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const daysRequired = formData.eventType === 'simple' ? 7 : 30;
+    const days = calculateWorkingDays(today, date);
+    
+    // Disable if doesn't meet minimum lead time
+    if (days < daysRequired) {
+      return true;
+    }
+    
+    // Then check location availability
     if (availableDates.length === 0) {
       return false; // If no available dates loaded yet, don't disable any dates
     }
@@ -1047,6 +1080,7 @@ const RequestEventPage: React.FC = () => {
       formDataToSubmit.append('withoutGov', formData.withoutGov.toString());
       formDataToSubmit.append('multipleLocations', formData.multipleLocations.toString());
       formDataToSubmit.append('description', formData.description || '');
+      formDataToSubmit.append('eventType', formData.eventType);
       
       // Schedule information - Use date-only format to avoid timezone issues
       const formatDateOnly = (date: Date | null | undefined) => {
@@ -1108,9 +1142,6 @@ const RequestEventPage: React.FC = () => {
       // Government files (if w/o gov is true)
       if (formData.withoutGov && govFiles.brieferTemplate) {
         formDataToSubmit.append('brieferTemplate', govFiles.brieferTemplate);
-      }
-      if (formData.withoutGov && govFiles.availableForDL) {
-        formDataToSubmit.append('availableForDL', govFiles.availableForDL);
       }
       if (formData.withoutGov && govFiles.programme) {
         formDataToSubmit.append('programme', govFiles.programme);
@@ -1320,6 +1351,31 @@ const RequestEventPage: React.FC = () => {
     }
   };
 
+  // Calculate calendar days between two dates (including weekends)
+  const calculateWorkingDays = (startDate: Date, endDate: Date): number => {
+    const diffTime = endDate.getTime() - startDate.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays;
+  };
+
+  // Validate minimum lead time based on event type
+  const validateLeadTime = (selectedDate: Date): { isValid: boolean; message: string } => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const daysRequired = formData.eventType === 'simple' ? 7 : 30;
+    const days = calculateWorkingDays(today, selectedDate);
+    
+    if (days < daysRequired) {
+      return {
+        isValid: false,
+        message: `${formData.eventType === 'simple' ? 'Simple' : 'Complex'} events require at least ${daysRequired} days lead time. You have ${days} days.`
+      };
+    }
+    
+    return { isValid: true, message: '' };
+  };
+
   // Validate contact details
   const validateContactDetails = () => {
     const errors = [];
@@ -1416,19 +1472,48 @@ const RequestEventPage: React.FC = () => {
       {/* Step 1: Event Details */}
       {currentStep === 1 && (
         <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: 20 }}
           className="grid grid-cols-1 lg:grid-cols-3 gap-6"
         >
           {/* Main Form */}
           <div className="lg:col-span-2">
             <Card>
               <CardHeader className="pb-4">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <FileText className="w-5 h-5 text-blue-600" />
-                  Event Information
-                </CardTitle>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <FileText className="w-5 h-5 text-blue-600" />
+                    Event Information
+                  </CardTitle>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-600">Event Type:</span>
+                    <div className="flex border rounded-lg overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={() => setFormData(prev => ({ ...prev, eventType: 'simple' }))}
+                        className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                          formData.eventType === 'simple'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-white text-gray-700 hover:bg-gray-50'
+                        }`}
+                      >
+                        Simple (7 days)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFormData(prev => ({ ...prev, eventType: 'complex' }))}
+                        className={`px-3 py-1.5 text-xs font-medium transition-colors border-l ${
+                          formData.eventType === 'complex'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-white text-gray-700 hover:bg-gray-50'
+                        }`}
+                      >
+                        Complex (30 days)
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 {/* Row 1: Title */}
@@ -1562,7 +1647,9 @@ const RequestEventPage: React.FC = () => {
                     />
                   </div>
                   <div>
-                    <Label htmlFor="withoutGov" className="text-sm font-medium">w/o gov</Label>
+                    <Label htmlFor="withoutGov" className="text-sm font-medium">
+                      {formData.withoutGov ? 'w/ gov' : 'w/o gov'}
+                    </Label>
                     <div className="mt-1 h-10 flex items-center border border-input rounded-md px-3 bg-background">
                       <Switch
                         id="withoutGov"
@@ -2855,41 +2942,107 @@ const RequestEventPage: React.FC = () => {
         </DialogContent>
       </Dialog>
 
-      {/* W/O Gov Files Modal */}
+      {/* W/O Gov Files Modal - Redesigned */}
       <Dialog open={showGovModal} onOpenChange={setShowGovModal}>
-        <DialogContent className="sm:max-w-4xl">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle className="text-lg">Government Files</DialogTitle>
-            <DialogDescription className="text-sm text-gray-500">
+            <DialogTitle>Government Files</DialogTitle>
+            <DialogDescription>
               Upload required files for events without government officials
             </DialogDescription>
           </DialogHeader>
           
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 py-4">
-            {/* Briefer Template */}
-            <div className="space-y-2">
-              <Label className="text-xs font-medium text-gray-700">Briefer Template</Label>
-              <div className="border-2 border-dashed border-gray-200 rounded-lg p-3 text-center hover:border-gray-300 transition-colors min-h-[120px] flex flex-col justify-center">
+          <div className="space-y-4 py-4">
+            {/* Event Briefer Section */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-medium">Event Briefer</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setTemplateType('briefer');
+                    
+                    // Auto-populate briefer data from form
+                    const userStr = localStorage.getItem('userData');
+                    let currentUserDept = '';
+                    
+                    if (userStr) {
+                      try {
+                        const currentUser = JSON.parse(userStr);
+                        currentUserDept = currentUser.department || currentUser.departmentName || '';
+                      } catch (e) {
+                        console.error('Error parsing user from localStorage:', e);
+                      }
+                    }
+                    
+                    // Format time to 12-hour format with AM/PM
+                    const formatTime12Hour = (time24: string) => {
+                      if (!time24) return '';
+                      const [hours, minutes] = time24.split(':');
+                      const hour = parseInt(hours);
+                      const ampm = hour >= 12 ? 'PM' : 'AM';
+                      const hour12 = hour % 12 || 12;
+                      return `${hour12}:${minutes} ${ampm}`;
+                    };
+                    
+                    const startDateTime = formData.startDate && formData.startTime 
+                      ? `${format(formData.startDate, 'MMMM dd, yyyy')} ${formatTime12Hour(formData.startTime)}` 
+                      : '';
+                    const endDateTime = formData.endDate && formData.endTime 
+                      ? `${format(formData.endDate, 'MMMM dd, yyyy')} ${formatTime12Hour(formData.endTime)}` 
+                      : '';
+                    const dateTimeRange = startDateTime && endDateTime 
+                      ? `${startDateTime} - ${endDateTime}` 
+                      : '';
+                    
+                    const totalParticipants = (
+                      parseInt(formData.participants || '0') + 
+                      parseInt(formData.vip || '0') + 
+                      parseInt(formData.vvip || '0')
+                    ).toString();
+                    
+                    setBrieferData({
+                      eventTitle: formData.eventTitle || '',
+                      proponentOffice: currentUserDept || '',
+                      dateTime: dateTimeRange,
+                      venue: formData.location || '',
+                      objectives: formData.description || '',
+                      targetAudience: '', // User fills this
+                      expectedParticipants: totalParticipants !== '0' ? totalParticipants : '',
+                      briefDescription: '' // User fills this
+                    });
+                    
+                    setShowTemplateModal(true);
+                  }}
+                  className="h-8 text-xs gap-1"
+                >
+                  <FileText className="w-3 h-3" />
+                  View Template
+                </Button>
+              </div>
+              <div className="border-2 border-dashed border-gray-200 rounded-lg p-4 hover:border-gray-300 transition-colors">
                 {govFiles.brieferTemplate ? (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-center">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
                       <Paperclip className="w-4 h-4 text-green-600" />
+                      <p className="text-sm font-medium text-gray-900">{govFiles.brieferTemplate.name}</p>
                     </div>
-                    <p className="text-xs font-medium text-gray-900 truncate">{govFiles.brieferTemplate.name}</p>
                     <Button
                       type="button"
                       variant="ghost"
                       size="sm"
                       onClick={() => handleGovFileUpload('brieferTemplate', null)}
-                      className="h-6 w-6 p-0 mx-auto"
+                      className="h-8 text-red-600 hover:text-red-700 hover:bg-red-50"
                     >
-                      <X className="w-3 h-3" />
+                      <X className="w-4 h-4" />
                     </Button>
                   </div>
                 ) : (
-                  <>
-                    <Upload className="w-6 h-6 text-gray-300 mx-auto mb-2" />
-                    <p className="text-xs text-gray-500 mb-2">Click to upload</p>
+                  <div className="text-center">
+                    <Upload className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                    <p className="text-sm text-gray-500 mb-3">Click to upload Event Briefer</p>
                     <input
                       type="file"
                       accept=".pdf,.doc,.docx"
@@ -2905,87 +3058,53 @@ const RequestEventPage: React.FC = () => {
                       variant="outline"
                       size="sm"
                       onClick={() => document.getElementById('brieferTemplate')?.click()}
-                      className="text-xs h-7"
                     >
                       Choose File
-                    </Button>
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* Available for DL Briefer */}
-            <div className="space-y-2">
-              <Label className="text-xs font-medium text-gray-700">Available for DL</Label>
-              <div className="border-2 border-dashed border-gray-200 rounded-lg p-3 text-center hover:border-gray-300 transition-colors min-h-[120px] flex flex-col justify-center">
-                {govFiles.availableForDL ? (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-center">
-                      <Paperclip className="w-4 h-4 text-green-600" />
-                    </div>
-                    <p className="text-xs font-medium text-gray-900 truncate">{govFiles.availableForDL.name}</p>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleGovFileUpload('availableForDL', null)}
-                      className="h-6 w-6 p-0 mx-auto"
-                    >
-                      <X className="w-3 h-3" />
                     </Button>
                   </div>
-                ) : (
-                  <>
-                    <Upload className="w-6 h-6 text-gray-300 mx-auto mb-2" />
-                    <p className="text-xs text-gray-500 mb-2">Click to upload</p>
-                    <input
-                      type="file"
-                      accept=".pdf,.doc,.docx"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) handleGovFileUpload('availableForDL', file);
-                      }}
-                      className="hidden"
-                      id="availableForDL"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => document.getElementById('availableForDL')?.click()}
-                      className="text-xs h-7"
-                    >
-                      Choose File
-                    </Button>
-                  </>
                 )}
               </div>
             </div>
 
-            {/* Programme */}
-            <div className="space-y-2">
-              <Label className="text-xs font-medium text-gray-700">Programme</Label>
-              <div className="border-2 border-dashed border-gray-200 rounded-lg p-3 text-center hover:border-gray-300 transition-colors min-h-[120px] flex flex-col justify-center">
+            {/* Program Flow Section */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-medium">Program Flow</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setTemplateType('program');
+                    setShowTemplateModal(true);
+                  }}
+                  className="h-8 text-xs gap-1"
+                >
+                  <FileText className="w-3 h-3" />
+                  View Template
+                </Button>
+              </div>
+              <div className="border-2 border-dashed border-gray-200 rounded-lg p-4 hover:border-gray-300 transition-colors">
                 {govFiles.programme ? (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-center">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
                       <Paperclip className="w-4 h-4 text-green-600" />
+                      <p className="text-sm font-medium text-gray-900">{govFiles.programme.name}</p>
                     </div>
-                    <p className="text-xs font-medium text-gray-900 truncate">{govFiles.programme.name}</p>
                     <Button
                       type="button"
                       variant="ghost"
                       size="sm"
                       onClick={() => handleGovFileUpload('programme', null)}
-                      className="h-6 w-6 p-0 mx-auto"
+                      className="h-8 text-red-600 hover:text-red-700 hover:bg-red-50"
                     >
-                      <X className="w-3 h-3" />
+                      <X className="w-4 h-4" />
                     </Button>
                   </div>
                 ) : (
-                  <>
-                    <Upload className="w-6 h-6 text-gray-300 mx-auto mb-2" />
-                    <p className="text-xs text-gray-500 mb-2">Click to upload</p>
+                  <div className="text-center">
+                    <Upload className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                    <p className="text-sm text-gray-500 mb-3">Click to upload Program Flow</p>
                     <input
                       type="file"
                       accept=".pdf,.doc,.docx"
@@ -3001,34 +3120,576 @@ const RequestEventPage: React.FC = () => {
                       variant="outline"
                       size="sm"
                       onClick={() => document.getElementById('programme')?.click()}
-                      className="text-xs h-7"
                     >
                       Choose File
                     </Button>
-                  </>
+                  </div>
                 )}
               </div>
             </div>
           </div>
 
-          <DialogFooter className="gap-2">
+          <DialogFooter>
             <Button 
               variant="outline" 
               onClick={() => {
                 setShowGovModal(false);
-                if (!govFiles.brieferTemplate && !govFiles.availableForDL && !govFiles.programme) {
+                if (!govFiles.brieferTemplate && !govFiles.programme) {
                   handleInputChange('withoutGov', false);
                 }
               }}
-              className="text-xs"
             >
               Cancel
             </Button>
             <Button 
               onClick={() => setShowGovModal(false)}
-              className="bg-blue-600 hover:bg-blue-700 text-xs"
+              className="bg-blue-600 hover:bg-blue-700"
             >
               Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Template Modal */}
+      <Dialog open={showTemplateModal} onOpenChange={setShowTemplateModal}>
+        <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {templateType === 'briefer' ? 'Event Briefer Template' : 'Program Flow Template'}
+            </DialogTitle>
+            <DialogDescription>
+              {templateType === 'briefer' ? 'Fill out the event briefer form' : 'Fill out the program flow'}
+            </DialogDescription>
+          </DialogHeader>
+          
+          {templateType === 'briefer' ? (
+            <div className="space-y-4 py-4">
+              {/* Event Briefer Form - Table Style */}
+              <div className="border rounded-lg overflow-hidden">
+                <table className="w-full">
+                  <tbody>
+                    {/* Event Title */}
+                    <tr className="border-b">
+                      <td className="bg-gray-50 p-3 font-medium text-sm w-1/3 border-r">
+                        Event Title:
+                      </td>
+                      <td className="p-2">
+                        <Input
+                          value={brieferData.eventTitle}
+                          onChange={(e) => setBrieferData(prev => ({ ...prev, eventTitle: e.target.value }))}
+                          placeholder="Enter event title"
+                          className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+                        />
+                      </td>
+                    </tr>
+                    
+                    {/* Proponent Office/Department */}
+                    <tr className="border-b">
+                      <td className="bg-gray-50 p-3 font-medium text-sm border-r">
+                        Proponent Office/Department:
+                      </td>
+                      <td className="p-2">
+                        <Input
+                          value={brieferData.proponentOffice}
+                          onChange={(e) => setBrieferData(prev => ({ ...prev, proponentOffice: e.target.value }))}
+                          placeholder="Enter office/department"
+                          className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+                        />
+                      </td>
+                    </tr>
+                    
+                    {/* Date and Time */}
+                    <tr className="border-b">
+                      <td className="bg-gray-50 p-3 font-medium text-sm border-r">
+                        Date and Time:
+                      </td>
+                      <td className="p-2">
+                        <Input
+                          value={brieferData.dateTime}
+                          onChange={(e) => setBrieferData(prev => ({ ...prev, dateTime: e.target.value }))}
+                          placeholder="Enter date and time"
+                          className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+                        />
+                      </td>
+                    </tr>
+                    
+                    {/* Venue */}
+                    <tr className="border-b">
+                      <td className="bg-gray-50 p-3 font-medium text-sm border-r">
+                        Venue:
+                      </td>
+                      <td className="p-2">
+                        <Input
+                          value={brieferData.venue}
+                          onChange={(e) => setBrieferData(prev => ({ ...prev, venue: e.target.value }))}
+                          placeholder="Enter venue"
+                          className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+                        />
+                      </td>
+                    </tr>
+                    
+                    {/* Objectives */}
+                    <tr className="border-b">
+                      <td className="bg-gray-50 p-3 font-medium text-sm border-r align-top">
+                        Objectives:
+                      </td>
+                      <td className="p-2">
+                        <Textarea
+                          value={brieferData.objectives}
+                          onChange={(e) => setBrieferData(prev => ({ ...prev, objectives: e.target.value }))}
+                          placeholder="Enter objectives"
+                          className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0 min-h-[80px]"
+                        />
+                      </td>
+                    </tr>
+                    
+                    {/* Target Audience/Participants */}
+                    <tr className="border-b">
+                      <td className="bg-gray-50 p-3 font-medium text-sm border-r">
+                        Target Audience/Participants:
+                      </td>
+                      <td className="p-2">
+                        <Input
+                          value={brieferData.targetAudience}
+                          onChange={(e) => setBrieferData(prev => ({ ...prev, targetAudience: e.target.value }))}
+                          placeholder="Enter target audience"
+                          className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+                        />
+                      </td>
+                    </tr>
+                    
+                    {/* Expected Number of Participants */}
+                    <tr className="border-b">
+                      <td className="bg-gray-50 p-3 font-medium text-sm border-r">
+                        Expected Number of Participants:
+                      </td>
+                      <td className="p-2">
+                        <Input
+                          value={brieferData.expectedParticipants}
+                          onChange={(e) => setBrieferData(prev => ({ ...prev, expectedParticipants: e.target.value }))}
+                          placeholder="Enter expected number"
+                          className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+                        />
+                      </td>
+                    </tr>
+                    
+                    {/* Brief Description of the Activity */}
+                    <tr>
+                      <td className="bg-gray-50 p-3 font-medium text-sm border-r align-top">
+                        Brief Description of the Activity:
+                      </td>
+                      <td className="p-2">
+                        <Textarea
+                          value={brieferData.briefDescription}
+                          onChange={(e) => setBrieferData(prev => ({ ...prev, briefDescription: e.target.value }))}
+                          placeholder="Enter brief description"
+                          className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0 min-h-[100px]"
+                        />
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4 py-4">
+              {/* Program Flow Table */}
+              <div className="border rounded-lg overflow-hidden">
+                <table className="w-full">
+                  <thead>
+                    <tr className="bg-gray-100 border-b">
+                      <th className="p-3 text-left text-sm font-medium border-r w-1/6">Time</th>
+                      <th className="p-3 text-left text-sm font-medium border-r w-2/6">Activity/Segment</th>
+                      <th className="p-3 text-left text-sm font-medium border-r w-1/6">Person Responsible</th>
+                      <th className="p-3 text-left text-sm font-medium w-1/6">Remarks</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {programFlowRows.map((row, index) => (
+                      <tr key={index} className="border-b">
+                        <td className="p-2 border-r">
+                          <Input
+                            value={row.time}
+                            onChange={(e) => {
+                              const newRows = [...programFlowRows];
+                              newRows[index].time = e.target.value;
+                              setProgramFlowRows(newRows);
+                            }}
+                            placeholder="e.g., 8:00 AM"
+                            className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+                          />
+                        </td>
+                        <td className="p-2 border-r">
+                          <Input
+                            value={row.activity}
+                            onChange={(e) => {
+                              const newRows = [...programFlowRows];
+                              newRows[index].activity = e.target.value;
+                              setProgramFlowRows(newRows);
+                            }}
+                            placeholder="Enter activity"
+                            className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+                          />
+                        </td>
+                        <td className="p-2 border-r">
+                          <Input
+                            value={row.personResponsible}
+                            onChange={(e) => {
+                              const newRows = [...programFlowRows];
+                              newRows[index].personResponsible = e.target.value;
+                              setProgramFlowRows(newRows);
+                            }}
+                            placeholder="Enter person"
+                            className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+                          />
+                        </td>
+                        <td className="p-2">
+                          <Input
+                            value={row.remarks}
+                            onChange={(e) => {
+                              const newRows = [...programFlowRows];
+                              newRows[index].remarks = e.target.value;
+                              setProgramFlowRows(newRows);
+                            }}
+                            placeholder="Enter remarks"
+                            className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              
+              {/* Add Row Button */}
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setProgramFlowRows([...programFlowRows, { time: '', activity: '', personResponsible: '', remarks: '' }]);
+                  }}
+                  className="gap-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Row
+                </Button>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2">
+            <Button 
+              variant="outline"
+              onClick={() => setShowTemplateModal(false)}
+            >
+              Close
+            </Button>
+            {(templateType === 'briefer' || templateType === 'program') && (
+              <Button 
+                onClick={async () => {
+                  try {
+                    // Create new PDF document
+                    const pdf = new jsPDF('p', 'mm', 'a4');
+                    const pageWidth = pdf.internal.pageSize.getWidth();
+                    const pageHeight = pdf.internal.pageSize.getHeight();
+                    const margin = 20;
+                    const bottomMargin = 20;
+                    let yPos = 10;
+                    let logoImg: HTMLImageElement | null = null;
+
+                    // Load logo
+                    try {
+                      logoImg = new Image();
+                      logoImg.crossOrigin = 'anonymous';
+                      
+                      await new Promise((resolve, reject) => {
+                        logoImg!.onload = resolve;
+                        logoImg!.onerror = reject;
+                        logoImg!.src = '/images/bataanlogo.png';
+                      });
+                    } catch (error) {
+                      console.warn('Could not load logo:', error);
+                    }
+
+                    // Function to add header with logo on each page
+                    const addPageHeader = () => {
+                      let headerY = 10;
+                      
+                      // Add logo if available
+                      if (logoImg) {
+                        const logoWidth = 15;
+                        const logoHeight = 15;
+                        const logoX = (pageWidth - logoWidth) / 2;
+                        pdf.addImage(logoImg, 'PNG', logoX, headerY, logoWidth, logoHeight);
+                        headerY += logoHeight + 5;
+                      } else {
+                        headerY += 2;
+                      }
+
+                      // Header text
+                      pdf.setFontSize(14);
+                      pdf.setFont('helvetica', 'bold');
+                      pdf.text('PROVINCIAL GOVERNMENT OF BATAAN', pageWidth / 2, headerY, { align: 'center' });
+                      
+                      headerY += 5;
+                      pdf.setFontSize(10);
+                      pdf.setFont('helvetica', 'normal');
+                      pdf.text('Event Management System', pageWidth / 2, headerY, { align: 'center' });
+                      
+                      headerY += 6;
+                      pdf.setFontSize(12);
+                      pdf.setFont('helvetica', 'bold');
+                      pdf.text(templateType === 'briefer' ? 'EVENT BRIEFER' : 'PROGRAM FLOW', pageWidth / 2, headerY, { align: 'center' });
+                      
+                      headerY += 8;
+                      pdf.setFontSize(9);
+                      pdf.setFont('helvetica', 'normal');
+                      pdf.text(`Generated on ${formatDate(new Date(), 'MMMM dd, yyyy')} at ${formatDate(new Date(), 'h:mm a')}`, pageWidth / 2, headerY, { align: 'center' });
+                      
+                      headerY += 10;
+                      return headerY;
+                    };
+
+                    // Function to check if we need a new page
+                    const checkAndAddNewPage = (requiredHeight: number) => {
+                      if (yPos + requiredHeight > pageHeight - bottomMargin) {
+                        pdf.addPage();
+                        yPos = addPageHeader();
+                        return true;
+                      }
+                      return false;
+                    };
+
+                    // Add header to first page
+                    yPos = addPageHeader();
+
+                    if (templateType === 'briefer') {
+                      // Event Briefer Table-style content with borders
+                      const fields = [
+                      { label: 'Event Title:', value: brieferData.eventTitle || 'N/A' },
+                      { label: 'Proponent Office/Department:', value: brieferData.proponentOffice || 'N/A' },
+                      { label: 'Date and Time:', value: brieferData.dateTime || 'N/A' },
+                      { label: 'Venue:', value: brieferData.venue || 'N/A' },
+                      { label: 'Objectives:', value: brieferData.objectives || 'N/A', multiline: true },
+                      { label: 'Target Audience/Participants:', value: brieferData.targetAudience || 'N/A' },
+                      { label: 'Expected Number of Participants:', value: brieferData.expectedParticipants || 'N/A' },
+                      { label: 'Brief Description of the Activity:', value: brieferData.briefDescription || 'N/A', multiline: true }
+                    ];
+
+                    const tableStartY = yPos;
+                    const labelColWidth = 60; // Width of label column
+                    const valueColWidth = pageWidth - 2 * margin - labelColWidth; // Width of value column
+                    const cellPadding = 3;
+
+                    // Set border style once
+                    pdf.setDrawColor(200, 200, 200); // Gray border
+                    pdf.setLineWidth(0.1);
+
+                    fields.forEach((field, index) => {
+                      // Calculate row height based on content
+                      pdf.setFontSize(9);
+                      const wrappedValue = pdf.splitTextToSize(field.value, valueColWidth - 2 * cellPadding);
+                      const rowHeight = Math.max(10, wrappedValue.length * 5 + 2 * cellPadding);
+                      
+                      // Check if we need a new page
+                      checkAndAddNewPage(rowHeight);
+                      
+                      // Draw label cell (left column with gray background)
+                      pdf.setFillColor(245, 245, 245); // Light gray background
+                      pdf.rect(margin, yPos, labelColWidth, rowHeight, 'F'); // Fill only
+                      
+                      // Draw value cell (right column)
+                      pdf.setFillColor(255, 255, 255); // White background
+                      pdf.rect(margin + labelColWidth, yPos, valueColWidth, rowHeight, 'F'); // Fill only
+                      
+                      // Draw borders (stroke only, no fill)
+                      pdf.rect(margin, yPos, labelColWidth, rowHeight, 'S'); // Label cell border
+                      pdf.rect(margin + labelColWidth, yPos, valueColWidth, rowHeight, 'S'); // Value cell border
+                      
+                      // Add label text
+                      pdf.setFontSize(9);
+                      pdf.setFont('helvetica', 'bold');
+                      pdf.setTextColor(0, 0, 0);
+                      const labelLines = pdf.splitTextToSize(field.label, labelColWidth - 2 * cellPadding);
+                      pdf.text(labelLines, margin + cellPadding, yPos + cellPadding + 3);
+                      
+                      // Add value text
+                      pdf.setFont('helvetica', 'normal');
+                      pdf.text(wrappedValue, margin + labelColWidth + cellPadding, yPos + cellPadding + 3);
+                      
+                      yPos += rowHeight;
+                    });
+                    } else {
+                      // Program Flow Table
+                      const colWidths = [30, 60, 40, 40]; // Time, Activity, Person, Remarks
+                      const cellPadding = 2;
+                      const rowHeight = 10;
+                      
+                      // Set border style
+                      pdf.setDrawColor(200, 200, 200);
+                      pdf.setLineWidth(0.1);
+                      
+                      // Draw header row
+                      const headers = ['Time', 'Activity/Segment', 'Person Responsible', 'Remarks'];
+                      let xPos = margin;
+                      
+                      pdf.setFontSize(9);
+                      pdf.setFont('helvetica', 'bold');
+                      
+                      headers.forEach((header, i) => {
+                        // Fill with gray background
+                        pdf.setFillColor(240, 240, 240);
+                        pdf.rect(xPos, yPos, colWidths[i], rowHeight, 'F');
+                        // Draw border
+                        pdf.rect(xPos, yPos, colWidths[i], rowHeight, 'S');
+                        // Add text
+                        pdf.text(header, xPos + cellPadding, yPos + 6);
+                        xPos += colWidths[i];
+                      });
+                      
+                      yPos += rowHeight;
+                      
+                      // Draw data rows
+                      pdf.setFont('helvetica', 'normal');
+                      pdf.setFontSize(8);
+                      
+                      programFlowRows.forEach((row) => {
+                        // Check if we need a new page
+                        const wasNewPage = checkAndAddNewPage(rowHeight);
+                        
+                        // If new page was added, redraw the header row
+                        if (wasNewPage) {
+                          let headerXPos = margin;
+                          pdf.setFontSize(9);
+                          pdf.setFont('helvetica', 'bold');
+                          
+                          headers.forEach((header, i) => {
+                            pdf.setFillColor(240, 240, 240);
+                            pdf.rect(headerXPos, yPos, colWidths[i], rowHeight, 'F');
+                            pdf.rect(headerXPos, yPos, colWidths[i], rowHeight, 'S');
+                            pdf.text(header, headerXPos + cellPadding, yPos + 6);
+                            headerXPos += colWidths[i];
+                          });
+                          
+                          yPos += rowHeight;
+                          pdf.setFont('helvetica', 'normal');
+                          pdf.setFontSize(8);
+                        }
+                        
+                        xPos = margin;
+                        
+                        // Time
+                        pdf.setFillColor(255, 255, 255);
+                        pdf.rect(xPos, yPos, colWidths[0], rowHeight, 'F');
+                        pdf.rect(xPos, yPos, colWidths[0], rowHeight, 'S');
+                        pdf.text(row.time || '', xPos + cellPadding, yPos + 6);
+                        xPos += colWidths[0];
+                        
+                        // Activity
+                        pdf.setFillColor(255, 255, 255);
+                        pdf.rect(xPos, yPos, colWidths[1], rowHeight, 'F');
+                        pdf.rect(xPos, yPos, colWidths[1], rowHeight, 'S');
+                        const activityText = pdf.splitTextToSize(row.activity || '', colWidths[1] - 2 * cellPadding);
+                        pdf.text(activityText[0] || '', xPos + cellPadding, yPos + 6);
+                        xPos += colWidths[1];
+                        
+                        // Person Responsible
+                        pdf.setFillColor(255, 255, 255);
+                        pdf.rect(xPos, yPos, colWidths[2], rowHeight, 'F');
+                        pdf.rect(xPos, yPos, colWidths[2], rowHeight, 'S');
+                        const personText = pdf.splitTextToSize(row.personResponsible || '', colWidths[2] - 2 * cellPadding);
+                        pdf.text(personText[0] || '', xPos + cellPadding, yPos + 6);
+                        xPos += colWidths[2];
+                        
+                        // Remarks
+                        pdf.setFillColor(255, 255, 255);
+                        pdf.rect(xPos, yPos, colWidths[3], rowHeight, 'F');
+                        pdf.rect(xPos, yPos, colWidths[3], rowHeight, 'S');
+                        const remarksText = pdf.splitTextToSize(row.remarks || '', colWidths[3] - 2 * cellPadding);
+                        pdf.text(remarksText[0] || '', xPos + cellPadding, yPos + 6);
+                        
+                        yPos += rowHeight;
+                      });
+                    }
+
+                    // Create blob URL for PDF preview
+                    const pdfBlob = pdf.output('blob');
+                    const pdfUrl = URL.createObjectURL(pdfBlob);
+                    setPdfPreviewUrl(pdfUrl);
+                    setShowPdfPreview(true);
+                    
+                  } catch (error) {
+                    console.error('Error generating PDF preview:', error);
+                    toast.error('Failed to generate PDF preview');
+                  }
+                }}
+                className="bg-blue-600 hover:bg-blue-700 gap-2"
+              >
+                <FileText className="w-4 h-4" />
+                Preview PDF
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* PDF Preview Modal */}
+      <Dialog open={showPdfPreview} onOpenChange={setShowPdfPreview}>
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="w-5 h-5" />
+              PDF Preview - Event Briefer
+            </DialogTitle>
+            <DialogDescription>
+              This is exactly how your PDF will look when downloaded
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="flex-1 overflow-hidden bg-gray-100 rounded-lg">
+            {pdfPreviewUrl ? (
+              <iframe
+                src={pdfPreviewUrl}
+                className="w-full h-full border-0"
+                style={{ minHeight: '600px' }}
+                title="PDF Preview"
+              />
+            ) : (
+              <div className="flex items-center justify-center h-64">
+                <div className="text-center">
+                  <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" />
+                  <p>Generating PDF preview...</p>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowPdfPreview(false)}>
+              Close Preview
+            </Button>
+            <Button 
+              onClick={() => {
+                if (!pdfPreviewUrl) {
+                  toast.error('No PDF preview available');
+                  return;
+                }
+                
+                // Download the PDF
+                const link = document.createElement('a');
+                link.href = pdfPreviewUrl;
+                const fileName = templateType === 'briefer' ? 'Event-Briefer' : 'Program-Flow';
+                link.download = `${fileName}-${formatDate(new Date(), 'yyyy-MM-dd')}.pdf`;
+                link.click();
+                toast.success('PDF downloaded successfully!');
+              }}
+              className="gap-2"
+            >
+              <FileText className="w-4 h-4" />
+              Download PDF
             </Button>
           </DialogFooter>
         </DialogContent>

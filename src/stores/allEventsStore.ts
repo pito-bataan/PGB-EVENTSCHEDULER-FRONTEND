@@ -16,6 +16,7 @@ export interface Event {
   withoutGov?: boolean;
   multipleLocations?: boolean;
   description?: string;
+  eventType?: 'simple' | 'complex';
   startDate: string;
   startTime: string;
   endDate: string;

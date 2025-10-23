@@ -176,9 +176,6 @@ export const useDashboardStore = create<DashboardState>()(
             const upcomingNotifications = allUpcoming
               .filter((event: Event) => {
                 const daysUntil = Math.ceil((new Date(event.startDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
-                const isUpcoming = daysUntil >= 0 && daysUntil <= 7;
-                
-                if (!isUpcoming) return false;
                 
                 // Show notifications for:
                 // 1. Events created by the current user
@@ -187,6 +184,12 @@ export const useDashboardStore = create<DashboardState>()(
                 const isUserEvent = userName && event.requestor === userName;
                 const isTaggedForUserDepartment = userDepartment && event.taggedDepartments?.includes(userDepartment);
                 const isUserEventById = event.createdBy === userId;
+                
+                // For user's own events: show only if coming in 7 days
+                // For tagged events: show if coming in 30 days (because they might be complex events)
+                const isUpcoming = isTaggedForUserDepartment ? (daysUntil >= 0 && daysUntil <= 30) : (daysUntil >= 0 && daysUntil <= 7);
+                
+                if (!isUpcoming) return false;
                 const isFromSameDepartment = userDepartment && event.requestorDepartment === userDepartment;
                 
                 // CRITICAL: For tagged events, ONLY show if event is APPROVED

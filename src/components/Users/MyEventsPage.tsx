@@ -83,12 +83,6 @@ interface Event {
       mimetype: string;
       size: number;
     };
-    availableForDL?: {
-      filename: string;
-      originalName: string;
-      mimetype: string;
-      size: number;
-    };
     programme?: {
       filename: string;
       originalName: string;
@@ -180,7 +174,6 @@ const MyEventsPage: React.FC = () => {
   // File upload state for edit details modal
   const [editAttachments, setEditAttachments] = useState<File[]>([]);
   const [editBrieferTemplate, setEditBrieferTemplate] = useState<File[]>([]);
-  const [editAvailableForDL, setEditAvailableForDL] = useState<File[]>([]);
   const [editProgramme, setEditProgramme] = useState<File[]>([]);
   
   // Change Department Modal State
@@ -945,7 +938,6 @@ const MyEventsPage: React.FC = () => {
     // Reset file upload states
     setEditAttachments([]);
     setEditBrieferTemplate([]);
-    setEditAvailableForDL([]);
     setEditProgramme([]);
     setShowEditDetailsModal(true);
   };
@@ -1009,11 +1001,6 @@ const MyEventsPage: React.FC = () => {
           formData.append('brieferTemplate', file);
         });
       }
-      if (editAvailableForDL.length > 0) {
-        editAvailableForDL.forEach((file) => {
-          formData.append('availableForDL', file);
-        });
-      }
       if (editProgramme.length > 0) {
         editProgramme.forEach((file) => {
           formData.append('programme', file);
@@ -1038,7 +1025,6 @@ const MyEventsPage: React.FC = () => {
         // Reset file states
         setEditAttachments([]);
         setEditBrieferTemplate([]);
-        setEditAvailableForDL([]);
         setEditProgramme([]);
         fetchMyEvents(); // Refresh the events list
       } else {
@@ -2475,7 +2461,6 @@ const MyEventsPage: React.FC = () => {
               {/* Government Files */}
               {selectedEventFiles.govFiles && (
                 selectedEventFiles.govFiles.brieferTemplate || 
-                selectedEventFiles.govFiles.availableForDL || 
                 selectedEventFiles.govFiles.programme
               ) && (
                 <div>
@@ -2496,7 +2481,7 @@ const MyEventsPage: React.FC = () => {
                             <p className="text-xs text-gray-500">
                               {formatMimeType(selectedEventFiles.govFiles.brieferTemplate.mimetype)} • {(selectedEventFiles.govFiles.brieferTemplate.size / 1024).toFixed(1)} KB
                             </p>
-                            <p className="text-xs text-green-600 font-medium">Briefer Template</p>
+                            <p className="text-xs text-green-600 font-medium">Event Briefer</p>
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
@@ -2554,48 +2539,6 @@ const MyEventsPage: React.FC = () => {
                       </div>
                     )}
 
-                    {/* Available for DL */}
-                    {selectedEventFiles.govFiles.availableForDL && (
-                      <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg border border-green-200">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                            <FileText className="w-5 h-5 text-green-600" />
-                          </div>
-                          <div>
-                            <p className="text-sm font-medium text-gray-900" title={selectedEventFiles.govFiles.availableForDL.originalName}>{formatFileName(selectedEventFiles.govFiles.availableForDL.originalName)}</p>
-                            <p className="text-xs text-gray-500">
-                              {formatMimeType(selectedEventFiles.govFiles.availableForDL.mimetype)} • {(selectedEventFiles.govFiles.availableForDL.size / 1024).toFixed(1)} KB
-                            </p>
-                            <p className="text-xs text-green-600 font-medium">Available for DL</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              window.open(`${API_BASE_URL}/events/govfile/${selectedEventFiles.govFiles!.availableForDL!.filename}`, '_blank');
-                            }}
-                            className="gap-1"
-                          >
-                            <Eye className="w-3 h-3" />
-                            View
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              window.open(`${API_BASE_URL}/events/govfile/${selectedEventFiles.govFiles!.availableForDL!.filename}?download=true`, '_blank');
-                            }}
-                            className="gap-1"
-                          >
-                            <Download className="w-3 h-3" />
-                            Download
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-
                     {/* Programme */}
                     {selectedEventFiles.govFiles.programme && (
                       <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg border border-green-200">
@@ -2608,7 +2551,7 @@ const MyEventsPage: React.FC = () => {
                             <p className="text-xs text-gray-500">
                               {formatMimeType(selectedEventFiles.govFiles.programme.mimetype)} • {(selectedEventFiles.govFiles.programme.size / 1024).toFixed(1)} KB
                             </p>
-                            <p className="text-xs text-green-600 font-medium">Programme</p>
+                            <p className="text-xs text-green-600 font-medium">Program Flow</p>
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
@@ -2645,7 +2588,6 @@ const MyEventsPage: React.FC = () => {
               {(!selectedEventFiles.attachments || selectedEventFiles.attachments.length === 0) && 
                (!selectedEventFiles.govFiles || 
                 (!selectedEventFiles.govFiles.brieferTemplate && 
-                 !selectedEventFiles.govFiles.availableForDL && 
                  !selectedEventFiles.govFiles.programme)) && (
                 <div className="text-center py-8">
                   <Paperclip className="w-12 h-12 text-gray-400 mx-auto mb-4" />
@@ -3621,21 +3563,14 @@ const MyEventsPage: React.FC = () => {
                             {selectedEditEvent.govFiles.brieferTemplate && (
                               <div className="flex items-center gap-2 text-xs text-gray-600 bg-white px-2 py-1 rounded">
                                 <FileText className="w-3 h-3" />
-                                <span className="flex-1 truncate">Briefer Template: {selectedEditEvent.govFiles.brieferTemplate.originalName}</span>
+                                <span className="flex-1 truncate">Event Briefer: {selectedEditEvent.govFiles.brieferTemplate.originalName}</span>
                                 <span className="text-gray-400">{(selectedEditEvent.govFiles.brieferTemplate.size / 1024).toFixed(1)} KB</span>
-                              </div>
-                            )}
-                            {selectedEditEvent.govFiles.availableForDL && (
-                              <div className="flex items-center gap-2 text-xs text-gray-600 bg-white px-2 py-1 rounded">
-                                <FileText className="w-3 h-3" />
-                                <span className="flex-1 truncate">Available for DL: {selectedEditEvent.govFiles.availableForDL.originalName}</span>
-                                <span className="text-gray-400">{(selectedEditEvent.govFiles.availableForDL.size / 1024).toFixed(1)} KB</span>
                               </div>
                             )}
                             {selectedEditEvent.govFiles.programme && (
                               <div className="flex items-center gap-2 text-xs text-gray-600 bg-white px-2 py-1 rounded">
                                 <FileText className="w-3 h-3" />
-                                <span className="flex-1 truncate">Programme: {selectedEditEvent.govFiles.programme.originalName}</span>
+                                <span className="flex-1 truncate">Program Flow: {selectedEditEvent.govFiles.programme.originalName}</span>
                                 <span className="text-gray-400">{(selectedEditEvent.govFiles.programme.size / 1024).toFixed(1)} KB</span>
                               </div>
                             )}
@@ -3702,7 +3637,7 @@ const MyEventsPage: React.FC = () => {
                     
                     <div>
                       <Label htmlFor="edit-briefer" className="text-sm">
-                        Briefer Template (Multiple files allowed)
+                        Event Briefer (Multiple files allowed)
                       </Label>
                       <Input
                         id="edit-briefer"
@@ -3741,48 +3676,8 @@ const MyEventsPage: React.FC = () => {
                     </div>
 
                     <div>
-                      <Label htmlFor="edit-available-dl" className="text-sm">
-                        Available for DL (Multiple files allowed)
-                      </Label>
-                      <Input
-                        id="edit-available-dl"
-                        type="file"
-                        multiple
-                        onChange={(e) => {
-                          const files = e.target.files;
-                          if (files) {
-                            setEditAvailableForDL(prev => [...prev, ...Array.from(files)]);
-                          }
-                        }}
-                        className="mt-2"
-                      />
-                      {editAvailableForDL && editAvailableForDL.length > 0 && (
-                        <div className="mt-2 space-y-1">
-                          <p className="text-xs text-green-600 flex items-center gap-1">
-                            <CheckCircle className="w-3 h-3" />
-                            {editAvailableForDL.length} file(s) selected
-                          </p>
-                          <div className="flex flex-wrap gap-1">
-                            {editAvailableForDL.map((file, idx) => (
-                              <span key={idx} className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded flex items-center gap-1">
-                                {file.name}
-                                <button
-                                  type="button"
-                                  onClick={() => setEditAvailableForDL(prev => prev.filter((_, i) => i !== idx))}
-                                  className="hover:text-red-600"
-                                >
-                                  ×
-                                </button>
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    <div>
                       <Label htmlFor="edit-programme" className="text-sm">
-                        Programme (Multiple files allowed)
+                        Program Flow (Multiple files allowed)
                       </Label>
                       <Input
                         id="edit-programme"
@@ -3834,7 +3729,6 @@ const MyEventsPage: React.FC = () => {
                 // Reset file states
                 setEditAttachments([]);
                 setEditBrieferTemplate([]);
-                setEditAvailableForDL([]);
                 setEditProgramme([]);
               }}
             >
