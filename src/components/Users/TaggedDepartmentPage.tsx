@@ -74,6 +74,7 @@ interface Requirement {
   departmentNotes?: string;
   lastUpdated?: string;
   declineReason?: string;
+  requirementsStatus?: 'on-hold' | 'released'; // Track if requirements are on-hold or released
 }
 
 interface Event {
@@ -156,8 +157,8 @@ const TaggedDepartmentPage: React.FC = () => {
   } = useTaggedDepartmentsStore();
 
   useEffect(() => {
-    // Fetch tagged events using Zustand store (force refresh to get latest availability)
-    fetchTaggedEvents(true);
+    // Fetch tagged events using Zustand store (respects 30s cache)
+    fetchTaggedEvents(false);
     
     // Set up Socket.IO listener for real-time updates (NO POLLING!)
     if (typeof onNewNotification === 'function') {

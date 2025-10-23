@@ -1084,11 +1084,16 @@ const RequestEventPage: React.FC = () => {
       formDataToSubmit.append('taggedDepartments', JSON.stringify(formData.taggedDepartments));
       
       // Filter to only include SELECTED requirements for each department
+      // Add requirementsStatus: 'on-hold' to all requirements (will be released when admin approves)
       const selectedRequirementsOnly: DepartmentRequirements = {};
       Object.keys(formData.departmentRequirements).forEach(deptName => {
         const selectedReqs = formData.departmentRequirements[deptName]?.filter(req => req.selected) || [];
         if (selectedReqs.length > 0) {
-          selectedRequirementsOnly[deptName] = selectedReqs;
+          // Add 'on-hold' status to each requirement
+          selectedRequirementsOnly[deptName] = selectedReqs.map(req => ({
+            ...req,
+            requirementsStatus: 'on-hold' // Requirements are on-hold until admin approves the event
+          }));
         }
       });
       

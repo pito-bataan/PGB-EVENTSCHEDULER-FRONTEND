@@ -28,6 +28,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Label } from '@/components/ui/label';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Calendar as CalendarIcon,
   Clock,
@@ -162,6 +163,25 @@ const MyEventsPage: React.FC = () => {
     quantity: 0,
     notes: ''
   });
+  
+  // Edit Event Details Modal State (for on-hold events)
+  const [showEditDetailsModal, setShowEditDetailsModal] = useState(false);
+  const [editDetailsData, setEditDetailsData] = useState({
+    eventTitle: '',
+    requestor: '',
+    participants: 0,
+    vip: 0,
+    vvip: 0,
+    contactNumber: '',
+    contactEmail: '',
+    description: ''
+  });
+  
+  // File upload state for edit details modal
+  const [editAttachments, setEditAttachments] = useState<File[]>([]);
+  const [editBrieferTemplate, setEditBrieferTemplate] = useState<File[]>([]);
+  const [editAvailableForDL, setEditAvailableForDL] = useState<File[]>([]);
+  const [editProgramme, setEditProgramme] = useState<File[]>([]);
   
   // Change Department Modal State
   const [showChangeDepartmentModal, setShowChangeDepartmentModal] = useState(false);
@@ -909,7 +929,128 @@ const MyEventsPage: React.FC = () => {
     setShowEditModal(true);
   };
 
-  // Handle edit requirement
+  // Handle edit event details (for on-hold/submitted events)
+  const handleEditEventDetails = (event: Event) => {
+    setSelectedEditEvent(event);
+    setEditDetailsData({
+      eventTitle: event.eventTitle,
+      requestor: event.requestor,
+      participants: event.participants,
+      vip: event.vip || 0,
+      vvip: event.vvip || 0,
+      contactNumber: event.contactNumber,
+      contactEmail: event.contactEmail,
+      description: event.description || ''
+    });
+    // Reset file upload states
+    setEditAttachments([]);
+    setEditBrieferTemplate([]);
+    setEditAvailableForDL([]);
+    setEditProgramme([]);
+    setShowEditDetailsModal(true);
+  };
+
+  // Handle save edited event details
+  const handleSaveEditedDetails = async () => {
+    if (!selectedEditEvent) return;
+
+    // Basic validation
+    if (!editDetailsData.eventTitle.trim()) {
+      toast.error('Event title is required');
+      return;
+    }
+    if (!editDetailsData.requestor.trim()) {
+      toast.error('Requestor name is required');
+      return;
+    }
+    if (editDetailsData.participants < 1) {
+      toast.error('Number of participants must be at least 1');
+      return;
+    }
+    if (!editDetailsData.contactNumber.trim()) {
+      toast.error('Contact number is required');
+      return;
+    }
+    if (editDetailsData.contactNumber.length !== 11) {
+      toast.error('Contact number must be exactly 11 digits');
+      return;
+    }
+    if (!/^\d+$/.test(editDetailsData.contactNumber)) {
+      toast.error('Contact number must contain only numbers');
+      return;
+    }
+    if (!editDetailsData.contactEmail.trim()) {
+      toast.error('Contact email is required');
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('authToken');
+      
+      // Create FormData for file uploads
+      const formData = new FormData();
+      formData.append('eventTitle', editDetailsData.eventTitle);
+      formData.append('requestor', editDetailsData.requestor);
+      formData.append('participants', editDetailsData.participants.toString());
+      formData.append('vip', editDetailsData.vip.toString());
+      formData.append('vvip', editDetailsData.vvip.toString());
+      formData.append('contactNumber', editDetailsData.contactNumber);
+      formData.append('contactEmail', editDetailsData.contactEmail);
+      formData.append('description', editDetailsData.description);
+      
+      // Add attachments
+      editAttachments.forEach((file) => {
+        formData.append('attachments', file);
+      });
+      
+      // Add government files
+      if (editBrieferTemplate.length > 0) {
+        editBrieferTemplate.forEach((file) => {
+          formData.append('brieferTemplate', file);
+        });
+      }
+      if (editAvailableForDL.length > 0) {
+        editAvailableForDL.forEach((file) => {
+          formData.append('availableForDL', file);
+        });
+      }
+      if (editProgramme.length > 0) {
+        editProgramme.forEach((file) => {
+          formData.append('programme', file);
+        });
+      }
+      
+      const response = await axios.patch(
+        `${API_BASE_URL}/events/${selectedEditEvent._id}/details`,
+        formData,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'multipart/form-data'
+          }
+        }
+      );
+
+      if (response.data.success) {
+        toast.success('Event details updated successfully');
+        setShowEditDetailsModal(false);
+        setSelectedEditEvent(null);
+        // Reset file states
+        setEditAttachments([]);
+        setEditBrieferTemplate([]);
+        setEditAvailableForDL([]);
+        setEditProgramme([]);
+        fetchMyEvents(); // Refresh the events list
+      } else {
+        toast.error('Failed to update event details');
+      }
+    } catch (error: any) {
+      console.error('Error updating event details:', error);
+      toast.error(error.response?.data?.message || 'Failed to update event details');
+    }
+  };
+
+  // Open edit requirement modal
   const handleEditRequirement = (requirement: any, eventId: string, department: string) => {
     setEditingRequirement({ ...requirement, eventId, department });
     setEditRequirementData({
@@ -1674,6 +1815,17 @@ const MyEventsPage: React.FC = () => {
                               <Edit className="w-3 h-3" />
                               Edit Schedule
                             </Button>
+                            {event.status === 'submitted' && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleEditEventDetails(event)}
+                                className="gap-1 h-7 px-2 text-xs bg-blue-50 hover:bg-blue-100"
+                              >
+                                <Edit className="w-3 h-3" />
+                                Edit Details
+                              </Button>
+                            )}
                             {(event.status === 'draft' || event.status === 'rejected') && (
                               <Button
                                 variant="outline"
@@ -3314,6 +3466,382 @@ const MyEventsPage: React.FC = () => {
               disabled={departmentRequirements.filter(r => r.selected).length === 0}
             >
               Add Department
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Event Details Modal */}
+      <Dialog open={showEditDetailsModal} onOpenChange={setShowEditDetailsModal}>
+        <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Edit className="w-5 h-5 text-blue-600" />
+              Edit Event Details
+            </DialogTitle>
+            <DialogDescription>
+              Update event information (for submitted events only)
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedEditEvent && (
+            <Tabs defaultValue="details" className="w-full">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="details">Event Details</TabsTrigger>
+                <TabsTrigger value="files">File Uploads</TabsTrigger>
+              </TabsList>
+
+              {/* Event Details Tab */}
+              <TabsContent value="details" className="space-y-4 mt-4">
+                <div>
+                  <Label htmlFor="edit-title">Event Title</Label>
+                  <Input
+                    id="edit-title"
+                    value={editDetailsData.eventTitle}
+                    onChange={(e) => setEditDetailsData({ ...editDetailsData, eventTitle: e.target.value })}
+                    placeholder="Enter event title"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="edit-requestor">Requestor</Label>
+                  <Input
+                    id="edit-requestor"
+                    value={editDetailsData.requestor}
+                    onChange={(e) => setEditDetailsData({ ...editDetailsData, requestor: e.target.value })}
+                    placeholder="Enter requestor name"
+                  />
+                </div>
+
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <Label htmlFor="edit-participants">Participants</Label>
+                    <Input
+                      id="edit-participants"
+                      type="number"
+                      min="0"
+                      value={editDetailsData.participants}
+                      onChange={(e) => setEditDetailsData({ ...editDetailsData, participants: parseInt(e.target.value) || 0 })}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="edit-vip">VIP</Label>
+                    <Input
+                      id="edit-vip"
+                      type="number"
+                      min="0"
+                      value={editDetailsData.vip}
+                      onChange={(e) => setEditDetailsData({ ...editDetailsData, vip: parseInt(e.target.value) || 0 })}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="edit-vvip">VVIP</Label>
+                    <Input
+                      id="edit-vvip"
+                      type="number"
+                      min="0"
+                      value={editDetailsData.vvip}
+                      onChange={(e) => setEditDetailsData({ ...editDetailsData, vvip: parseInt(e.target.value) || 0 })}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <Label htmlFor="edit-contact-number">Contact Number (11 digits)</Label>
+                  <Input
+                    id="edit-contact-number"
+                    type="tel"
+                    value={editDetailsData.contactNumber}
+                    onChange={(e) => {
+                      const value = e.target.value.replace(/\D/g, ''); // Remove non-digits
+                      if (value.length <= 11) {
+                        setEditDetailsData({ ...editDetailsData, contactNumber: value });
+                      }
+                    }}
+                    placeholder="09123456789"
+                    maxLength={11}
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="edit-contact-email">Contact Email</Label>
+                  <Input
+                    id="edit-contact-email"
+                    type="email"
+                    value={editDetailsData.contactEmail}
+                    onChange={(e) => setEditDetailsData({ ...editDetailsData, contactEmail: e.target.value })}
+                    placeholder="Enter contact email"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="edit-description">Description</Label>
+                  <Textarea
+                    id="edit-description"
+                    value={editDetailsData.description}
+                    onChange={(e) => setEditDetailsData({ ...editDetailsData, description: e.target.value })}
+                    placeholder="Enter event description"
+                    rows={4}
+                  />
+                </div>
+              </TabsContent>
+
+              {/* File Uploads Tab */}
+              <TabsContent value="files" className="space-y-4 mt-4">
+                <div className="space-y-4">
+                  {/* Existing Files Section */}
+                  {selectedEditEvent && ((selectedEditEvent.attachments && selectedEditEvent.attachments.length > 0) || selectedEditEvent.govFiles) && (
+                    <div className="bg-gray-50 p-4 rounded-lg space-y-3">
+                      <h3 className="font-semibold text-sm flex items-center gap-2 text-gray-700">
+                        <FileText className="w-4 h-4" />
+                        Currently Uploaded Files
+                      </h3>
+
+                      {/* Existing Attachments */}
+                      {selectedEditEvent.attachments && selectedEditEvent.attachments.length > 0 && (
+                        <div>
+                          <p className="text-xs font-medium text-gray-600 mb-2">Attachments ({selectedEditEvent.attachments.length})</p>
+                          <div className="space-y-1">
+                            {selectedEditEvent.attachments.map((file: any, index: number) => (
+                              <div key={index} className="flex items-center gap-2 text-xs text-gray-600 bg-white px-2 py-1 rounded">
+                                <Paperclip className="w-3 h-3" />
+                                <span className="flex-1 truncate">{file.originalName}</span>
+                                <span className="text-gray-400">{(file.size / 1024).toFixed(1)} KB</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Existing Government Files */}
+                      {selectedEditEvent.govFiles && (
+                        <div>
+                          <p className="text-xs font-medium text-gray-600 mb-2">Government Files</p>
+                          <div className="space-y-1">
+                            {selectedEditEvent.govFiles.brieferTemplate && (
+                              <div className="flex items-center gap-2 text-xs text-gray-600 bg-white px-2 py-1 rounded">
+                                <FileText className="w-3 h-3" />
+                                <span className="flex-1 truncate">Briefer Template: {selectedEditEvent.govFiles.brieferTemplate.originalName}</span>
+                                <span className="text-gray-400">{(selectedEditEvent.govFiles.brieferTemplate.size / 1024).toFixed(1)} KB</span>
+                              </div>
+                            )}
+                            {selectedEditEvent.govFiles.availableForDL && (
+                              <div className="flex items-center gap-2 text-xs text-gray-600 bg-white px-2 py-1 rounded">
+                                <FileText className="w-3 h-3" />
+                                <span className="flex-1 truncate">Available for DL: {selectedEditEvent.govFiles.availableForDL.originalName}</span>
+                                <span className="text-gray-400">{(selectedEditEvent.govFiles.availableForDL.size / 1024).toFixed(1)} KB</span>
+                              </div>
+                            )}
+                            {selectedEditEvent.govFiles.programme && (
+                              <div className="flex items-center gap-2 text-xs text-gray-600 bg-white px-2 py-1 rounded">
+                                <FileText className="w-3 h-3" />
+                                <span className="flex-1 truncate">Programme: {selectedEditEvent.govFiles.programme.originalName}</span>
+                                <span className="text-gray-400">{(selectedEditEvent.govFiles.programme.size / 1024).toFixed(1)} KB</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-2 pb-2 border-b">
+                    <Paperclip className="w-4 h-4 text-blue-600" />
+                    <h3 className="font-semibold text-sm">Add New Files (Optional)</h3>
+                  </div>
+
+                  {/* Attachments */}
+                  <div>
+                    <Label htmlFor="edit-attachments" className="text-sm font-medium">
+                      Attachments (Multiple files allowed)
+                    </Label>
+                    <Input
+                      id="edit-attachments"
+                      type="file"
+                      multiple
+                      onChange={(e) => {
+                        const files = e.target.files;
+                        if (files) {
+                          setEditAttachments(prev => [...prev, ...Array.from(files)]);
+                        }
+                      }}
+                      className="mt-2"
+                    />
+                    {editAttachments.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        <p className="text-xs text-green-600 flex items-center gap-1">
+                          <CheckCircle className="w-3 h-3" />
+                          {editAttachments.length} file(s) selected
+                        </p>
+                        <div className="flex flex-wrap gap-1">
+                          {editAttachments.map((file, idx) => (
+                            <span key={idx} className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded flex items-center gap-1">
+                              {file.name}
+                              <button
+                                type="button"
+                                onClick={() => setEditAttachments(prev => prev.filter((_, i) => i !== idx))}
+                                className="hover:text-red-600"
+                              >
+                                ×
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <Separator />
+
+                  {/* Government Files */}
+                  <div className="space-y-4">
+                    <h4 className="font-medium text-sm text-gray-700 flex items-center gap-2">
+                      <FileText className="w-4 h-4" />
+                      Government Files
+                    </h4>
+                    
+                    <div>
+                      <Label htmlFor="edit-briefer" className="text-sm">
+                        Briefer Template (Multiple files allowed)
+                      </Label>
+                      <Input
+                        id="edit-briefer"
+                        type="file"
+                        multiple
+                        onChange={(e) => {
+                          const files = e.target.files;
+                          if (files) {
+                            setEditBrieferTemplate(prev => [...prev, ...Array.from(files)]);
+                          }
+                        }}
+                        className="mt-2"
+                      />
+                      {editBrieferTemplate && editBrieferTemplate.length > 0 && (
+                        <div className="mt-2 space-y-1">
+                          <p className="text-xs text-green-600 flex items-center gap-1">
+                            <CheckCircle className="w-3 h-3" />
+                            {editBrieferTemplate.length} file(s) selected
+                          </p>
+                          <div className="flex flex-wrap gap-1">
+                            {editBrieferTemplate.map((file, idx) => (
+                              <span key={idx} className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded flex items-center gap-1">
+                                {file.name}
+                                <button
+                                  type="button"
+                                  onClick={() => setEditBrieferTemplate(prev => prev.filter((_, i) => i !== idx))}
+                                  className="hover:text-red-600"
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <Label htmlFor="edit-available-dl" className="text-sm">
+                        Available for DL (Multiple files allowed)
+                      </Label>
+                      <Input
+                        id="edit-available-dl"
+                        type="file"
+                        multiple
+                        onChange={(e) => {
+                          const files = e.target.files;
+                          if (files) {
+                            setEditAvailableForDL(prev => [...prev, ...Array.from(files)]);
+                          }
+                        }}
+                        className="mt-2"
+                      />
+                      {editAvailableForDL && editAvailableForDL.length > 0 && (
+                        <div className="mt-2 space-y-1">
+                          <p className="text-xs text-green-600 flex items-center gap-1">
+                            <CheckCircle className="w-3 h-3" />
+                            {editAvailableForDL.length} file(s) selected
+                          </p>
+                          <div className="flex flex-wrap gap-1">
+                            {editAvailableForDL.map((file, idx) => (
+                              <span key={idx} className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded flex items-center gap-1">
+                                {file.name}
+                                <button
+                                  type="button"
+                                  onClick={() => setEditAvailableForDL(prev => prev.filter((_, i) => i !== idx))}
+                                  className="hover:text-red-600"
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <Label htmlFor="edit-programme" className="text-sm">
+                        Programme (Multiple files allowed)
+                      </Label>
+                      <Input
+                        id="edit-programme"
+                        type="file"
+                        multiple
+                        onChange={(e) => {
+                          const files = e.target.files;
+                          if (files) {
+                            setEditProgramme(prev => [...prev, ...Array.from(files)]);
+                          }
+                        }}
+                        className="mt-2"
+                      />
+                      {editProgramme && editProgramme.length > 0 && (
+                        <div className="mt-2 space-y-1">
+                          <p className="text-xs text-green-600 flex items-center gap-1">
+                            <CheckCircle className="w-3 h-3" />
+                            {editProgramme.length} file(s) selected
+                          </p>
+                          <div className="flex flex-wrap gap-1">
+                            {editProgramme.map((file, idx) => (
+                              <span key={idx} className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded flex items-center gap-1">
+                                {file.name}
+                                <button
+                                  type="button"
+                                  onClick={() => setEditProgramme(prev => prev.filter((_, i) => i !== idx))}
+                                  className="hover:text-red-600"
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </TabsContent>
+            </Tabs>
+          )}
+
+          <div className="flex justify-end gap-2 pt-4">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowEditDetailsModal(false);
+                setSelectedEditEvent(null);
+                // Reset file states
+                setEditAttachments([]);
+                setEditBrieferTemplate([]);
+                setEditAvailableForDL([]);
+                setEditProgramme([]);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleSaveEditedDetails}>
+              Save Changes
             </Button>
           </div>
         </DialogContent>

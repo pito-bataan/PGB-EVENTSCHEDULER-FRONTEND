@@ -200,7 +200,8 @@ export const useManageLocationStore = create<ManageLocationState>((set, get) => 
         const counts: {[key: string]: number} = {};
         
         events.forEach((event: any) => {
-          if (event.status === 'submitted' || event.status === 'approved') {
+          // CRITICAL: Only count APPROVED events (hide submitted/on-hold)
+          if (event.status === 'approved') {
             const eventStartDate = new Date(event.startDate);
             const eventEndDate = new Date(event.endDate);
             const eventStartLocalDate = eventStartDate.toLocaleDateString('en-CA');
@@ -275,8 +276,8 @@ export const useManageLocationStore = create<ManageLocationState>((set, get) => 
           const eventEndLocalDate = eventEndDate.toLocaleDateString('en-CA');
           const isInDateRange = dateStr >= eventStartLocalDate && dateStr <= eventEndLocalDate;
           
-          return eventLocationMatch && isInDateRange && 
-                 (event.status === 'submitted' || event.status === 'approved');
+          // CRITICAL: Only show APPROVED events in bookings (hide submitted/on-hold)
+          return eventLocationMatch && isInDateRange && event.status === 'approved';
         });
 
         const bookings: LocationBooking[] = locationEvents.map((event: any) => ({
@@ -552,8 +553,9 @@ export const useManageLocationStore = create<ManageLocationState>((set, get) => 
 
       // Build active events lookup
       const activeEventsLookup = new Map();
+      // CRITICAL: Only check APPROVED events (hide submitted/on-hold)
       allEvents
-        .filter(event => event.status === 'submitted' || event.status === 'approved')
+        .filter(event => event.status === 'approved')
         .forEach(event => {
           const eventLocation = (event.location || '').toLowerCase().trim();
           const eventStartDate = new Date(event.startDate);
@@ -713,7 +715,8 @@ export const useManageLocationStore = create<ManageLocationState>((set, get) => 
       const eventEndLocalDate = formatLocalDate(eventEndDate);
       const dateMatch = dateStr >= eventStartLocalDate && dateStr <= eventEndLocalDate;
       
-      const statusMatch = event.status === 'submitted' || event.status === 'approved';
+      // CRITICAL: Only show APPROVED events (hide submitted/on-hold)
+      const statusMatch = event.status === 'approved';
       
       return locationMatch && dateMatch && statusMatch;
     }).length;

@@ -189,6 +189,15 @@ export const useDashboardStore = create<DashboardState>()(
                 const isUserEventById = event.createdBy === userId;
                 const isFromSameDepartment = userDepartment && event.requestorDepartment === userDepartment;
                 
+                // CRITICAL: For tagged events, ONLY show if event is APPROVED
+                // User's own events can be shown regardless of status
+                if (isTaggedForUserDepartment && !isUserEvent && !isUserEventById) {
+                  if (event.status !== 'approved') {
+                    console.log(`🚫 [DASHBOARD STORE] Hiding tagged event "${event.eventTitle}" - status: ${event.status} (not approved)`);
+                    return false;
+                  }
+                }
+                
                 return isUserEvent || isUserEventById || isTaggedForUserDepartment || (!userName && isFromSameDepartment);
               })
               .map((event: Event) => {

@@ -202,6 +202,15 @@ const Dashboard: React.FC = () => {
         // Also check if user created the event by ID (more reliable than name matching)
         const isUserEventById = event.createdBy === userId;
         
+        // CRITICAL: For tagged events, ONLY show if event is APPROVED
+        // User's own events can be shown regardless of status
+        if (isTaggedForUserDepartment && !isUserEvent && !isUserEventById) {
+          if (event.status !== 'approved') {
+            console.log(`🚫 [NOTIFICATION] Hiding tagged event "${event.eventTitle}" - status: ${event.status} (not approved)`);
+            return false;
+          }
+        }
+        
         // If no user name, show events from same department or tagged department
         const shouldShow = isUserEvent || isUserEventById || isTaggedForUserDepartment || (!userName && isFromSameDepartment);
         

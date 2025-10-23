@@ -78,6 +78,9 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
   // Tagged departments ongoing events count
   const [taggedDepartmentsCount, setTaggedDepartmentsCount] = useState(0);
   
+  // All events count (all statuses: submitted, approved, rejected, etc.)
+  const [allEventsCount, setAllEventsCount] = useState(0);
+  
   // Fetch event count for My Calendar badge
   useEffect(() => {
     const fetchEventCount = async () => {
@@ -91,11 +94,13 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
         
         if (response.data.success) {
           const events = response.data.data || [];
-          // Filter events for current user's department
-          const departmentEvents = events.filter((event: any) => 
-            event.taggedDepartments?.includes(currentUser.department) ||
-            event.requestorDepartment === currentUser.department
-          );
+          // Filter events for current user's department - ONLY APPROVED events
+          const departmentEvents = events.filter((event: any) => {
+            const isForDepartment = event.taggedDepartments?.includes(currentUser.department) ||
+                                   event.requestorDepartment === currentUser.department;
+            const isApproved = event.status === 'approved';
+            return isForDepartment && isApproved;
+          });
           setEventCount(departmentEvents.length);
         }
       } catch (error) {
@@ -122,11 +127,11 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
         
         if (response.data.success) {
           const events = response.data.data || [];
-          // Count all events that have location bookings (submitted or approved status)
+          // Count all events that have location bookings - ONLY APPROVED
           const locationBookedEvents = events.filter((event: any) => 
             event.location && 
             event.location.trim() !== '' &&
-            (event.status === 'submitted' || event.status === 'approved')
+            event.status === 'approved'
           );
           setLocationEventCount(locationBookedEvents.length);
         }
@@ -175,6 +180,33 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
     }
   }, [currentUser.department, permissions.taggedDepartments]);
 
+  // Fetch all events count (all statuses)
+  useEffect(() => {
+    const fetchAllEventsCount = async () => {
+      try {
+        const token = localStorage.getItem('authToken');
+        if (!token) return;
+        
+        const response = await axios.get(`${API_BASE_URL}/events`, {
+          headers: getAuthHeaders()
+        });
+        
+        if (response.data.success) {
+          const events = response.data.data || [];
+          // Count ALL events regardless of status
+          setAllEventsCount(events.length);
+        }
+      } catch (error) {
+        // Keep default count if fetch fails
+        setAllEventsCount(0);
+      }
+    };
+    
+    if (currentUser.department && currentUser.department !== "Department" && permissions.allEvents) {
+      fetchAllEventsCount();
+    }
+  }, [currentUser.department, permissions.allEvents]);
+
   // Real-time refresh functions
   const refreshEventCounts = async () => {
     try {
@@ -188,21 +220,28 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
       if (response.data.success) {
         const events = response.data.data || [];
         
-        // Update My Calendar count
-        const departmentEvents = events.filter((event: any) => 
-          event.taggedDepartments?.includes(currentUser.department) ||
-          event.requestorDepartment === currentUser.department
-        );
+        // Update My Calendar count - ONLY APPROVED events
+        const departmentEvents = events.filter((event: any) => {
+          const isForDepartment = event.taggedDepartments?.includes(currentUser.department) ||
+                                 event.requestorDepartment === currentUser.department;
+          const isApproved = event.status === 'approved';
+          return isForDepartment && isApproved;
+        });
         setEventCount(departmentEvents.length);
         
-        // Update Manage Location count
+        // Update Manage Location count - ONLY APPROVED
         if (permissions.manageLocation) {
           const locationBookedEvents = events.filter((event: any) => 
             event.location && 
             event.location.trim() !== '' &&
-            (event.status === 'submitted' || event.status === 'approved')
+            event.status === 'approved'
           );
           setLocationEventCount(locationBookedEvents.length);
+        }
+        
+        // Update All Events count - ALL STATUSES
+        if (permissions.allEvents) {
+          setAllEventsCount(events.length);
         }
       }
 
@@ -228,10 +267,11 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
     }
   };
 
-  // Refresh counts when navigating or permissions change
+  // Refresh counts only on initial mount - Socket.IO handles real-time updates
   useEffect(() => {
     refreshEventCounts();
-  }, [location.pathname, permissions.manageLocation, permissions.myCalendar, permissions.taggedDepartments, currentUser.department]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Empty deps = only runs once on mount
 
   // Removed polling - now using Socket.IO for real-time updates!
   // Badge counts update via Socket.IO 'status-update' event (see below)
@@ -510,6 +550,7 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
           const isMessages = item.label === 'Messages';
           const isManageLocation = item.label === 'Manage Location';
           const isTaggedDepartments = item.label === 'Tagged Departments';
+          const isAllEvents = item.label === 'All Events';
           const totalEventCount = isMyCalendar ? eventCount : 0;
           
 
@@ -563,6 +604,13 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
               {isTaggedDepartments && taggedDepartmentsCount > 0 && !isCollapsed && (
                 <div className="absolute -top-1 -right-1 bg-red-500 text-white text-xs px-1.5 py-0.5 min-w-[20px] h-5 flex items-center justify-center rounded-full">
                   {taggedDepartmentsCount > 99 ? '99+' : taggedDepartmentsCount}
+                </div>
+              )}
+
+              {/* All Events Count Badge (all statuses) */}
+              {isAllEvents && allEventsCount > 0 && !isCollapsed && (
+                <div className="absolute -top-1 -right-1 bg-red-500 text-white text-xs px-1.5 py-0.5 min-w-[20px] h-5 flex items-center justify-center rounded-full">
+                  {allEventsCount > 99 ? '99+' : allEventsCount}
                 </div>
               )}
               

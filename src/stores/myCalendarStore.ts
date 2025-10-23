@@ -37,6 +37,7 @@ interface Event {
   taggedDepartments: string[];
   requestor: string;
   location: string;
+  status: string; // Event status: submitted, approved, rejected, etc.
 }
 
 interface User {

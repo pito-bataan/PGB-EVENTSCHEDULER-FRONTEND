@@ -164,9 +164,11 @@ const ManageLocationPage: React.FC = () => {
   ];
 
   // Initialize user and fetch data using Zustand store
+  // Empty deps array = only runs once on mount, respects Zustand cache
   useEffect(() => {
     initializeUser();
-  }, [initializeUser]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Filter location data based on selected dates
   useEffect(() => {
@@ -428,10 +430,11 @@ const ManageLocationPage: React.FC = () => {
       const locationBookingEvents = allEvents.filter((event: any) => {
         // Check if event location matches any of the default location names
         const eventLocation = (event.location || '').toLowerCase().trim();
+        // CRITICAL: Only show APPROVED events (hide submitted/on-hold)
         return defaultLocationNames.some(locationName => 
           eventLocation.includes(locationName.toLowerCase()) || 
           locationName.toLowerCase().includes(eventLocation)
-        ) && (event.status === 'submitted' || event.status === 'approved');
+        ) && event.status === 'approved';
       });
 
       if (locationBookingEvents.length === 0) {
@@ -921,8 +924,8 @@ const ManageLocationPage: React.FC = () => {
       const eventEndLocalDate = eventEndDate.toLocaleDateString('en-CA');
       const dateMatch = dateStr >= eventStartLocalDate && dateStr <= eventEndLocalDate;
 
-      // Check if event is active (submitted or approved)
-      const statusMatch = event.status === 'submitted' || event.status === 'approved';
+      // CRITICAL: Only show APPROVED events (hide submitted/on-hold)
+      const statusMatch = event.status === 'approved';
 
       return locationMatch && dateMatch && statusMatch;
     });

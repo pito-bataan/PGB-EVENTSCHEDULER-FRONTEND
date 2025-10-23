@@ -105,9 +105,11 @@ const MyCalendarPage: React.FC = () => {
   const [isSelectingDatesMode, setIsSelectingDatesMode] = useState(false);
 
   // Initialize user and fetch data using Zustand store
+  // Empty deps array = only runs once on mount, respects Zustand cache
   useEffect(() => {
     initializeUser();
-  }, [initializeUser]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // These functions are now handled by the Zustand store
 
@@ -126,7 +128,10 @@ const MyCalendarPage: React.FC = () => {
     const hasBookingsForDepartment = event.taggedDepartments && 
       event.taggedDepartments.includes(currentUser?.department || '');
     
-    if (hasBookingsForDepartment) {
+    // CRITICAL: Only show APPROVED events in calendar (hide on-hold/submitted events)
+    const isApproved = event.status === 'approved';
+    
+    if (hasBookingsForDepartment && isApproved) {
       // Create calendar events for each day the event spans
       const currentStartDate = new Date(eventStartDate);
       const currentEndDate = new Date(eventEndDate);

@@ -17,6 +17,7 @@ interface Requirement {
   status?: string;
   departmentNotes?: string;
   lastUpdated?: string;
+  requirementsStatus?: 'on-hold' | 'released'; // Track if requirements are on-hold or released
 }
 
 interface Event {
@@ -174,8 +175,47 @@ export const useTaggedDepartmentsStore = create<TaggedDepartmentsState>()(
           const data = await response.json();
           console.log('📦 Fetched events data:', data.data?.length, 'events');
           if (data.success && Array.isArray(data.data)) {
+            // Filter events to only show APPROVED events with RELEASED requirements
+            const filteredEvents = data.data
+              .filter((event: Event) => {
+                // CRITICAL: Only show events that are APPROVED (not submitted/pending)
+                if (event.status !== 'approved') {
+                  console.log(`🚫 Hiding event "${event.eventTitle}" - status: ${event.status} (not approved)`);
+                  return false;
+                }
+                return true;
+              })
+              .map((event: Event) => {
+                // Only show requirements that have been released (not on-hold)
+                const filteredRequirements: Record<string, Requirement[]> = {};
+                
+                Object.keys(event.departmentRequirements || {}).forEach(dept => {
+                  const deptReqs = event.departmentRequirements[dept] || [];
+                  // Only include requirements that are 'released' or don't have the field (backward compatibility)
+                  const releasedReqs = deptReqs.filter(req => 
+                    !req.requirementsStatus || req.requirementsStatus === 'released'
+                  );
+                  
+                  if (releasedReqs.length > 0) {
+                    filteredRequirements[dept] = releasedReqs;
+                  }
+                });
+                
+                return {
+                  ...event,
+                  departmentRequirements: filteredRequirements
+                };
+              })
+              .filter((event: Event) => {
+                // Only show events that have at least one released requirement for the user's department
+                const userDeptReqs = event.departmentRequirements[userDepartment] || [];
+                return userDeptReqs.length > 0;
+              });
+            
+            console.log(`✅ Filtered to ${filteredEvents.length} APPROVED events with released requirements`);
+            
             set({
-              events: data.data,
+              events: filteredEvents,
               currentUserDepartment: userDepartment,
               lastFetched: now,
               loading: false
