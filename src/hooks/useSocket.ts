@@ -300,8 +300,11 @@ export const useSocket = (userId?: string) => {
   };
 
   const offNewNotification = () => {
-    if (socketRef.current) {
-      socketRef.current.off('new-notification');
+    const socket = socketRef.current || globalSocket;
+    if (socket && notificationCallbackRef.current) {
+      // Remove ONLY this component's listener, not all listeners
+      socket.off('new-notification', notificationCallbackRef.current);
+      notificationCallbackRef.current = null;
     }
   };
 
