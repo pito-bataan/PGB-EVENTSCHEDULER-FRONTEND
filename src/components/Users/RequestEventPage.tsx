@@ -2446,6 +2446,93 @@ const RequestEventPage: React.FC = () => {
                             <span className="font-medium">Availability Notes:</span> {requirement.availabilityNotes}
                           </div>
                         )}
+                        
+                        {/* Quantity/Notes Input - Show when selected */}
+                        {requirement.selected && (
+                          <div className="mt-3 pt-3 border-t border-blue-200 space-y-2 bg-blue-50 p-3 rounded-lg">
+                            {requirement.type === 'physical' ? (
+                              <div className="space-y-2">
+                                <Label className="text-xs font-medium text-gray-900">Quantity Needed</Label>
+                                <Input
+                                  type="number"
+                                  placeholder="Enter quantity..."
+                                  value={requirement.quantity || ''}
+                                  onChange={(e) => {
+                                    e.stopPropagation();
+                                    handleRequirementQuantity(requirement.id, parseInt(e.target.value) || 0);
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className={`text-sm ${
+                                    !requirement.isCustom && requirement.quantity && (
+                                      (conflictingEvents.length > 0 && formData.startDate && formData.startTime && 
+                                       hasRequirementConflict(requirement, selectedDepartment) &&
+                                       requirement.quantity > getAvailableQuantity(requirement, selectedDepartment)) ||
+                                      ((!conflictingEvents.length || !formData.startDate || !formData.startTime || 
+                                        !hasRequirementConflict(requirement, selectedDepartment)) && 
+                                       requirement.quantity > (requirement.totalQuantity || 0))
+                                    ) ? 'border-red-300 focus:border-red-500 focus:ring-red-200' : ''
+                                  }`}
+                                  min="1"
+                                  max={requirement.isCustom ? undefined : (
+                                    conflictingEvents.length > 0 && formData.startDate && formData.startTime && 
+                                    hasRequirementConflict(requirement, selectedDepartment)
+                                      ? getAvailableQuantity(requirement, selectedDepartment)
+                                      : (requirement.totalQuantity || undefined)
+                                  )}
+                                />
+                                {requirement.isCustom ? (
+                                  <p className="text-xs text-orange-600 bg-orange-50 p-2 rounded flex items-center gap-1">
+                                    <Info className="w-3 h-3" />
+                                    Custom requirement - quantity will be validated by {selectedDepartment}
+                                  </p>
+                                ) : requirement.quantity && (
+                                  (conflictingEvents.length > 0 && formData.startDate && formData.startTime && 
+                                   hasRequirementConflict(requirement, selectedDepartment) &&
+                                   requirement.quantity > getAvailableQuantity(requirement, selectedDepartment)) ||
+                                  ((!conflictingEvents.length || !formData.startDate || !formData.startTime || 
+                                    !hasRequirementConflict(requirement, selectedDepartment)) && 
+                                   requirement.quantity > (requirement.totalQuantity || 0))
+                                ) ? (
+                                  <div className="flex items-center gap-1 text-xs text-red-600 bg-red-50 p-2 rounded">
+                                    <AlertTriangle className="w-3 h-3" />
+                                    <span className="font-medium">Warning:</span>
+                                    <span>
+                                      Requested {requirement.quantity} but only {' '}
+                                      {conflictingEvents.length > 0 && formData.startDate && formData.startTime
+                                        ? getAvailableQuantity(requirement, selectedDepartment)
+                                        : requirement.totalQuantity
+                                      } available
+                                      {conflictingEvents.length > 0 && formData.startDate && formData.startTime && ' (after conflicts)'}
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <p className="text-xs text-gray-600">
+                                    Available: {' '}
+                                    {conflictingEvents.length > 0 && formData.startDate && formData.startTime && 
+                                     hasRequirementConflict(requirement, selectedDepartment)
+                                      ? `${getAvailableQuantity(requirement, selectedDepartment)} (after conflicts)`
+                                      : (requirement.totalQuantity || 'N/A')
+                                    }
+                                  </p>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="space-y-2">
+                                <Label className="text-xs font-medium text-gray-900">Notes / Special Requirements</Label>
+                                <Textarea
+                                  placeholder="Add specific notes or requirements..."
+                                  value={requirement.notes || ''}
+                                  onChange={(e) => {
+                                    e.stopPropagation();
+                                    handleRequirementNotes(requirement.id, e.target.value);
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="min-h-20 text-sm"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -2556,7 +2643,9 @@ const RequestEventPage: React.FC = () => {
           {/* Selected Requirements */}
           {formData.departmentRequirements[selectedDepartment]?.filter(req => req.selected).length > 0 && (
             <div className="border-t pt-4">
-              <h3 className="text-sm font-medium text-gray-900 mb-3">Selected Requirements</h3>
+              <h3 className="text-sm font-medium text-gray-900 mb-3">
+                Selected Requirements ({formData.departmentRequirements[selectedDepartment]?.filter(req => req.selected).length})
+              </h3>
               <div className="flex flex-wrap gap-2">
                 {formData.departmentRequirements[selectedDepartment]
                   ?.filter(req => req.selected)
@@ -2564,129 +2653,25 @@ const RequestEventPage: React.FC = () => {
                   <div key={requirement.id} className={`flex items-center gap-1 rounded-full px-3 py-1 ${
                     requirement.isCustom ? 'bg-orange-100 border border-orange-300' : 'bg-gray-100'
                   }`}>
-                    <span className="text-sm text-gray-700 truncate max-w-[200px]" title={requirement.name}>
+                    <span className="text-sm font-medium text-gray-800 truncate max-w-[200px]" title={requirement.name}>
                       {requirement.name}
-                      {requirement.isCustom && (
-                        <Badge variant="outline" className="ml-2 text-xs bg-orange-50 text-orange-700 border-orange-300">
-                          Pending Validation
-                        </Badge>
-                      )}
-                      {requirement.type === 'physical' && requirement.quantity && (
-                        <span className={`font-medium ml-1 ${
-                          requirement.totalQuantity && requirement.quantity > requirement.totalQuantity
-                            ? 'text-red-600'
-                            : 'text-blue-600'
-                        }`}>
-                          ({requirement.quantity}
-                          {requirement.totalQuantity && requirement.quantity > requirement.totalQuantity && (
-                            <AlertTriangle className="w-3 h-3 text-red-500 inline ml-1" />
-                          )})
-                        </span>
-                      )}
                     </span>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className={`h-5 w-5 p-0 hover:text-blue-600 ${
-                            (requirement.type === 'physical' && requirement.quantity) || 
-                            (requirement.type === 'service' && requirement.notes?.trim())
-                              ? 'text-blue-600 bg-blue-50' 
-                              : 'text-gray-500'
-                          }`}
-                          title={
-                            requirement.type === 'physical' 
-                              ? (requirement.quantity ? `Quantity: ${requirement.quantity}` : 'Set Quantity')
-                              : (requirement.notes?.trim() ? 'Edit Notes' : 'Add Notes')
-                          }
-                        >
-                          {requirement.type === 'physical' ? (
-                            <span className="text-xs font-bold">Qty</span>
-                          ) : (
-                            <StickyNote className="w-3 h-3" />
-                          )}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-80">
-                        <div className="space-y-2">
-                          {requirement.type === 'physical' ? (
-                            <>
-                              <h4 className="font-medium text-sm">Quantity for {requirement.name}</h4>
-                              <Input
-                                type="number"
-                                placeholder="Enter quantity needed..."
-                                value={requirement.quantity || ''}
-                                onChange={(e) => handleRequirementQuantity(requirement.id, parseInt(e.target.value) || 0)}
-                                className={`text-sm ${
-                                  !requirement.isCustom && requirement.quantity && (
-                                    (conflictingEvents.length > 0 && formData.startDate && formData.startTime && 
-                                     hasRequirementConflict(requirement, selectedDepartment) &&
-                                     requirement.quantity > getAvailableQuantity(requirement, selectedDepartment)) ||
-                                    ((!conflictingEvents.length || !formData.startDate || !formData.startTime || 
-                                      !hasRequirementConflict(requirement, selectedDepartment)) && 
-                                     requirement.quantity > (requirement.totalQuantity || 0))
-                                  ) ? 'border-red-300 focus:border-red-500 focus:ring-red-200' : ''
-                                }`}
-                                min="1"
-                                max={requirement.isCustom ? undefined : (
-                                  conflictingEvents.length > 0 && formData.startDate && formData.startTime && 
-                                  hasRequirementConflict(requirement, selectedDepartment)
-                                    ? getAvailableQuantity(requirement, selectedDepartment)
-                                    : (requirement.totalQuantity || undefined)
-                                )}
-                              />
-                              {requirement.isCustom ? (
-                                <p className="text-xs text-orange-600 bg-orange-50 p-2 rounded flex items-center gap-1">
-                                  <Info className="w-3 h-3" />
-                                  Custom requirement - quantity will be validated by {selectedDepartment}
-                                </p>
-                              ) : requirement.quantity && (
-                                (conflictingEvents.length > 0 && formData.startDate && formData.startTime && 
-                                 hasRequirementConflict(requirement, selectedDepartment) &&
-                                 requirement.quantity > getAvailableQuantity(requirement, selectedDepartment)) ||
-                                ((!conflictingEvents.length || !formData.startDate || !formData.startTime || 
-                                  !hasRequirementConflict(requirement, selectedDepartment)) && 
-                                 requirement.quantity > (requirement.totalQuantity || 0))
-                              ) ? (
-                                <div className="flex items-center gap-1 text-xs text-red-600 bg-red-50 p-2 rounded">
-                                  <AlertTriangle className="w-3 h-3" />
-                                  <span className="font-medium">Warning:</span>
-                                  <span>
-                                    Requested {requirement.quantity} but only {' '}
-                                    {conflictingEvents.length > 0 && formData.startDate && formData.startTime
-                                      ? getAvailableQuantity(requirement, selectedDepartment)
-                                      : requirement.totalQuantity
-                                    } available
-                                    {conflictingEvents.length > 0 && formData.startDate && formData.startTime && ' (after conflicts)'}
-                                  </span>
-                                </div>
-                              ) : (
-                                <p className="text-xs text-gray-500">
-                                  Enter the number of {requirement.name.toLowerCase()} you need
-                                  {' (Available: '}
-                                  {conflictingEvents.length > 0 && formData.startDate && formData.startTime && 
-                                   hasRequirementConflict(requirement, selectedDepartment)
-                                    ? `${getAvailableQuantity(requirement, selectedDepartment)} after conflicts`
-                                    : (requirement.totalQuantity || 'N/A')
-                                  })
-                                </p>
-                              )}
-                            </>
-                          ) : (
-                            <>
-                              <h4 className="font-medium text-sm">Notes for {requirement.name}</h4>
-                              <Textarea
-                                placeholder="Add specific notes or requirements..."
-                                value={requirement.notes}
-                                onChange={(e) => handleRequirementNotes(requirement.id, e.target.value)}
-                                className="min-h-20 text-sm"
-                              />
-                            </>
-                          )}
-                        </div>
-                      </PopoverContent>
-                    </Popover>
+                    {requirement.isCustom && (
+                      <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-300">
+                        Custom
+                      </Badge>
+                    )}
+                    {requirement.type === 'physical' && requirement.quantity && (
+                      <Badge variant="secondary" className="text-xs bg-blue-600 text-white">
+                        Qty: {requirement.quantity}
+                      </Badge>
+                    )}
+                    {requirement.type === 'service' && requirement.notes?.trim() && (
+                      <Badge variant="secondary" className="text-xs bg-green-600 text-white flex items-center gap-1">
+                        <StickyNote className="w-3 h-3" />
+                        Notes
+                      </Badge>
+                    )}
                     <Button
                       variant="ghost"
                       size="sm"

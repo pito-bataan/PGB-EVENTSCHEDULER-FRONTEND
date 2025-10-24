@@ -51,8 +51,8 @@ const playGlobalNotificationSound = async (title: string = 'New Event Notificati
         tag: 'notification-sound-' + Date.now(),
         requireInteraction: false
       });
-      // Close it after 3 seconds
-      setTimeout(() => notification.close(), 3000);
+      // Close it after 1 second to allow rapid notifications
+      setTimeout(() => notification.close(), 2000);
       return true;
     } catch (e) {
       console.error('❌ [AUDIO] Web Notification failed with error:', e);
@@ -279,12 +279,12 @@ export default function GlobalNotificationSystem() {
         notificationId = `event-${eventId}-${timestamp}`;
       }
       
-      // Check if we've shown this EXACT notification recently (within 2 seconds)
+      // Check if we've shown this EXACT notification recently (within 100ms to prevent true duplicates only)
       // Use ref to get current state
       const recentNotifications = Array.from(shownNotificationsRef.current).filter(id => {
         const parts = id.split('-');
         const idTimestamp = parseInt(parts[parts.length - 1]);
-        return !isNaN(idTimestamp) && (now - idTimestamp) < 2000;
+        return !isNaN(idTimestamp) && (now - idTimestamp) < 100;
       });
       
       if (recentNotifications.includes(notificationId)) {
@@ -378,6 +378,7 @@ export default function GlobalNotificationSystem() {
       }));
       
       // Create a custom toast with Framer Motion animation
+      // Use unique ID to allow multiple toasts to stack
       toast.custom((t) => (
         <motion.div
           initial={{ opacity: 0, x: 100, scale: 0.8 }}
@@ -410,7 +411,8 @@ export default function GlobalNotificationSystem() {
           </div>
         </motion.div>
       ), {
-        duration: 5000,
+        id: notificationId, // Unique ID allows multiple toasts to stack
+        duration: 4000, // Reduced from 5s to 4s for faster clearing
         position: 'bottom-right',
       });
     };

@@ -1801,7 +1801,7 @@ const MyEventsPage: React.FC = () => {
                               <Edit className="w-3 h-3" />
                               Edit Schedule
                             </Button>
-                            {event.status === 'submitted' && (
+                            {(event.status === 'submitted' || event.status === 'approved') && event.dynamicStatus !== 'completed' && (
                               <Button
                                 variant="outline"
                                 size="sm"
