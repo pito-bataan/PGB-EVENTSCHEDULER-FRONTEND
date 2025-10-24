@@ -1152,8 +1152,21 @@ const RequestEventPage: React.FC = () => {
         'Content-Type': 'multipart/form-data',
       };
 
+      console.log('📤 [EVENT SUBMISSION] Submitting event request...');
       
-      const response = await axios.post(`${API_BASE_URL}/events`, formDataToSubmit, { headers });
+      // Add timeout for large file uploads (5 minutes)
+      const response = await axios.post(`${API_BASE_URL}/events`, formDataToSubmit, { 
+        headers,
+        timeout: 300000, // 5 minutes timeout
+        onUploadProgress: (progressEvent) => {
+          if (progressEvent.total) {
+            const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+            console.log(`📤 Upload progress: ${percentCompleted}%`);
+          }
+        }
+      });
+
+      console.log('✅ [EVENT SUBMISSION] Response received:', response.data);
 
       if (response.data.success) {
         toast.success('Event request submitted successfully!', {
@@ -1164,11 +1177,29 @@ const RequestEventPage: React.FC = () => {
         setTimeout(() => {
           navigate('/users/my-events');
         }, 1500); // Wait 1.5 seconds to show the success toast
+      } else {
+        throw new Error(response.data.message || 'Submission failed');
       }
     } catch (error: any) {
+      console.error('❌ [EVENT SUBMISSION] Error:', error);
+      
+      let errorMessage = 'Please try again later.';
+      
+      if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+        errorMessage = 'Request timeout. Your files might be too large. Please try with smaller files or check your internet connection.';
+      } else if (error.response?.status === 413) {
+        errorMessage = 'Files are too large. Please reduce file sizes and try again.';
+      } else if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
       toast.error('Failed to submit event request', {
-        description: error.response?.data?.message || 'Please try again later.'
+        description: errorMessage
       });
+    } finally {
+      // Always reset submitting state
       setIsSubmitting(false);
     }
   };
