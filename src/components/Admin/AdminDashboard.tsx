@@ -336,8 +336,18 @@ const AdminDashboard: React.FC = () => {
                               {format(new Date(event.startDate), 'MMM dd, yyyy')} {event.startTime} - {event.endTime}
                             </div>
                             <div className="flex items-center gap-1 text-xs text-gray-600">
-                              <MapPin className="w-3 h-3" />
-                              {event.location}
+                              <MapPin className="w-3 h-3 flex-shrink-0" />
+                              {event.locations && event.locations.length > 1 ? (
+                                <div className="flex flex-wrap gap-1">
+                                  {event.locations.map((loc, idx) => (
+                                    <Badge key={idx} variant="secondary" className="text-[10px] px-1.5 py-0 h-4 font-medium">
+                                      {loc}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span>{event.location}</span>
+                              )}
                             </div>
                             <div className="flex items-center gap-1 text-xs text-gray-600">
                               <Building2 className="w-3 h-3" />

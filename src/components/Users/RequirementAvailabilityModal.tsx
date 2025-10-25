@@ -63,6 +63,7 @@ interface EventDetails {
   eventTitle: string;
   requestor: string;
   location: string;
+  locations?: string[];
   startDate: string;
   startTime: string;
   endDate: string;
@@ -1111,8 +1112,18 @@ const RequirementAvailabilityModal: React.FC<RequirementAvailabilityModalProps> 
                   <p className="text-sm text-gray-900 mt-1">{selectedEventDetails.requestor}</p>
                 </div>
                 <div>
-                  <Label className="text-sm font-medium text-gray-700">Location</Label>
-                  <p className="text-sm text-gray-900 mt-1">{selectedEventDetails.location}</p>
+                  <Label className="text-sm font-medium text-gray-700">Location{selectedEventDetails.locations && selectedEventDetails.locations.length > 1 ? 's' : ''}</Label>
+                  {selectedEventDetails.locations && selectedEventDetails.locations.length > 1 ? (
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {selectedEventDetails.locations.map((loc: string, idx: number) => (
+                        <Badge key={idx} variant="secondary" className="text-xs font-medium">
+                          {loc}
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-900 mt-1">{selectedEventDetails.location}</p>
+                  )}
                 </div>
                 <div>
                   <Label className="text-sm font-medium text-gray-700">Tagged Departments</Label>

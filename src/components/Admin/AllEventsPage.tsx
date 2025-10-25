@@ -39,6 +39,12 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
+} from '@/components/ui/tabs';
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -117,6 +123,7 @@ const AllEventsPage: React.FC = () => {
   // Local state for UI
   const [showDescription, setShowDescription] = useState(false);
   const [selectedEvents, setSelectedEvents] = useState<string[]>([]);
+  const [activeTab, setActiveTab] = useState<string>('all');
   
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -264,16 +271,31 @@ const AllEventsPage: React.FC = () => {
   // Get filtered events from store (all filtering done in Zustand)
   const filteredEvents = getFilteredEvents();
   
+  // Calculate counts for each status tab
+  const statusCounts = {
+    all: filteredEvents.length,
+    submitted: filteredEvents.filter(e => e.status === 'submitted').length,
+    approved: filteredEvents.filter(e => e.status === 'approved').length,
+    rejected: filteredEvents.filter(e => e.status === 'rejected').length,
+    completed: filteredEvents.filter(e => e.status === 'completed').length,
+    cancelled: filteredEvents.filter(e => e.status === 'cancelled').length,
+  };
+  
+  // Filter events by active tab
+  const tabFilteredEvents = activeTab === 'all' 
+    ? filteredEvents 
+    : filteredEvents.filter(e => e.status === activeTab);
+  
   // Pagination calculations
-  const totalPages = Math.ceil(filteredEvents.length / itemsPerPage);
+  const totalPages = Math.ceil(tabFilteredEvents.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
-  const paginatedEvents = filteredEvents.slice(startIndex, endIndex);
+  const paginatedEvents = tabFilteredEvents.slice(startIndex, endIndex);
   
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, statusFilter, departmentFilter]);
+  }, [searchQuery, statusFilter, departmentFilter, activeTab]);
 
   // Get status info
   const getStatusInfo = (status: string) => {
@@ -546,14 +568,30 @@ const AllEventsPage: React.FC = () => {
         yPosition += 7;
 
         pdf.setFont('helvetica', 'bold');
-        pdf.text('Location:', margin, yPosition);
+        pdf.text(event.locations && event.locations.length > 1 ? 'Locations:' : 'Location:', margin, yPosition);
         pdf.setFont('helvetica', 'normal');
-        pdf.text(event.location, margin + 25, yPosition);
+        
+        if (event.locations && event.locations.length > 1) {
+          // Multiple locations - display each on a new line
+          event.locations.forEach((loc, index) => {
+            if (index === 0) {
+              pdf.text(loc, margin + 25, yPosition);
+            } else {
+              yPosition += 5;
+              pdf.text(loc, margin + 25, yPosition);
+            }
+          });
+          yPosition += 7;
+        } else {
+          // Single location
+          pdf.text(event.location, margin + 25, yPosition);
+          yPosition += 7;
+        }
         
         pdf.setFont('helvetica', 'bold');
-        pdf.text('Participants:', margin + 90, yPosition);
+        pdf.text('Participants:', margin, yPosition);
         pdf.setFont('helvetica', 'normal');
-        pdf.text(`${event.participants} attendees`, margin + 115, yPosition);
+        pdf.text(`${event.participants} attendees`, margin + 25, yPosition);
         yPosition += 7;
 
         if ((event.vip && event.vip > 0) || (event.vvip && event.vvip > 0)) {
@@ -782,6 +820,48 @@ const AllEventsPage: React.FC = () => {
         </CardHeader>
 
         <CardContent className="space-y-6">
+          {/* Status Tabs */}
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="w-full grid grid-cols-6 h-auto">
+              <TabsTrigger value="all" className="text-xs gap-1.5 py-2">
+                All
+                <Badge variant="secondary" className="ml-1 px-1.5 py-0 h-4 text-[10px] font-semibold">
+                  {statusCounts.all}
+                </Badge>
+              </TabsTrigger>
+              <TabsTrigger value="submitted" className="text-xs gap-1.5 py-2">
+                Submitted
+                <Badge variant="secondary" className="ml-1 px-1.5 py-0 h-4 text-[10px] font-semibold bg-blue-100 text-blue-700">
+                  {statusCounts.submitted}
+                </Badge>
+              </TabsTrigger>
+              <TabsTrigger value="approved" className="text-xs gap-1.5 py-2">
+                Approved
+                <Badge variant="secondary" className="ml-1 px-1.5 py-0 h-4 text-[10px] font-semibold bg-green-100 text-green-700">
+                  {statusCounts.approved}
+                </Badge>
+              </TabsTrigger>
+              <TabsTrigger value="rejected" className="text-xs gap-1.5 py-2">
+                Rejected
+                <Badge variant="secondary" className="ml-1 px-1.5 py-0 h-4 text-[10px] font-semibold bg-red-100 text-red-700">
+                  {statusCounts.rejected}
+                </Badge>
+              </TabsTrigger>
+              <TabsTrigger value="cancelled" className="text-xs gap-1.5 py-2">
+                Cancelled
+                <Badge variant="secondary" className="ml-1 px-1.5 py-0 h-4 text-[10px] font-semibold bg-orange-100 text-orange-700">
+                  {statusCounts.cancelled}
+                </Badge>
+              </TabsTrigger>
+              <TabsTrigger value="completed" className="text-xs gap-1.5 py-2">
+                Completed
+                <Badge variant="secondary" className="ml-1 px-1.5 py-0 h-4 text-[10px] font-semibold bg-purple-100 text-purple-700">
+                  {statusCounts.completed}
+                </Badge>
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+
           {/* Filters */}
           <div className="flex flex-col md:flex-row gap-4">
             <div className="flex-1">
@@ -796,20 +876,6 @@ const AllEventsPage: React.FC = () => {
               </div>
             </div>
             <div className="flex gap-2">
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-40">
-                  <Filter className="w-4 h-4 mr-2" />
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="draft">Draft</SelectItem>
-                  <SelectItem value="submitted">Submitted</SelectItem>
-                  <SelectItem value="approved">Approved</SelectItem>
-                  <SelectItem value="rejected">Rejected</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                </SelectContent>
-              </Select>
               <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
                 <SelectTrigger className="w-40">
                   <Building2 className="w-4 h-4 mr-2" />
@@ -1009,11 +1075,21 @@ const AllEventsPage: React.FC = () => {
                                         <p className="mt-1 text-sm text-gray-900">{selectedEvent.requestor}</p>
                                       </div>
                                       <div>
-                                        <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                                          <MapPin className="w-4 h-4" />
-                                          Location
+                                        <label className="text-sm font-medium text-gray-700 flex items-start gap-2">
+                                          <MapPin className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                                          <span>Location{selectedEvent.locations && selectedEvent.locations.length > 1 ? 's' : ''}</span>
                                         </label>
-                                        <p className="mt-1 text-sm text-gray-900">{selectedEvent.location}</p>
+                                        {selectedEvent.locations && selectedEvent.locations.length > 1 ? (
+                                          <div className="mt-1 ml-6 flex flex-col gap-1">
+                                            {selectedEvent.locations.map((loc, idx) => (
+                                              <p key={idx} className="text-sm text-gray-900">
+                                                {loc}
+                                              </p>
+                                            ))}
+                                          </div>
+                                        ) : (
+                                          <p className="mt-1 ml-6 text-sm text-gray-900">{selectedEvent.location}</p>
+                                        )}
                                       </div>
                                     </div>
 

@@ -12,6 +12,7 @@ interface UpcomingEvent {
   endDate: string;
   endTime: string;
   location: string;
+  locations?: string[];
   requestorDepartment: string;
   status: string;
 }

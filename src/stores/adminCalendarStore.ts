@@ -10,6 +10,7 @@ export interface Event {
   _id: string;
   eventTitle: string;
   location: string;
+  locations?: string[];
   startDate: string;
   startTime: string;
   endDate: string;

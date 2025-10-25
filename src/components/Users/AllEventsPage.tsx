@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { 
   MapPin, 
   Calendar, 
@@ -55,6 +56,9 @@ const AllEventsPage: React.FC = () => {
   // PDF state
   const [showPdfPreview, setShowPdfPreview] = useState(false);
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string>('');
+  
+  // Tab state for filtering by status
+  const [activeTab, setActiveTab] = useState<string>('all');
 
   // Fetch events on mount
   useEffect(() => {
@@ -63,6 +67,15 @@ const AllEventsPage: React.FC = () => {
 
   const filteredEvents = getFilteredEvents();
   const uniqueLocations = getUniqueLocations();
+
+  // Calculate counts for each status
+  const statusCounts = {
+    all: filteredEvents.length,
+    approved: filteredEvents.filter(e => e.status === 'approved').length,
+    submitted: filteredEvents.filter(e => e.status === 'submitted').length,
+    cancelled: filteredEvents.filter(e => e.status === 'cancelled').length,
+    completed: filteredEvents.filter(e => e.status === 'completed').length,
+  };
 
   // Format time helper
   const formatTime = (time: string) => {
@@ -89,6 +102,20 @@ const AllEventsPage: React.FC = () => {
           <Badge className="bg-blue-100 text-blue-800 border-blue-200">
             <AlertCircle className="w-3 h-3 mr-1" />
             Submitted
+          </Badge>
+        );
+      case 'cancelled':
+        return (
+          <Badge className="bg-red-100 text-red-800 border-red-200">
+            <X className="w-3 h-3 mr-1" />
+            Cancelled
+          </Badge>
+        );
+      case 'completed':
+        return (
+          <Badge className="bg-purple-100 text-purple-800 border-purple-200">
+            <CheckCircle className="w-3 h-3 mr-1" />
+            Completed
           </Badge>
         );
       default:
@@ -197,14 +224,30 @@ const AllEventsPage: React.FC = () => {
       yPos += 7;
 
       pdf.setFont('helvetica', 'bold');
-      pdf.text('Location:', margin, yPos);
+      pdf.text(selectedEvent.locations && selectedEvent.locations.length > 1 ? 'Locations:' : 'Location:', margin, yPos);
       pdf.setFont('helvetica', 'normal');
-      pdf.text(selectedEvent.location, margin + 25, yPos);
+      
+      if (selectedEvent.locations && selectedEvent.locations.length > 1) {
+        // Multiple locations - display each on a new line
+        selectedEvent.locations.forEach((loc: string, index: number) => {
+          if (index === 0) {
+            pdf.text(loc, margin + 25, yPos);
+          } else {
+            yPos += 5;
+            pdf.text(loc, margin + 25, yPos);
+          }
+        });
+        yPos += 7;
+      } else {
+        // Single location
+        pdf.text(selectedEvent.location, margin + 25, yPos);
+        yPos += 7;
+      }
       
       pdf.setFont('helvetica', 'bold');
-      pdf.text('Participants:', margin + 90, yPos);
+      pdf.text('Participants:', margin, yPos);
       pdf.setFont('helvetica', 'normal');
-      pdf.text(`${selectedEvent.participants} attendees`, margin + 115, yPos);
+      pdf.text(`${selectedEvent.participants} attendees`, margin + 25, yPos);
       yPos += 7;
 
       if ((selectedEvent.vip && selectedEvent.vip > 0) || (selectedEvent.vvip && selectedEvent.vvip > 0)) {
@@ -432,13 +475,50 @@ const AllEventsPage: React.FC = () => {
               </CardDescription>
             </CardHeader>
             <CardContent className="p-0">
-              <ScrollArea className="h-[calc(100vh-420px)]">
+              <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                <div className="px-4 pt-4 pb-2">
+                  <TabsList className="w-full grid grid-cols-5">
+                    <TabsTrigger value="all" className="text-xs gap-1.5">
+                      All
+                      <Badge variant="secondary" className="ml-1 px-1.5 py-0 h-4 text-[10px] font-semibold">
+                        {statusCounts.all}
+                      </Badge>
+                    </TabsTrigger>
+                    <TabsTrigger value="approved" className="text-xs gap-1.5">
+                      Approved
+                      <Badge variant="secondary" className="ml-1 px-1.5 py-0 h-4 text-[10px] font-semibold bg-green-100 text-green-700">
+                        {statusCounts.approved}
+                      </Badge>
+                    </TabsTrigger>
+                    <TabsTrigger value="submitted" className="text-xs gap-1.5">
+                      Submitted
+                      <Badge variant="secondary" className="ml-1 px-1.5 py-0 h-4 text-[10px] font-semibold bg-blue-100 text-blue-700">
+                        {statusCounts.submitted}
+                      </Badge>
+                    </TabsTrigger>
+                    <TabsTrigger value="cancelled" className="text-xs gap-1.5">
+                      Cancelled
+                      <Badge variant="secondary" className="ml-1 px-1.5 py-0 h-4 text-[10px] font-semibold bg-red-100 text-red-700">
+                        {statusCounts.cancelled}
+                      </Badge>
+                    </TabsTrigger>
+                    <TabsTrigger value="completed" className="text-xs gap-1.5">
+                      Completed
+                      <Badge variant="secondary" className="ml-1 px-1.5 py-0 h-4 text-[10px] font-semibold bg-purple-100 text-purple-700">
+                        {statusCounts.completed}
+                      </Badge>
+                    </TabsTrigger>
+                  </TabsList>
+                </div>
+                
+                <TabsContent value={activeTab} className="mt-0">
+                  <ScrollArea className="h-[calc(100vh-480px)]">
                 {loading && filteredEvents.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-12">
                     <Loader2 className="w-8 h-8 text-blue-600 animate-spin mb-4" />
                     <p className="text-gray-600">Loading events...</p>
                   </div>
-                ) : filteredEvents.length === 0 ? (
+                ) : filteredEvents.filter(event => activeTab === 'all' || event.status === activeTab).length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-12">
                     <Calendar className="w-12 h-12 text-gray-400 mb-4" />
                     <p className="text-gray-600 font-medium">No events found</p>
@@ -446,7 +526,7 @@ const AllEventsPage: React.FC = () => {
                   </div>
                 ) : (
                   <div className="divide-y divide-gray-100">
-                    {filteredEvents.map((event) => (
+                    {filteredEvents.filter(event => activeTab === 'all' || event.status === activeTab).map((event) => (
                       <div
                         key={event._id}
                         onClick={() => setSelectedEvent(event)}
@@ -458,7 +538,17 @@ const AllEventsPage: React.FC = () => {
                         <div className="flex items-start justify-between gap-2 mb-2">
                           <div className="flex items-center gap-1.5 min-w-0 flex-1">
                             <MapPin className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
-                            <span className="font-medium text-sm text-foreground truncate">{event.location}</span>
+                            {event.locations && event.locations.length > 1 ? (
+                              <div className="flex flex-wrap gap-1 min-w-0">
+                                {event.locations.map((loc, idx) => (
+                                  <Badge key={idx} variant="secondary" className="text-[10px] px-1.5 py-0 h-5 font-medium">
+                                    {loc}
+                                  </Badge>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="font-medium text-sm text-foreground truncate">{event.location}</span>
+                            )}
                           </div>
                           {getStatusBadge(event.status)}
                         </div>
@@ -493,7 +583,9 @@ const AllEventsPage: React.FC = () => {
                     ))}
                   </div>
                 )}
-              </ScrollArea>
+                  </ScrollArea>
+                </TabsContent>
+              </Tabs>
             </CardContent>
           </Card>
 
@@ -543,12 +635,22 @@ const AllEventsPage: React.FC = () => {
                     <div className="space-y-2.5">
                       <h3 className="text-sm font-medium text-foreground flex items-center gap-1.5">
                         <MapPin className="w-3.5 h-3.5 text-blue-600" />
-                        Location & Schedule
+                        Location{selectedEvent.locations && selectedEvent.locations.length > 1 ? 's' : ''} & Schedule
                       </h3>
                       <div className="bg-accent/30 rounded-lg p-3.5 space-y-2">
                         <div className="flex items-center gap-2 text-sm">
-                          <MapPin className="w-3.5 h-3.5 text-muted-foreground" />
-                          <span className="font-medium text-foreground">{selectedEvent.location}</span>
+                          <MapPin className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                          {selectedEvent.locations && selectedEvent.locations.length > 1 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {selectedEvent.locations.map((loc, idx) => (
+                                <Badge key={idx} variant="secondary" className="text-xs font-medium">
+                                  {loc}
+                                </Badge>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="font-medium text-foreground">{selectedEvent.location}</span>
+                          )}
                         </div>
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
                           <Calendar className="w-3.5 h-3.5" />

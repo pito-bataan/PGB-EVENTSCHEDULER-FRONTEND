@@ -17,7 +17,9 @@ import {
   LayoutDashboard,
   CalendarPlus,
   PanelLeft,
-  CalendarCheck
+  CalendarCheck,
+  Menu,
+  X
 } from 'lucide-react';
 
 interface UsersSidebarProps {
@@ -56,6 +58,20 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
     }
   }, [user]);
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // Prevent body scroll when mobile menu is open
+  useEffect(() => {
+    if (isMobileMenuOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [isMobileMenuOpen]);
   const [permissions, setPermissions] = useState({
     myRequirements: false,
     manageLocation: false,
@@ -511,9 +527,41 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
   };
 
   return (
-    <div className={`flex flex-col h-screen bg-white border-r border-gray-200 shadow-sm transition-all duration-300 ${
-      isCollapsed ? 'w-16' : 'w-64'
-    }`}>
+    <>
+      {/* Mobile Menu Button - Only visible on mobile */}
+      <button
+        onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+        className="lg:hidden fixed top-4 left-4 z-[60] p-2 bg-white rounded-lg shadow-lg border border-gray-200 hover:bg-gray-50"
+      >
+        {isMobileMenuOpen ? (
+          <X className="h-6 w-6 text-gray-700" />
+        ) : (
+          <Menu className="h-6 w-6 text-gray-700" />
+        )}
+      </button>
+
+      {/* Overlay for mobile - Only visible when menu is open */}
+      {isMobileMenuOpen && (
+        <div
+          className="lg:hidden fixed inset-0 bg-black/50 z-40"
+          onClick={() => setIsMobileMenuOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      {/* Sidebar */}
+      <div className={`
+        flex flex-col h-screen bg-white border-r border-gray-200 shadow-sm transition-all duration-300
+        ${
+          isCollapsed ? 'lg:w-16' : 'lg:w-64'
+        }
+        w-64
+        lg:relative lg:translate-x-0
+        fixed top-0 left-0 z-50
+        ${
+          isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+        }
+      `}>
       {/* Header */}
       <div className="flex items-center gap-3 p-4 border-b border-gray-100 relative">
         <img 
@@ -522,18 +570,18 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
           className="w-8 h-8 object-contain flex-shrink-0"
         />
         <div className={`flex-1 min-w-0 transition-opacity duration-200 ${
-          isCollapsed ? 'opacity-0 w-0 overflow-hidden' : 'opacity-100'
+          isCollapsed ? 'lg:opacity-0 lg:w-0 lg:overflow-hidden' : 'opacity-100'
         }`}>
           <h2 className="text-sm font-semibold text-gray-900 truncate">Event Scheduler</h2>
           <p className="text-xs text-blue-600 truncate">Provincial Government</p>
         </div>
         
-        {/* Floating Toggle Button */}
+        {/* Floating Toggle Button - Only on desktop */}
         <Button
           variant="ghost"
           size="icon"
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className="absolute -right-3 top-1/2 -translate-y-1/2 h-6 w-6 bg-white border border-gray-200 hover:bg-gray-50 rounded-full shadow-sm z-10"
+          className="hidden lg:flex absolute -right-3 top-1/2 -translate-y-1/2 h-6 w-6 bg-white border border-gray-200 hover:bg-gray-50 rounded-full shadow-sm z-10"
         >
           <PanelLeft className={`h-3 w-3 transition-transform duration-200 ${
             isCollapsed ? 'rotate-180' : ''
@@ -559,21 +607,24 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
             <div key={item.label} className="relative">
               <Button
                 variant="ghost"
-                onClick={() => handleNavigation(item.href)}
+                onClick={() => {
+                  handleNavigation(item.href);
+                  setIsMobileMenuOpen(false); // Close mobile menu on navigation
+                }}
                 className={`w-full h-10 transition-all duration-200 ${
                   isActive 
                     ? 'bg-blue-100 text-blue-700 border-r-2 border-blue-600'
                     : 'text-gray-700 hover:bg-blue-50 hover:text-blue-700'
                 } ${
                   isCollapsed 
-                    ? 'justify-center px-2' 
+                    ? 'lg:justify-center lg:px-2' 
                     : 'justify-start gap-3 px-3'
                 }`}
                 title={isCollapsed ? item.label : undefined}
               >
                 <Icon className="h-5 w-5 flex-shrink-0" />
                 <span className={`truncate transition-opacity duration-200 ${
-                  isCollapsed ? 'opacity-0 w-0 overflow-hidden' : 'opacity-100'
+                  isCollapsed ? 'lg:opacity-0 lg:w-0 lg:overflow-hidden' : 'opacity-100'
                 }`}>
                   {item.label}
                 </span>
@@ -628,7 +679,7 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
             </span>
           </div>
           <div className={`flex-1 min-w-0 transition-opacity duration-200 ${
-            isCollapsed ? 'opacity-0 w-0 overflow-hidden' : 'opacity-100'
+            isCollapsed ? 'lg:opacity-0 lg:w-0 lg:overflow-hidden' : 'opacity-100'
           }`}>
             <p className="text-sm font-semibold text-gray-900 truncate">{currentUser.department}</p>
             <p className="text-xs text-gray-500 truncate">{currentUser.email}</p>
@@ -638,23 +689,27 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
         {/* Logout Button */}
         <Button
           variant="ghost"
-          onClick={handleLogout}
+          onClick={() => {
+            handleLogout();
+            setIsMobileMenuOpen(false); // Close mobile menu on logout
+          }}
           className={`w-full h-9 transition-all duration-200 text-red-600 hover:bg-red-50 hover:text-red-700 ${
             isCollapsed 
-              ? 'justify-center px-2' 
+              ? 'lg:justify-center lg:px-2' 
               : 'justify-start gap-3 px-3'
           }`}
           title={isCollapsed ? 'Logout' : undefined}
         >
           <LogOut className="h-4 w-4 flex-shrink-0" />
           <span className={`truncate transition-opacity duration-200 ${
-            isCollapsed ? 'opacity-0 w-0 overflow-hidden' : 'opacity-100'
+            isCollapsed ? 'lg:opacity-0 lg:w-0 lg:overflow-hidden' : 'opacity-100'
           }`}>
             Logout
           </span>
         </Button>
       </div>
     </div>
+    </>
   );
 };
 

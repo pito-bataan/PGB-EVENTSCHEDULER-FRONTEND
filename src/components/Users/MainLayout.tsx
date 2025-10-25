@@ -28,10 +28,11 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   }, []);
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen bg-gray-50 overflow-hidden">
       <UsersSidebar user={currentUser} />
-      <main className="flex-1 overflow-auto">
-        <div className="p-6">
+      <main className="flex-1 overflow-auto bg-gray-50 w-full relative z-0">
+        {/* Add top padding on mobile for hamburger button */}
+        <div className="p-4 pt-20 lg:p-6 lg:pt-6 min-h-screen bg-gray-50">
           {children}
         </div>
       </main>

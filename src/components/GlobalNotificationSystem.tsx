@@ -40,23 +40,39 @@ const initializeAudioContext = async () => {
 
 // Global notification sound function with fallback
 const playGlobalNotificationSound = async (title: string = 'New Event Notification', body: string = 'You have a new event update') => {
+  console.log('🔔 [WEB PUSH] Attempting to show notification:', { title, body });
+  console.log('🔔 [WEB PUSH] Notification permission:', Notification.permission);
+  
   // ALWAYS try Web Notification API first if permission is granted (for desktop notifications)
   if ('Notification' in window && Notification.permission === 'granted') {
     try {
+      console.log('✅ [WEB PUSH] Creating browser notification...');
       // Create a notification that triggers system sound AND shows desktop notification
       const notification = new Notification(title, {
         body: body,
-        icon: '/images/bataanlogo.png', // Use Bataan logo from public folder
+        icon: `${window.location.origin}/images/bataanlogo.png`, // Use absolute URL for better compatibility
+        badge: `${window.location.origin}/images/bataanlogo.png`, // Badge icon for mobile/some browsers
         silent: false,
-        tag: 'notification-sound-' + Date.now(),
+        tag: 'notification-' + Date.now(),
         requireInteraction: false
       });
-      // Close it after 1 second to allow rapid notifications
-      setTimeout(() => notification.close(), 2000);
+      
+      console.log('✅ [WEB PUSH] Browser notification created successfully!');
+      
+      // Close it after 5 seconds
+      setTimeout(() => {
+        notification.close();
+        console.log('🔔 [WEB PUSH] Notification closed');
+      }, 5000);
+      
       return true;
     } catch (e) {
-      console.error('❌ [AUDIO] Web Notification failed with error:', e);
+      console.error('❌ [WEB PUSH] Web Notification failed with error:', e);
     }
+  } else {
+    console.warn('⚠️ [WEB PUSH] Notification not available or permission not granted');
+    console.log('   - Notification in window:', 'Notification' in window);
+    console.log('   - Permission:', Notification?.permission);
   }
   
   // Fallback to AudioContext if Web Notification API is not available

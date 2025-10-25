@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, memo } from 'react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -272,7 +272,7 @@ const CustomCalendar: React.FC<CustomCalendarProps> = ({
 
         {/* Calendar Days */}
         <div className="grid grid-cols-7">
-          {calendarDays.map((date, index) => {
+          {calendarDays.map((date) => {
             const dateEvents = getEventsForDate(date);
             const isToday = isSameDay(date, new Date());
             const isCurrentMonth = isSameMonth(date, currentDate);
@@ -280,14 +280,11 @@ const CustomCalendar: React.FC<CustomCalendarProps> = ({
             const isSelected = isDateSelected(date);
 
             return (
-              <motion.div
+              <div
                 key={date.toISOString()}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.01 }}
                 className={`
                   relative p-4 ${cellHeight} border-r border-b border-gray-100 group
-                  transition-all duration-200
+                  transition-colors duration-150
                   ${!isCurrentMonth ? 'text-gray-400 bg-gray-25' : ''}
                   ${isToday && !isSelected ? 'bg-blue-50 border-blue-200' : ''}
                   ${isSelected ? 'bg-orange-100 border-orange-300 ring-2 ring-orange-200' : ''}
@@ -304,7 +301,7 @@ const CustomCalendar: React.FC<CustomCalendarProps> = ({
                   ? renderDateContent(date, dateEvents)
                   : defaultRenderDateContent(date, dateEvents)
                 }
-              </motion.div>
+              </div>
             );
           })}
         </div>

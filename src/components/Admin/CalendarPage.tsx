@@ -155,8 +155,18 @@ const AdminCalendarPage: React.FC = () => {
             <div className="flex items-start gap-2 text-sm">
               <MapPin className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
               <div>
-                <p className="font-medium text-gray-700">Location</p>
-                <p className="text-gray-600">{event.location}</p>
+                <p className="font-medium text-gray-700">Location{event.locations && event.locations.length > 1 ? 's' : ''}</p>
+                {event.locations && event.locations.length > 1 ? (
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {event.locations.map((loc, idx) => (
+                      <Badge key={idx} variant="secondary" className="text-xs font-medium">
+                        {loc}
+                      </Badge>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-gray-600">{event.location}</p>
+                )}
               </div>
             </div>
 

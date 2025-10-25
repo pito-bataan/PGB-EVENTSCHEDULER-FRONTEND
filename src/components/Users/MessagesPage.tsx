@@ -87,7 +87,8 @@ import {
   Smile,
   User,
   Image,
-  FileText
+  FileText,
+  ArrowLeft
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -509,15 +510,15 @@ const MessagesPage: React.FC = () => {
   // This function is now handled by the Zustand store
 
   return (
-    <div className="min-h-screen bg-gray-100 p-4">
-      <div className="w-full h-[calc(100vh-2rem)] flex bg-white rounded-lg shadow-lg overflow-hidden">
+    <div className="min-h-screen bg-gray-100 p-0 md:p-4">
+      <div className="w-full h-screen md:h-[calc(100vh-2rem)] flex bg-white md:rounded-lg md:shadow-lg overflow-hidden">
       {/* Left Sidebar - Conversations List */}
-      <div className="w-80 bg-white border-r border-gray-200 flex flex-col rounded-l-lg">
+      <div className={`${selectedConversation ? 'hidden md:flex' : 'flex'} w-full md:w-80 lg:w-96 bg-white border-r border-gray-200 flex-col md:rounded-l-lg`}>
         {/* Header */}
-        <div className="p-4 border-b border-gray-200">
-          <div className="flex items-center justify-between mb-4">
-            <h1 className="text-xl font-semibold flex items-center gap-2">
-              <MessageCircle className="w-5 h-5 text-blue-600" />
+        <div className="p-3 md:p-4 border-b border-gray-200">
+          <div className="flex items-center justify-between mb-3 md:mb-4">
+            <h1 className="text-lg md:text-xl font-semibold flex items-center gap-2">
+              <MessageCircle className="w-4 h-4 md:w-5 md:h-5 text-blue-600" />
               Messages
             </h1>
           </div>
@@ -758,35 +759,47 @@ const MessagesPage: React.FC = () => {
       </div>
 
       {/* Right Side - Chat Interface */}
-      <div className="flex-1 flex flex-col rounded-r-lg bg-gray-50">
+      <div className={`${selectedConversation ? 'flex' : 'hidden md:flex'} flex-1 flex-col rounded-r-lg bg-gray-50`}>
         {selectedConv ? (
           <>
             {/* Chat Header */}
-            <div className="bg-white border-b border-gray-200 p-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Avatar className="w-10 h-10">
-                    <AvatarFallback className="bg-blue-100 text-blue-600">
+            <div className="bg-white border-b border-gray-200 p-3 md:p-4 flex-shrink-0">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 md:gap-3 flex-1 min-w-0 overflow-hidden">
+                  {/* Back Button - Mobile Only */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="md:hidden p-2 -ml-2 flex-shrink-0"
+                    onClick={() => setSelectedConversation(null)}
+                  >
+                    <ArrowLeft className="w-5 h-5 text-gray-700" />
+                  </Button>
+                  
+                  <Avatar className="w-8 h-8 md:w-10 md:h-10 flex-shrink-0">
+                    <AvatarFallback className="bg-blue-100 text-blue-600 text-sm md:text-base">
                       {selectedUser?.name?.charAt(0) || selectedUser?.email?.charAt(0) || 'U'}
                     </AvatarFallback>
                   </Avatar>
-                  <div>
-                    <h2 className="font-semibold">
+                  <div className="flex-1 min-w-0 overflow-hidden">
+                    <h2 className="font-semibold text-sm md:text-base truncate">
                       {selectedUser?.name || selectedUser?.email || 'Unknown User'}
                     </h2>
-                    <p className="text-sm text-blue-600">📅 {selectedConv.eventTitle}</p>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-[10px] md:text-xs text-blue-600 truncate leading-tight" title={selectedConv.eventTitle || ''}>
+                      📅 {selectedConv.eventTitle && selectedConv.eventTitle.length > 30 ? selectedConv.eventTitle.substring(0, 30) + '...' : selectedConv.eventTitle || 'Event'}
+                    </p>
+                    <p className="text-[10px] md:text-xs text-gray-500 truncate">
                       {selectedUser?.department} • {selectedUser?.isOnline ? 'Online' : 'Offline'}
                     </p>
-                    {/* Socket Connection Status */}
-                    <p className="text-xs flex items-center gap-1">
+                    {/* Socket Connection Status - Hidden on mobile */}
+                    <p className="hidden md:flex text-xs items-center gap-1">
                       <span className={`w-2 h-2 rounded-full ${socketConnected ? 'bg-green-500' : 'bg-red-500'}`}></span>
                       {socketConnected ? 'Connected' : 'Disconnected'}
                     </p>
                   </div>
                 </div>
                 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-shrink-0">
                   <Sheet>
                     <SheetTrigger asChild>
                       <Button variant="outline" size="sm">
@@ -925,7 +938,7 @@ const MessagesPage: React.FC = () => {
             </div>
 
             {/* Messages Area */}
-            <div className="flex-1 overflow-y-auto p-6 pt-8 bg-gray-50">
+            <div className="flex-1 overflow-y-auto p-3 md:p-4 lg:p-6 pt-4 md:pt-6 lg:pt-8 bg-gray-50 min-h-0">
               {conversationMessages.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-center">
                   <MessageCircle className="w-16 h-16 text-gray-300 mb-4" />
@@ -1105,7 +1118,7 @@ const MessagesPage: React.FC = () => {
             </div>
 
             {/* Message Input */}
-            <div className="bg-white border-t border-gray-200 p-4">
+            <div className="bg-white border-t border-gray-200 p-2 md:p-3 lg:p-4 flex-shrink-0">
               {/* File Upload Input (Hidden) */}
               <input
                 type="file"
@@ -1115,17 +1128,18 @@ const MessagesPage: React.FC = () => {
                 accept="image/*,application/pdf,.doc,.docx,.txt,.zip,.rar,video/*,audio/*"
               />
               
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 md:gap-2">
                 <Button 
                   variant="ghost" 
                   size="sm"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isUploading}
                   title="Attach file"
+                  className="p-2 flex-shrink-0"
                 >
                   <Paperclip className="w-4 h-4" />
                 </Button>
-                <div className="flex-1 relative">
+                <div className="flex-1 relative min-w-0">
                   <Input
                     placeholder="Type a message..."
                     value={newMessage}
@@ -1134,16 +1148,16 @@ const MessagesPage: React.FC = () => {
                       handleTyping(); // Trigger typing indicator
                     }}
                     onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                    className="pr-10"
+                    className="pr-10 text-sm"
                   />
-                  <Button variant="ghost" size="sm" className="absolute right-1 top-1/2 transform -translate-y-1/2">
+                  <Button variant="ghost" size="sm" className="hidden md:flex absolute right-1 top-1/2 transform -translate-y-1/2">
                     <Smile className="w-4 h-4" />
                   </Button>
                 </div>
                 <Button 
                   onClick={handleSendMessage}
                   disabled={!newMessage.trim() || isUploading}
-                  className="bg-blue-600 hover:bg-blue-700"
+                  className="bg-blue-600 hover:bg-blue-700 p-2 md:px-4 flex-shrink-0"
                 >
                   <Send className="w-4 h-4" />
                 </Button>

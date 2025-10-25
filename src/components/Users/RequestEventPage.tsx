@@ -51,6 +51,8 @@ import {
   Info,
   Check,
   AlertTriangle,
+  AlertCircle,
+  CheckCircle,
   Package,
   Settings,
   Clock,
@@ -80,6 +82,7 @@ interface FormData {
   eventTitle: string;
   requestor: string;
   location: string;
+  locations: string[]; // Array for multiple conference rooms
   participants: string;
   vip: string;
   vvip: string;
@@ -170,6 +173,7 @@ const RequestEventPage: React.FC = () => {
     eventTitle: '',
     requestor: '',
     location: '',
+    locations: [], // Initialize empty array for multiple locations
     participants: '',
     vip: '',
     vvip: '',
@@ -381,10 +385,13 @@ const RequestEventPage: React.FC = () => {
     if (value === 'Add Custom Location') {
       setShowCustomLocation(true);
       handleInputChange('location', '');
+      handleInputChange('locations', []);
       setAvailableDates([]); // Clear available dates
     } else {
       setShowCustomLocation(false);
       handleInputChange('location', value);
+      // Initialize locations array with the selected location
+      handleInputChange('locations', [value]);
       
       // Fetch available dates for the selected location
       await fetchAvailableDatesForLocation(value);
@@ -393,6 +400,33 @@ const RequestEventPage: React.FC = () => {
       setSelectedLocation(value);
       setShowScheduleModal(true);
     }
+  };
+
+  // Add additional conference room to locations array
+  const handleAddConferenceRoom = async (roomNumber: 1 | 2 | 3) => {
+    const roomName = `4th Flr. Conference Room ${roomNumber}`;
+    if (!formData.locations.includes(roomName)) {
+      // Fetch availability for the new conference room
+      await fetchAvailableDatesForLocation(roomName);
+      
+      const updatedLocations = [...formData.locations, roomName];
+      handleInputChange('locations', updatedLocations);
+      handleInputChange('multipleLocations', true);
+      toast.success(`${roomName} added to your booking`);
+      
+      // Note: All conference rooms share the same availability since they're in the same building
+      console.log(`Added ${roomName} - using same availability as other conference rooms`);
+    }
+  };
+
+  // Remove conference room from locations array
+  const handleRemoveConferenceRoom = (roomName: string) => {
+    const updatedLocations = formData.locations.filter(loc => loc !== roomName);
+    handleInputChange('locations', updatedLocations);
+    if (updatedLocations.length <= 1) {
+      handleInputChange('multipleLocations', false);
+    }
+    toast.success(`${roomName} removed from your booking`);
   };
 
   const handleScheduleSave = async () => {
@@ -866,14 +900,51 @@ const RequestEventPage: React.FC = () => {
       const eventsData = await response.json();
       const events = eventsData.data || [];
       
+      // Helper function to check if two locations conflict (Pavilion hierarchy)
+      const locationsConflict = (loc1: string, loc2: string): boolean => {
+        // Exact match
+        if (loc1 === loc2) return true;
+         
+        // Check Pavilion hierarchy
+        const isPavilion1 = loc1.includes('Pavilion');
+        const isPavilion2 = loc2.includes('Pavilion');
+        
+        if (isPavilion1 && isPavilion2) {
+          // Extract hall name (Kagitingan or Kalayaan)
+          const getHall = (loc: string) => {
+            if (loc.includes('Kagitingan')) return 'Kagitingan';
+            if (loc.includes('Kalayaan')) return 'Kalayaan';
+            return null;
+          };
+          
+          const hall1 = getHall(loc1);
+          const hall2 = getHall(loc2);
+          
+          // Different halls don't conflict
+          if (hall1 !== hall2) return false;
+          
+          // Same hall - check if one is "Entire" or both are sections
+          const isEntire1 = loc1.includes('(Entire)');
+          const isEntire2 = loc2.includes('(Entire)');
+          
+          // If either is "Entire", they conflict
+          if (isEntire1 || isEntire2) return true;
+          
+          // Both are sections - only conflict if same section
+          return loc1 === loc2;
+        }
+        
+        return false;
+      };
+      
       // Filter events that conflict with the selected time AND location (for venue booking)
       const conflicts = events.filter((event: any) => {
         if (!event.startDate || !event.startTime || !event.endDate || !event.endTime) {
           return false;
         }
         
-        // Only check conflicts for the SAME location (venue booking)
-        if (event.location !== location) {
+        // Check if locations conflict (handles Pavilion hierarchy)
+        if (!locationsConflict(event.location, location)) {
           return false;
         }
         
@@ -1073,12 +1144,23 @@ const RequestEventPage: React.FC = () => {
       // Basic event information
       formDataToSubmit.append('eventTitle', formData.eventTitle);
       formDataToSubmit.append('requestor', formData.requestor);
-      formDataToSubmit.append('location', formData.location);
+      
+      // Location handling: single location uses 'location', multiple uses 'locations' array
+      if (formData.locations.length > 1) {
+        // Multiple conference rooms - send as locations array
+        formDataToSubmit.append('locations', JSON.stringify(formData.locations));
+        formDataToSubmit.append('location', formData.locations[0]);
+        formDataToSubmit.append('multipleLocations', 'true');
+      } else {
+        // Single location - use default location field
+        formDataToSubmit.append('location', formData.location);
+        formDataToSubmit.append('multipleLocations', 'false');
+      }
+      
       formDataToSubmit.append('participants', formData.participants);
       formDataToSubmit.append('vip', formData.vip || '0');
       formDataToSubmit.append('vvip', formData.vvip || '0');
       formDataToSubmit.append('withoutGov', formData.withoutGov.toString());
-      formDataToSubmit.append('multipleLocations', formData.multipleLocations.toString());
       formDataToSubmit.append('description', formData.description || '');
       formDataToSubmit.append('eventType', formData.eventType);
       
@@ -1247,6 +1329,43 @@ const RequestEventPage: React.FC = () => {
     return times;
   };
 
+  // Helper function to check if two locations conflict (Pavilion hierarchy)
+  const locationsConflict = (loc1: string, loc2: string): boolean => {
+    // Exact match
+    if (loc1 === loc2) return true;
+    
+    // Check Pavilion hierarchy
+    const isPavilion1 = loc1.includes('Pavilion');
+    const isPavilion2 = loc2.includes('Pavilion');
+    
+    if (isPavilion1 && isPavilion2) {
+      // Extract hall name (Kagitingan or Kalayaan)
+      const getHall = (loc: string) => {
+        if (loc.includes('Kagitingan')) return 'Kagitingan';
+        if (loc.includes('Kalayaan')) return 'Kalayaan';
+        return null;
+      };
+      
+      const hall1 = getHall(loc1);
+      const hall2 = getHall(loc2);
+      
+      // Different halls don't conflict
+      if (hall1 !== hall2) return false;
+      
+      // Same hall - check if one is "Entire" or both are sections
+      const isEntire1 = loc1.includes('(Entire)');
+      const isEntire2 = loc2.includes('(Entire)');
+      
+      // If either is "Entire", they conflict
+      if (isEntire1 || isEntire2) return true;
+      
+      // Both are sections - only conflict if same section
+      return loc1 === loc2;
+    }
+    
+    return false;
+  };
+
   // Check if a specific time slot is booked for the selected location and date
   const isTimeSlotBooked = (timeSlot: string) => {
     if (!formData.startDate || !formData.location || conflictingEvents.length === 0) {
@@ -1254,8 +1373,8 @@ const RequestEventPage: React.FC = () => {
     }
 
     return conflictingEvents.some(event => {
-      // For venue conflicts, only check the SAME location
-      if (event.location !== formData.location) return false;
+      // Check if locations conflict (handles Pavilion hierarchy)
+      if (!locationsConflict(event.location, formData.location)) return false;
       
       const eventStartTime = event.startTime;
       const eventEndTime = event.endTime;
@@ -1429,18 +1548,18 @@ const RequestEventPage: React.FC = () => {
   };
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
+    <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4 md:space-y-6">
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
-        className="flex items-center justify-between"
+        className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
       >
         <div>
-          <h1 className="text-2xl font-semibold">Request Event</h1>
-          <p className="text-sm text-muted-foreground">Create a new event request</p>
+          <h1 className="text-xl md:text-2xl font-semibold">Request Event</h1>
+          <p className="text-xs md:text-sm text-muted-foreground">Create a new event request</p>
         </div>
-        <Badge variant="outline" className="text-xs">
+        <Badge variant="outline" className="text-xs whitespace-nowrap">
           Step {currentStep} of {steps.length}
         </Badge>
       </motion.div>
@@ -1451,8 +1570,8 @@ const RequestEventPage: React.FC = () => {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
       >
-        <Card className="p-4">
-          <div className="flex items-center justify-between">
+        <Card className="p-3 md:p-4 overflow-x-auto">
+          <div className="flex items-center justify-between min-w-max md:min-w-0">
             {steps.map((step, index) => {
               const Icon = step.icon;
               const isActive = step.id === currentStep;
@@ -1462,8 +1581,8 @@ const RequestEventPage: React.FC = () => {
               
               return (
                 <React.Fragment key={step.id}>
-                  <div className="flex items-center gap-3">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium transition-all ${
+                  <div className="flex items-center gap-2 md:gap-3">
+                    <div className={`w-7 h-7 md:w-8 md:h-8 rounded-full flex items-center justify-center text-xs font-medium transition-all flex-shrink-0 ${
                       isCompleted 
                         ? 'bg-green-100 text-green-700 border border-green-200'
                         : isActive 
@@ -1482,7 +1601,7 @@ const RequestEventPage: React.FC = () => {
                   </div>
                   
                   {index < steps.length - 1 && (
-                    <div className="flex-1 mx-4">
+                    <div className="flex-1 mx-2 md:mx-4 min-w-[20px] md:min-w-[40px]">
                       <div className="h-px bg-gray-200 relative">
                         <motion.div
                           className="h-full bg-green-400"
@@ -1506,19 +1625,19 @@ const RequestEventPage: React.FC = () => {
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, x: 20 }}
-          className="grid grid-cols-1 lg:grid-cols-3 gap-6"
+          className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6"
         >
           {/* Main Form */}
           <div className="lg:col-span-2">
             <Card>
-              <CardHeader className="pb-4">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    <FileText className="w-5 h-5 text-blue-600" />
+              <CardHeader className="p-4 md:p-6 pb-3 md:pb-4">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <CardTitle className="text-base md:text-lg flex items-center gap-2">
+                    <FileText className="w-4 h-4 md:w-5 md:h-5 text-blue-600" />
                     Event Information
                   </CardTitle>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-gray-600">Event Type:</span>
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+                    <span className="text-xs md:text-sm text-gray-600 whitespace-nowrap">Event Type:</span>
                     <div className="flex border rounded-lg overflow-hidden">
                       <button
                         type="button"
@@ -1546,7 +1665,7 @@ const RequestEventPage: React.FC = () => {
                   </div>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="p-4 md:p-6 space-y-3 md:space-y-4">
                 {/* Row 1: Title */}
                 <div>
                   <Label htmlFor="eventTitle" className="text-sm font-medium">Event Title <span className="text-red-500">*</span></Label>
@@ -1584,7 +1703,7 @@ const RequestEventPage: React.FC = () => {
                               <SelectValue placeholder="Select location" />
                             </div>
                           </SelectTrigger>
-                          <SelectContent className="max-h-48">
+                          <SelectContent className="max-h-80">
                             {locations.map((location) => (
                               <SelectItem 
                                 key={location} 
@@ -1650,6 +1769,7 @@ const RequestEventPage: React.FC = () => {
                       id="participants"
                       type="number"
                       placeholder="0"
+                      min="0"
                       value={formData.participants}
                       onChange={(e) => handleInputChange('participants', e.target.value)}
                       className="mt-1"
@@ -1661,6 +1781,7 @@ const RequestEventPage: React.FC = () => {
                       id="vip"
                       type="number"
                       placeholder="0"
+                      min="0"
                       value={formData.vip}
                       onChange={(e) => handleInputChange('vip', e.target.value)}
                       className="mt-1"
@@ -1672,6 +1793,7 @@ const RequestEventPage: React.FC = () => {
                       id="vvip"
                       type="number"
                       placeholder="0"
+                      min="0"
                       value={formData.vvip}
                       onChange={(e) => handleInputChange('vvip', e.target.value)}
                       className="mt-1"
@@ -2057,7 +2179,16 @@ const RequestEventPage: React.FC = () => {
                           <div className="text-sm text-gray-600">
                             {format(formData.startDate, "EEEE, MMMM dd, yyyy")} at {formatTime(formData.startTime)}
                           </div>
-                          {formData.location && (
+                          {formData.locations && formData.locations.length > 0 ? (
+                            <div className="text-xs text-blue-600 mt-1 space-y-1">
+                              {formData.locations.map((loc, idx) => (
+                                <div key={idx} className="flex items-center gap-1">
+                                  <Building2 className="w-3 h-3" />
+                                  {loc}
+                                </div>
+                              ))}
+                            </div>
+                          ) : formData.location && (
                             <div className="text-xs text-blue-600 mt-1 flex items-center gap-1">
                               <Building2 className="w-3 h-3" />
                               {formData.location}
@@ -2083,7 +2214,16 @@ const RequestEventPage: React.FC = () => {
                           <div className="text-sm text-gray-600">
                             {format(formData.endDate, "EEEE, MMMM dd, yyyy")} at {formatTime(formData.endTime)}
                           </div>
-                          {formData.location && (
+                          {formData.locations && formData.locations.length > 0 ? (
+                            <div className="text-xs text-blue-600 mt-1 space-y-1">
+                              {formData.locations.map((loc, idx) => (
+                                <div key={idx} className="flex items-center gap-1">
+                                  <Building2 className="w-3 h-3" />
+                                  {loc}
+                                </div>
+                              ))}
+                            </div>
+                          ) : formData.location && (
                             <div className="text-xs text-blue-600 mt-1 flex items-center gap-1">
                               <Building2 className="w-3 h-3" />
                               {formData.location}
@@ -2270,24 +2410,105 @@ const RequestEventPage: React.FC = () => {
 
       {/* Navigation for other steps */}
       {currentStep !== 3 && currentStep !== 5 && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.3 }}
-          className="flex justify-between pt-4"
-        >
-          <Button variant="outline" disabled>
-            Previous
-          </Button>
-          <Button 
-            onClick={() => setCurrentStep(3)} 
-            disabled={!formData.eventTitle || !formData.requestor || !formData.location || !formData.participants || !formData.description || formData.attachments.length === 0}
-            className="gap-2"
+        <>
+          {/* Missing Fields Alert - Only show if fields are missing */}
+          {(!formData.eventTitle || !formData.requestor || !formData.location || !formData.participants || !formData.description || formData.attachments.length === 0 || !formData.startDate || !formData.startTime || !formData.endDate || !formData.endTime) && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="mt-4 p-4 bg-orange-50 border border-orange-200 rounded-lg"
+            >
+              <div className="space-y-2">
+                <h4 className="font-medium text-sm text-orange-900 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4" />
+                  Missing Required Fields
+                </h4>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                  {!formData.eventTitle && (
+                    <div className="flex items-center gap-2 text-orange-700">
+                      <div className="w-1.5 h-1.5 bg-orange-500 rounded-full" />
+                      <span>Event Title</span>
+                    </div>
+                  )}
+                  {!formData.requestor && (
+                    <div className="flex items-center gap-2 text-orange-700">
+                      <div className="w-1.5 h-1.5 bg-orange-500 rounded-full" />
+                      <span>Requestor</span>
+                    </div>
+                  )}
+                  {!formData.location && (
+                    <div className="flex items-center gap-2 text-orange-700">
+                      <div className="w-1.5 h-1.5 bg-orange-500 rounded-full" />
+                      <span>Location</span>
+                    </div>
+                  )}
+                  {!formData.participants && (
+                    <div className="flex items-center gap-2 text-orange-700">
+                      <div className="w-1.5 h-1.5 bg-orange-500 rounded-full" />
+                      <span>Participants</span>
+                    </div>
+                  )}
+                  {!formData.description && (
+                    <div className="flex items-center gap-2 text-orange-700">
+                      <div className="w-1.5 h-1.5 bg-orange-500 rounded-full" />
+                      <span>Description</span>
+                    </div>
+                  )}
+                  {formData.attachments.length === 0 && (
+                    <div className="flex items-center gap-2 text-orange-700">
+                      <div className="w-1.5 h-1.5 bg-orange-500 rounded-full" />
+                      <span>Attachments</span>
+                    </div>
+                  )}
+                  {!formData.startDate && (
+                    <div className="flex items-center gap-2 text-orange-700">
+                      <div className="w-1.5 h-1.5 bg-orange-500 rounded-full" />
+                      <span>Start Date</span>
+                    </div>
+                  )}
+                  {!formData.startTime && (
+                    <div className="flex items-center gap-2 text-orange-700">
+                      <div className="w-1.5 h-1.5 bg-orange-500 rounded-full" />
+                      <span>Start Time</span>
+                    </div>
+                  )}
+                  {!formData.endDate && (
+                    <div className="flex items-center gap-2 text-orange-700">
+                      <div className="w-1.5 h-1.5 bg-orange-500 rounded-full" />
+                      <span>End Date</span>
+                    </div>
+                  )}
+                  {!formData.endTime && (
+                    <div className="flex items-center gap-2 text-orange-700">
+                      <div className="w-1.5 h-1.5 bg-orange-500 rounded-full" />
+                      <span>End Time</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.3 }}
+            className="flex justify-between pt-4"
           >
-            Continue to Tag Departments
-            <ChevronRight className="w-4 h-4" />
-          </Button>
-        </motion.div>
+            <Button variant="outline" disabled>
+              Previous
+            </Button>
+            <Button 
+              onClick={() => setCurrentStep(3)} 
+              disabled={!formData.eventTitle || !formData.requestor || !formData.location || !formData.participants || !formData.description || formData.attachments.length === 0 || !formData.startDate || !formData.startTime || !formData.endDate || !formData.endTime}
+              className="gap-2"
+            >
+              Continue to Tag Departments
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+          </motion.div>
+        </>
       )}
 
       {/* Requirements Modal */}
@@ -2721,6 +2942,259 @@ const RequestEventPage: React.FC = () => {
               <p className="text-sm text-gray-600 mt-1">
                 Select your preferred start and end date/time for the event.
               </p>
+              
+              {/* Multi-Conference Room Selection - Clean White Design */}
+              {(formData.location === '4th Flr. Conference Room 1' || 
+                formData.location === '4th Flr. Conference Room 2' || 
+                formData.location === '4th Flr. Conference Room 3') && (
+                <div className="mt-4 p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
+                  {/* Header */}
+                  <div className="flex items-center gap-2 mb-3">
+                    <Info className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                    <p className="text-sm font-medium text-gray-900">Need Multiple Conference Rooms?</p>
+                  </div>
+                  
+                  {/* Selected Rooms */}
+                  {formData.locations.length > 0 && (
+                    <div className="mb-3 flex flex-wrap gap-2">
+                      {formData.locations.map((loc) => (
+                        <Badge key={loc} variant="secondary" className="text-xs flex items-center gap-1.5 px-2.5 py-1">
+                          {loc}
+                          {formData.locations.length > 1 && (
+                            <button
+                              onClick={() => handleRemoveConferenceRoom(loc)}
+                              className="hover:text-red-600 transition-colors"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                  
+                  {/* Add Room Buttons */}
+                  <div className="flex flex-wrap gap-2">
+                    {!formData.locations.includes('4th Flr. Conference Room 1') && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleAddConferenceRoom(1)}
+                        className="text-xs h-8 px-3 hover:bg-gray-50"
+                      >
+                        <Plus className="w-3.5 h-3.5 mr-1.5" />
+                        4th Flr. Conference Room 1
+                      </Button>
+                    )}
+                    {!formData.locations.includes('4th Flr. Conference Room 2') && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleAddConferenceRoom(2)}
+                        className="text-xs h-8 px-3 hover:bg-gray-50"
+                      >
+                        <Plus className="w-3.5 h-3.5 mr-1.5" />
+                        4th Flr. Conference Room 2
+                      </Button>
+                    )}
+                    {!formData.locations.includes('4th Flr. Conference Room 3') && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleAddConferenceRoom(3)}
+                        className="text-xs h-8 px-3 hover:bg-gray-50"
+                      >
+                        <Plus className="w-3.5 h-3.5 mr-1.5" />
+                        4th Flr. Conference Room 3
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Multi-Pavilion Section Selection - Kagitingan Hall */}
+              {(formData.location === 'Pavilion - Kagitingan Hall - Section A' || 
+                formData.location === 'Pavilion - Kagitingan Hall - Section B' || 
+                formData.location === 'Pavilion - Kagitingan Hall - Section C') && (
+                <div className="mt-4 p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
+                  {/* Header */}
+                  <div className="flex items-center gap-2 mb-3">
+                    <Info className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                    <p className="text-sm font-medium text-gray-900">Need Multiple Kagitingan Hall Sections?</p>
+                  </div>
+                  
+                  {/* Selected Sections */}
+                  {formData.locations.length > 0 && (
+                    <div className="mb-3 flex flex-wrap gap-2">
+                      {formData.locations.map((loc) => (
+                        <Badge key={loc} variant="secondary" className="text-xs flex items-center gap-1.5 px-2.5 py-1">
+                          {loc}
+                          {formData.locations.length > 1 && (
+                            <button
+                              onClick={() => handleRemoveConferenceRoom(loc)}
+                              className="hover:text-red-600 transition-colors"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                  
+                  {/* Add Section Buttons */}
+                  <div className="flex flex-wrap gap-2">
+                    {!formData.locations.includes('Pavilion - Kagitingan Hall - Section A') && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={async () => {
+                          const sectionName = 'Pavilion - Kagitingan Hall - Section A';
+                          if (!formData.locations.includes(sectionName)) {
+                            await fetchAvailableDatesForLocation(sectionName);
+                            handleInputChange('locations', [...formData.locations, sectionName]);
+                          }
+                        }}
+                        className="text-xs h-8 px-3 hover:bg-gray-50"
+                      >
+                        <Plus className="w-3.5 h-3.5 mr-1.5" />
+                        Section A
+                      </Button>
+                    )}
+                    {!formData.locations.includes('Pavilion - Kagitingan Hall - Section B') && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={async () => {
+                          const sectionName = 'Pavilion - Kagitingan Hall - Section B';
+                          if (!formData.locations.includes(sectionName)) {
+                            await fetchAvailableDatesForLocation(sectionName);
+                            handleInputChange('locations', [...formData.locations, sectionName]);
+                          }
+                        }}
+                        className="text-xs h-8 px-3 hover:bg-gray-50"
+                      >
+                        <Plus className="w-3.5 h-3.5 mr-1.5" />
+                        Section B
+                      </Button>
+                    )}
+                    {!formData.locations.includes('Pavilion - Kagitingan Hall - Section C') && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={async () => {
+                          const sectionName = 'Pavilion - Kagitingan Hall - Section C';
+                          if (!formData.locations.includes(sectionName)) {
+                            await fetchAvailableDatesForLocation(sectionName);
+                            handleInputChange('locations', [...formData.locations, sectionName]);
+                          }
+                        }}
+                        className="text-xs h-8 px-3 hover:bg-gray-50"
+                      >
+                        <Plus className="w-3.5 h-3.5 mr-1.5" />
+                        Section C
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Multi-Pavilion Section Selection - Kalayaan Ballroom */}
+              {(formData.location === 'Pavilion - Kalayaan Ballroom - Section A' || 
+                formData.location === 'Pavilion - Kalayaan Ballroom - Section B' || 
+                formData.location === 'Pavilion - Kalayaan Ballroom - Section C') && (
+                <div className="mt-4 p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
+                  {/* Header */}
+                  <div className="flex items-center gap-2 mb-3">
+                    <Info className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                    <p className="text-sm font-medium text-gray-900">Need Multiple Kalayaan Ballroom Sections?</p>
+                  </div>
+                  
+                  {/* Selected Sections */}
+                  {formData.locations.length > 0 && (
+                    <div className="mb-3 flex flex-wrap gap-2">
+                      {formData.locations.map((loc) => (
+                        <Badge key={loc} variant="secondary" className="text-xs flex items-center gap-1.5 px-2.5 py-1">
+                          {loc}
+                          {formData.locations.length > 1 && (
+                            <button
+                              onClick={() => handleRemoveConferenceRoom(loc)}
+                              className="hover:text-red-600 transition-colors"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                  
+                  {/* Add Section Buttons */}
+                  <div className="flex flex-wrap gap-2">
+                    {!formData.locations.includes('Pavilion - Kalayaan Ballroom - Section A') && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={async () => {
+                          const sectionName = 'Pavilion - Kalayaan Ballroom - Section A';
+                          if (!formData.locations.includes(sectionName)) {
+                            await fetchAvailableDatesForLocation(sectionName);
+                            handleInputChange('locations', [...formData.locations, sectionName]);
+                          }
+                        }}
+                        className="text-xs h-8 px-3 hover:bg-gray-50"
+                      >
+                        <Plus className="w-3.5 h-3.5 mr-1.5" />
+                        Section A
+                      </Button>
+                    )}
+                    {!formData.locations.includes('Pavilion - Kalayaan Ballroom - Section B') && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={async () => {
+                          const sectionName = 'Pavilion - Kalayaan Ballroom - Section B';
+                          if (!formData.locations.includes(sectionName)) {
+                            await fetchAvailableDatesForLocation(sectionName);
+                            handleInputChange('locations', [...formData.locations, sectionName]);
+                          }
+                        }}
+                        className="text-xs h-8 px-3 hover:bg-gray-50"
+                      >
+                        <Plus className="w-3.5 h-3.5 mr-1.5" />
+                        Section B
+                      </Button>
+                    )}
+                    {!formData.locations.includes('Pavilion - Kalayaan Ballroom - Section C') && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={async () => {
+                          const sectionName = 'Pavilion - Kalayaan Ballroom - Section C';
+                          if (!formData.locations.includes(sectionName)) {
+                            await fetchAvailableDatesForLocation(sectionName);
+                            handleInputChange('locations', [...formData.locations, sectionName]);
+                          }
+                        }}
+                        className="text-xs h-8 px-3 hover:bg-gray-50"
+                      >
+                        <Plus className="w-3.5 h-3.5 mr-1.5" />
+                        Section C
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {availableDates.length > 0 && (
                 <p className="text-xs text-blue-600 mt-2 flex items-center gap-1">
                   <CalendarIcon className="w-3 h-3" />
@@ -3082,23 +3556,10 @@ const RequestEventPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Program Flow Section */}
+            {/* Program Section */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <Label className="text-sm font-medium">Program Flow</Label>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setTemplateType('program');
-                    setShowTemplateModal(true);
-                  }}
-                  className="h-8 text-xs gap-1"
-                >
-                  <FileText className="w-3 h-3" />
-                  View Template
-                </Button>
+                <Label className="text-sm font-medium">Program</Label>
               </div>
               <div className="border-2 border-dashed border-gray-200 rounded-lg p-4 hover:border-gray-300 transition-colors">
                 {govFiles.programme ? (
@@ -3120,7 +3581,7 @@ const RequestEventPage: React.FC = () => {
                 ) : (
                   <div className="text-center">
                     <Upload className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-                    <p className="text-sm text-gray-500 mb-3">Click to upload Program Flow</p>
+                    <p className="text-sm text-gray-500 mb-3">Click to upload Program</p>
                     <input
                       type="file"
                       accept=".pdf,.doc,.docx"
@@ -3172,10 +3633,10 @@ const RequestEventPage: React.FC = () => {
         <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {templateType === 'briefer' ? 'Event Briefer Template' : 'Program Flow Template'}
+              {templateType === 'briefer' ? 'Event Briefer Template' : 'Program Template'}
             </DialogTitle>
             <DialogDescription>
-              {templateType === 'briefer' ? 'Fill out the event briefer form' : 'Fill out the program flow'}
+              {templateType === 'briefer' ? 'Fill out the event briefer form' : 'Fill out the program'}
             </DialogDescription>
           </DialogHeader>
           
@@ -3885,8 +4346,22 @@ const RequestEventPage: React.FC = () => {
                       <p className="text-base font-medium text-gray-900">{formData.requestor}</p>
                     </div>
                     <div className="space-y-1.5">
-                      <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Location</Label>
-                      <p className="text-base font-medium text-gray-900">{formData.location}</p>
+                      <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                        Location{formData.locations.length > 1 ? 's' : ''}
+                      </Label>
+                      {formData.locations.length > 1 ? (
+                        <div className="space-y-1">
+                          {formData.locations.map((loc, idx) => (
+                            <div key={idx} className="flex items-center gap-2">
+                              <Badge variant="secondary" className="text-sm">
+                                {loc}
+                              </Badge>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-base font-medium text-gray-900">{formData.location}</p>
+                      )}
                     </div>
                     <div className="space-y-1.5">
                       <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Participants</Label>

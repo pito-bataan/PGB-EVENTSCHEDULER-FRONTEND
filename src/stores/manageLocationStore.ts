@@ -263,12 +263,26 @@ export const useManageLocationStore = create<ManageLocationState>((set, get) => 
         const dateStr = format(selectedDate, 'yyyy-MM-dd');
         
         const locationEvents = events.filter((event: any) => {
-          const eventLocation = (event.location || '').toLowerCase().trim();
           const searchLocation = locationName.toLowerCase().trim();
           
-          const eventLocationMatch = eventLocation.includes(searchLocation) || 
-                                    searchLocation.includes(eventLocation) ||
-                                    eventLocation === searchLocation;
+          // Check both single location and locations array
+          let eventLocationMatch = false;
+          
+          // Check single location field
+          const eventLocation = (event.location || '').toLowerCase().trim();
+          eventLocationMatch = eventLocation.includes(searchLocation) || 
+                              searchLocation.includes(eventLocation) ||
+                              eventLocation === searchLocation;
+          
+          // Also check locations array for multiple locations
+          if (!eventLocationMatch && event.locations && Array.isArray(event.locations)) {
+            eventLocationMatch = event.locations.some((loc: string) => {
+              const locLower = loc.toLowerCase().trim();
+              return locLower.includes(searchLocation) || 
+                     searchLocation.includes(locLower) ||
+                     locLower === searchLocation;
+            });
+          }
           
           const eventStartDate = new Date(event.startDate);
           const eventEndDate = new Date(event.endDate);
@@ -693,11 +707,26 @@ export const useManageLocationStore = create<ManageLocationState>((set, get) => 
   getLocationEventCount: (locationName: string, dateStr: string) => {
     const { allEvents } = get();
     return allEvents.filter((event: any) => {
-      const eventLocation = (event.location || '').toLowerCase().trim();
       const searchLocation = locationName.toLowerCase().trim();
-      const locationMatch = eventLocation.includes(searchLocation) || 
-                           searchLocation.includes(eventLocation) ||
-                           eventLocation === searchLocation;
+      
+      // Check both single location and locations array
+      let locationMatch = false;
+      
+      // Check single location field
+      const eventLocation = (event.location || '').toLowerCase().trim();
+      locationMatch = eventLocation.includes(searchLocation) || 
+                     searchLocation.includes(eventLocation) ||
+                     eventLocation === searchLocation;
+      
+      // Also check locations array for multiple locations
+      if (!locationMatch && event.locations && Array.isArray(event.locations)) {
+        locationMatch = event.locations.some((loc: string) => {
+          const locLower = loc.toLowerCase().trim();
+          return locLower.includes(searchLocation) || 
+                 searchLocation.includes(locLower) ||
+                 locLower === searchLocation;
+        });
+      }
       
       // Parse dates properly to avoid timezone issues
       const eventStartDate = new Date(event.startDate);

@@ -160,7 +160,14 @@ const ManageLocationPage: React.FC = () => {
     'Bataan People\'s Center',
     '1BOSSCO',
     'Emiliana Hall',
-    'Pavillion'
+    'Pavilion - Kagitingan Hall (Entire)',
+    'Pavilion - Kagitingan Hall - Section A',
+    'Pavilion - Kagitingan Hall - Section B',
+    'Pavilion - Kagitingan Hall - Section C',
+    'Pavilion - Kalayaan Ballroom (Entire)',
+    'Pavilion - Kalayaan Ballroom - Section A',
+    'Pavilion - Kalayaan Ballroom - Section B',
+    'Pavilion - Kalayaan Ballroom - Section C'
   ];
 
   // Initialize user and fetch data using Zustand store
@@ -348,14 +355,30 @@ const ManageLocationPage: React.FC = () => {
       yPos += 7;
 
       pdf.setFont('helvetica', 'bold');
-      pdf.text('Location:', margin, yPos);
+      pdf.text(event.locations && event.locations.length > 1 ? 'Locations:' : 'Location:', margin, yPos);
       pdf.setFont('helvetica', 'normal');
-      pdf.text(event.location, margin + 25, yPos);
+      
+      if (event.locations && event.locations.length > 1) {
+        // Multiple locations - display each on a new line
+        event.locations.forEach((loc: string, index: number) => {
+          if (index === 0) {
+            pdf.text(loc, margin + 25, yPos);
+          } else {
+            yPos += 5;
+            pdf.text(loc, margin + 25, yPos);
+          }
+        });
+        yPos += 7;
+      } else {
+        // Single location
+        pdf.text(event.location, margin + 25, yPos);
+        yPos += 7;
+      }
       
       pdf.setFont('helvetica', 'bold');
-      pdf.text('Participants:', margin + 90, yPos);
+      pdf.text('Participants:', margin, yPos);
       pdf.setFont('helvetica', 'normal');
-      pdf.text(`${event.participants} attendees`, margin + 115, yPos);
+      pdf.text(`${event.participants} attendees`, margin + 25, yPos);
       yPos += 7;
 
       if ((event.vip && event.vip > 0) || (event.vvip && event.vvip > 0)) {
@@ -430,11 +453,26 @@ const ManageLocationPage: React.FC = () => {
       const locationBookingEvents = allEvents.filter((event: any) => {
         // Check if event location matches any of the default location names
         const eventLocation = (event.location || '').toLowerCase().trim();
-        // CRITICAL: Only show APPROVED events (hide submitted/on-hold)
-        return defaultLocationNames.some(locationName => 
+        
+        // Check single location
+        let locationMatch = defaultLocationNames.some(locationName => 
           eventLocation.includes(locationName.toLowerCase()) || 
           locationName.toLowerCase().includes(eventLocation)
-        ) && event.status === 'approved';
+        );
+        
+        // Also check locations array for multiple locations
+        if (!locationMatch && event.locations && Array.isArray(event.locations)) {
+          locationMatch = event.locations.some((loc: string) => {
+            const locLower = loc.toLowerCase().trim();
+            return defaultLocationNames.some(locationName =>
+              locLower.includes(locationName.toLowerCase()) ||
+              locationName.toLowerCase().includes(locLower)
+            );
+          });
+        }
+        
+        // CRITICAL: Only show APPROVED events (hide submitted/on-hold)
+        return locationMatch && event.status === 'approved';
       });
 
       if (locationBookingEvents.length === 0) {
@@ -558,14 +596,30 @@ const ManageLocationPage: React.FC = () => {
         yPosition += 7;
 
         pdf.setFont('helvetica', 'bold');
-        pdf.text('Location:', margin, yPosition);
+        pdf.text(event.locations && event.locations.length > 1 ? 'Locations:' : 'Location:', margin, yPosition);
         pdf.setFont('helvetica', 'normal');
-        pdf.text(event.location, margin + 25, yPosition);
+        
+        if (event.locations && event.locations.length > 1) {
+          // Multiple locations - display each on a new line
+          event.locations.forEach((loc: string, index: number) => {
+            if (index === 0) {
+              pdf.text(loc, margin + 25, yPosition);
+            } else {
+              yPosition += 5;
+              pdf.text(loc, margin + 25, yPosition);
+            }
+          });
+          yPosition += 7;
+        } else {
+          // Single location
+          pdf.text(event.location, margin + 25, yPosition);
+          yPosition += 7;
+        }
         
         pdf.setFont('helvetica', 'bold');
-        pdf.text('Participants:', margin + 90, yPosition);
+        pdf.text('Participants:', margin, yPosition);
         pdf.setFont('helvetica', 'normal');
-        pdf.text(`${event.participants} attendees`, margin + 115, yPosition);
+        pdf.text(`${event.participants} attendees`, margin + 25, yPosition);
         yPosition += 7;
 
         if ((event.vip && event.vip > 0) || (event.vvip && event.vvip > 0)) {
@@ -754,12 +808,47 @@ const ManageLocationPage: React.FC = () => {
       toast.success(`${selectedLocationName} auto-added to list with standardized data`);
     } else {
       console.log('ℹ️ No existing data found, using defaults');
-      setFormData({
-        locationName: selectedLocationName,
-        capacity: '',
-        description: '',
-        status: 'available'
-      });
+      
+      // Set default capacity based on location type
+      let defaultCapacity = '';
+      if (selectedLocationName.includes('Pavilion')) {
+        if (selectedLocationName.includes('(Entire)')) {
+          defaultCapacity = '300'; // Entire hall capacity
+        } else if (selectedLocationName.includes('Section')) {
+          defaultCapacity = '100'; // Each section capacity
+        }
+      }
+      
+      // If we have a default capacity (Pavilion locations), auto-add to list
+      if (defaultCapacity) {
+        const autoPopulatedLocation = {
+          locationName: selectedLocationName,
+          capacity: defaultCapacity,
+          description: '',
+          status: 'available' as 'available' | 'unavailable'
+        };
+        
+        setLocationsForDate(prev => [...prev, autoPopulatedLocation]);
+        
+        // Reset form for next entry
+        setFormData({
+          locationName: '',
+          capacity: '',
+          description: '',
+          status: 'available'
+        });
+        
+        toast.success(`${selectedLocationName} auto-added to list with default capacity`);
+      } else {
+        // No default capacity, let user fill it in manually
+        setFormData({
+          locationName: selectedLocationName,
+          capacity: defaultCapacity,
+          description: '',
+          status: 'available'
+        });
+      }
+      
       setIsAutoPopulated(false); // Mark as manual input (editable)
     }
   };
@@ -835,10 +924,20 @@ const ManageLocationPage: React.FC = () => {
           status: 'available' as 'available' | 'unavailable'
         });
       } else {
-        // Use default values - will need manual input
+        // Set default capacity based on location type
+        let defaultCapacity = '';
+        if (locationName.includes('Pavilion')) {
+          if (locationName.includes('(Entire)')) {
+            defaultCapacity = '300'; // Entire hall capacity
+          } else if (locationName.includes('Section')) {
+            defaultCapacity = '100'; // Each section capacity
+          }
+        }
+        
+        // Use default values
         newLocations.push({
           locationName: locationName,
-          capacity: '',
+          capacity: defaultCapacity,
           description: '',
           status: 'available' as 'available' | 'unavailable'
         });
@@ -910,12 +1009,26 @@ const ManageLocationPage: React.FC = () => {
     const dateStr = format(date, 'yyyy-MM-dd');
     
     return allEvents.some((event: any) => {
-      // Check if event location matches
-      const eventLocation = (event.location || '').toLowerCase().trim();
       const searchLocation = locationName.toLowerCase().trim();
-      const locationMatch = eventLocation.includes(searchLocation) ||
-                             searchLocation.includes(eventLocation) ||
-                             eventLocation === searchLocation;
+      
+      // Check both single location and locations array
+      let locationMatch = false;
+      
+      // Check single location field
+      const eventLocation = (event.location || '').toLowerCase().trim();
+      locationMatch = eventLocation.includes(searchLocation) ||
+                     searchLocation.includes(eventLocation) ||
+                     eventLocation === searchLocation;
+      
+      // Also check locations array for multiple locations
+      if (!locationMatch && event.locations && Array.isArray(event.locations)) {
+        locationMatch = event.locations.some((loc: string) => {
+          const locLower = loc.toLowerCase().trim();
+          return locLower.includes(searchLocation) || 
+                 searchLocation.includes(locLower) ||
+                 locLower === searchLocation;
+        });
+      }
 
       // Check if event date matches
       const eventStartDate = new Date(event.startDate);
@@ -1033,14 +1146,22 @@ const ManageLocationPage: React.FC = () => {
 
       const dateStr = format(selectedDate, 'yyyy-MM-dd');
       
+      // Validate all locations have capacity before saving
+      for (const location of allNewLocations) {
+        if (!location.capacity || location.capacity.trim() === '') {
+          toast.error(`Please enter a capacity for "${location.locationName}"`);
+          return;
+        }
+        const capacityNum = parseInt(location.capacity, 10);
+        if (isNaN(capacityNum) || capacityNum < 1) {
+          toast.error(`Invalid capacity for "${location.locationName}". Please enter a valid number.`);
+          return;
+        }
+      }
+      
       // Save all NEW locations for this date using the store method
       const savePromises = allNewLocations.map(async (location) => {
         const capacityNum = parseInt(location.capacity, 10);
-        
-        // Validate capacity parsing
-        if (isNaN(capacityNum) || capacityNum < 1) {
-          throw new Error(`Invalid capacity for ${location.locationName}: ${location.capacity}`);
-        }
         
         console.log(`Saving location ${location.locationName} with capacity: ${location.capacity} -> ${capacityNum}`);
         

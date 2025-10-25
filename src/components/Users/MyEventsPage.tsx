@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
+import { getGlobalSocket } from '@/hooks/useSocket';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -60,6 +61,8 @@ interface Event {
   eventTitle: string;
   requestor: string;
   location: string;
+  locations?: string[]; // Array for multiple conference rooms
+  multipleLocations?: boolean;
   description?: string;
   participants: number;
   vip?: number;
@@ -546,6 +549,52 @@ const MyEventsPage: React.FC = () => {
   useEffect(() => {
     fetchMyEvents();
     fetchAllDepartments();
+  }, []);
+
+  // WebSocket listener for automatic event status updates
+  useEffect(() => {
+    const socket = getGlobalSocket();
+    
+    if (!socket) {
+      console.log('⚠️ Socket not available for MyEventsPage');
+      return;
+    }
+
+    console.log('🔌 Setting up WebSocket listeners for MyEventsPage');
+
+    // Listen for event status updates (including automatic completion)
+    const handleEventStatusUpdated = (data: any) => {
+      console.log('📊 MyEventsPage: Received event-status-updated:', data);
+      
+      // Check if this is an automatic completion
+      if (data.status === 'completed' && data.autoCompleted) {
+        toast.success(`Event "${data.eventTitle}" has been automatically marked as completed`);
+      }
+      
+      // Refresh events list to show updated status
+      fetchMyEvents();
+    };
+
+    // Listen for general event updates
+    const handleEventUpdated = (data: any) => {
+      console.log('📊 MyEventsPage: Received event-updated:', data);
+      fetchMyEvents();
+    };
+
+    // Remove any existing listeners first to prevent duplicates
+    socket.off('event-status-updated', handleEventStatusUpdated);
+    socket.off('event-updated', handleEventUpdated);
+
+    // Add listeners
+    socket.on('event-status-updated', handleEventStatusUpdated);
+    socket.on('event-updated', handleEventUpdated);
+
+    // Cleanup on unmount
+    return () => {
+      console.log('🧹 Cleaning up WebSocket listeners for MyEventsPage');
+      socket.off('event-status-updated', handleEventStatusUpdated);
+      socket.off('event-updated', handleEventUpdated);
+    };
   }, []);
 
   // Get dynamic status based on dates
@@ -1488,99 +1537,97 @@ const MyEventsPage: React.FC = () => {
   };
 
   return (
-    <div className="w-full min-h-screen bg-gray-50 p-6">
-      <div className="w-full max-w-[1800px] mx-auto">
-        <Card className="shadow-lg bg-white">
-          <CardContent className="p-8 space-y-6">
-          {/* Header */}
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="flex items-center justify-between"
+    <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4 md:space-y-6">
+      {/* Header */}
+      <motion.div
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
+      >
+        <div>
+          <h1 className="text-xl md:text-2xl font-semibold">My Events</h1>
+          <p className="text-xs md:text-sm text-muted-foreground">
+            View and manage your event requests
+          </p>
+        </div>
+        <div className="flex items-center gap-2 md:gap-3 w-full sm:w-auto">
+          <Button
+            onClick={fetchMyEvents}
+            variant="outline"
+            size="sm"
+            className="gap-2 flex-1 sm:flex-none"
           >
-            <div>
-              <h1 className="text-2xl font-semibold">My Events</h1>
-              <p className="text-sm text-muted-foreground">
-                View and manage your event requests
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              <Button
-                onClick={fetchMyEvents}
-                variant="outline"
-                size="sm"
-                className="gap-2"
-              >
-                <RefreshCw className="w-4 h-4" />
-                Refresh
-              </Button>
-              <Button
-                onClick={() => window.location.href = '/users/request-event'}
-                className="gap-2"
-              >
-                <Plus className="w-4 h-4" />
-                New Event
-              </Button>
-            </div>
-          </motion.div>
+            <RefreshCw className="w-3 h-3 md:w-4 md:h-4" />
+            <span className="text-xs md:text-sm">Refresh</span>
+          </Button>
+          <Button
+            onClick={() => window.location.href = '/users/request-event'}
+            size="sm"
+            className="gap-2 flex-1 sm:flex-none"
+          >
+            <Plus className="w-3 h-3 md:w-4 md:h-4" />
+            <span className="text-xs md:text-sm">New Event</span>
+          </Button>
+        </div>
+      </motion.div>
 
       {/* Stats Cards */}
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
-        className="grid grid-cols-1 md:grid-cols-4 gap-4"
+        className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4"
       >
         <Card>
-          <CardContent className="p-4">
+          <CardContent className="p-3 md:p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Total Events</p>
-                <p className="text-2xl font-bold">{events.length}</p>
+                <p className="text-xs md:text-sm text-muted-foreground">Total Events</p>
+                <p className="text-xl md:text-2xl font-bold">{events.length}</p>
               </div>
-              <FileText className="w-8 h-8 text-blue-600" />
+              <FileText className="w-6 h-6 md:w-8 md:h-8 text-blue-600" />
             </div>
           </CardContent>
         </Card>
         
         <Card>
-          <CardContent className="p-4">
+          <CardContent className="p-3 md:p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Submitted</p>
-                <p className="text-2xl font-bold text-orange-600">
+                <p className="text-xs md:text-sm text-muted-foreground">Submitted</p>
+                <p className="text-xl md:text-2xl font-bold text-orange-600">
                   {events.filter(e => e.status === 'submitted').length}
                 </p>
               </div>
-              <Clock3 className="w-8 h-8 text-orange-600" />
+              <Clock3 className="w-6 h-6 md:w-8 md:h-8 text-orange-600" />
             </div>
           </CardContent>
         </Card>
         
         <Card>
-          <CardContent className="p-4">
+          <CardContent className="p-3 md:p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Approved</p>
-                <p className="text-2xl font-bold text-green-600">
+                <p className="text-xs md:text-sm text-muted-foreground">Approved</p>
+                <p className="text-xl md:text-2xl font-bold text-green-600">
                   {events.filter(e => getDynamicStatus(e) === 'approved').length}
                 </p>
               </div>
-              <CheckCircle className="w-8 h-8 text-green-600" />
+              <CheckCircle className="w-6 h-6 md:w-8 md:h-8 text-green-600" />
             </div>
           </CardContent>
         </Card>
         
         <Card>
-          <CardContent className="p-4">
+          <CardContent className="p-3 md:p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Completed</p>
-                <p className="text-2xl font-bold text-blue-600">
+                <p className="text-xs md:text-sm text-muted-foreground">Completed</p>
+                <p className="text-xl md:text-2xl font-bold text-blue-600">
                   {events.filter(e => getDynamicStatus(e) === 'completed').length}
                 </p>
               </div>
-              <CheckCircle className="w-8 h-8 text-blue-600" />
+              <CheckCircle className="w-6 h-6 md:w-8 md:h-8 text-blue-600" />
             </div>
           </CardContent>
         </Card>
@@ -1593,24 +1640,24 @@ const MyEventsPage: React.FC = () => {
         transition={{ delay: 0.2 }}
       >
         <Card>
-          <CardContent className="p-4">
-            <div className="flex flex-col sm:flex-row gap-4">
-              <div className="flex-1">
+          <CardContent className="p-3 md:p-4">
+            <div className="flex flex-col gap-3 md:gap-4">
+              <div className="w-full">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                   <Input
-                    placeholder="Search events by title, location, or requestor..."
+                    placeholder="Search events..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10"
+                    className="pl-10 text-sm"
                   />
                 </div>
               </div>
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2">
-                  <Filter className="w-4 h-4 text-gray-500" />
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 md:gap-4">
+                <div className="flex items-center gap-2 flex-1 sm:flex-none">
+                  <Filter className="w-4 h-4 text-gray-500 flex-shrink-0" />
                   <Select value={statusFilter} onValueChange={setStatusFilter}>
-                    <SelectTrigger className="w-40">
+                    <SelectTrigger className="w-full sm:w-40 text-sm">
                       <SelectValue placeholder="Filter by status" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1671,10 +1718,10 @@ const MyEventsPage: React.FC = () => {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-500">Sort by:</span>
+                <div className="flex items-center gap-2 flex-1 sm:flex-none">
+                  <span className="text-xs md:text-sm text-gray-500 whitespace-nowrap">Sort by:</span>
                   <Select value={sortBy} onValueChange={setSortBy}>
-                    <SelectTrigger className="w-44">
+                    <SelectTrigger className="w-full sm:w-44 text-sm">
                       <SelectValue placeholder="Sort by" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1729,7 +1776,7 @@ const MyEventsPage: React.FC = () => {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
             {filteredAndSortedEvents.map((event, index) => {
             const statusInfo = getStatusInfo(event.dynamicStatus);
             
@@ -1741,12 +1788,12 @@ const MyEventsPage: React.FC = () => {
                 transition={{ delay: index * 0.1 }}
               >
                 <Card className="hover:shadow-md transition-shadow">
-                  <CardContent className="p-6">
+                  <CardContent className="p-4 md:p-6">
                     <div className="flex items-start justify-between">
                       <div className="flex-1 min-w-0 space-y-3">
                         {/* Status Badge and Right Actions */}
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0">
+                          <div className="flex items-center gap-2 flex-wrap">
                             {event.status === 'rejected' || event.status === 'cancelled' ? (
                               <TooltipProvider>
                                 <Tooltip>
@@ -1791,25 +1838,27 @@ const MyEventsPage: React.FC = () => {
                           </div>
                           
                           {/* Right Side Actions */}
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1.5 md:gap-2 flex-wrap">
                             <Button
                               variant="outline"
                               size="sm"
                               onClick={() => handleEditEvent(event)}
-                              className="gap-1 h-7 px-2 text-xs"
+                              className="gap-1 h-7 px-2 text-[10px] md:text-xs whitespace-nowrap"
                             >
                               <Edit className="w-3 h-3" />
-                              Edit Schedule
+                              <span className="hidden sm:inline">Edit Schedule</span>
+                              <span className="sm:hidden">Edit</span>
                             </Button>
                             {(event.status === 'submitted' || event.status === 'approved') && event.dynamicStatus !== 'completed' && (
                               <Button
                                 variant="outline"
                                 size="sm"
                                 onClick={() => handleEditEventDetails(event)}
-                                className="gap-1 h-7 px-2 text-xs bg-blue-50 hover:bg-blue-100"
+                                className="gap-1 h-7 px-2 text-[10px] md:text-xs bg-blue-50 hover:bg-blue-100 whitespace-nowrap"
                               >
                                 <Edit className="w-3 h-3" />
-                                Edit Details
+                                <span className="hidden sm:inline">Edit Details</span>
+                                <span className="sm:hidden">Details</span>
                               </Button>
                             )}
                             {(event.status === 'draft' || event.status === 'rejected') && (
@@ -1828,16 +1877,16 @@ const MyEventsPage: React.FC = () => {
                         
                         {/* Title */}
                         <div className="min-w-0">
-                          <h3 className="text-lg font-semibold text-gray-900 mb-1 truncate" title={event.eventTitle}>
+                          <h3 className="text-base md:text-lg font-semibold text-gray-900 mb-1 truncate" title={event.eventTitle}>
                             {event.eventTitle}
                           </h3>
-                          <p className="text-sm text-gray-600">
+                          <p className="text-xs md:text-sm text-gray-600">
                             Requested by {event.requestor}
                           </p>
                         </div>
 
                         {/* Event Details */}
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 md:gap-4 text-xs md:text-sm">
                           <div className="flex items-center gap-2 text-gray-600">
                             <CalendarIcon className="w-4 h-4" />
                             <span>
@@ -1851,13 +1900,23 @@ const MyEventsPage: React.FC = () => {
                             </span>
                           </div>
                           <div className="flex items-center gap-2 text-gray-600">
-                            <MapPin className="w-4 h-4" />
-                            <span className="truncate">{event.location}</span>
+                            <MapPin className="w-4 h-4 flex-shrink-0" />
+                            {event.locations && event.locations.length > 1 ? (
+                              <div className="flex flex-col gap-0.5 min-w-0">
+                                {event.locations.map((loc, idx) => (
+                                  <span key={idx} className="text-xs truncate">
+                                    {loc}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="truncate">{event.location}</span>
+                            )}
                           </div>
                         </div>
 
                         {/* Additional Info */}
-                        <div className="flex items-center gap-6 text-sm text-gray-600">
+                        <div className="flex flex-wrap items-center gap-3 md:gap-6 text-xs md:text-sm text-gray-600">
                           <div className="flex items-center gap-1">
                             <Users className="w-4 h-4" />
                             <span>{event.participants} participants</span>
@@ -1872,12 +1931,12 @@ const MyEventsPage: React.FC = () => {
                         </div>
 
                         {/* Bottom Action Buttons */}
-                        <div className="flex items-center gap-2 pt-2">
+                        <div className="flex flex-wrap items-center gap-1.5 md:gap-2 pt-2">
                           <Button
                             variant="outline"
                             size="sm"
                             onClick={() => handleViewEvent(event)}
-                            className="gap-1 h-7 px-2 text-xs"
+                            className="gap-1 h-7 px-2 text-[10px] md:text-xs"
                           >
                             <Eye className="w-3 h-3" />
                             Details
@@ -1886,25 +1945,27 @@ const MyEventsPage: React.FC = () => {
                             variant="outline"
                             size="sm"
                             onClick={() => handleShowDepartments(event)}
-                            className="gap-1 h-7 px-2 text-xs"
+                            className="gap-1 h-7 px-2 text-[10px] md:text-xs whitespace-nowrap"
                           >
                             <Building2 className="w-3 h-3" />
-                            Tagged Departments
+                            <span className="hidden sm:inline">Tagged/Requirements</span>
+                            <span className="sm:hidden">Tagged</span>
                           </Button>
                           <Button
                             variant="default"
                             size="sm"
                             onClick={() => handleOpenAddDepartments(event)}
-                            className="gap-1 h-7 px-2 text-xs bg-blue-600 hover:bg-blue-700"
+                            className="gap-1 h-7 px-2 text-[10px] md:text-xs bg-blue-600 hover:bg-blue-700 whitespace-nowrap"
                           >
                             <Plus className="w-3 h-3" />
-                            Tag More Departments
+                            <span className="hidden sm:inline">Tag More Departments</span>
+                            <span className="sm:hidden">Tag More</span>
                           </Button>
                           <Button
                             variant="outline"
                             size="sm"
                             onClick={() => handleShowFiles(event)}
-                            className="gap-1 h-7 px-2 text-xs"
+                            className="gap-1 h-7 px-2 text-[10px] md:text-xs"
                           >
                             <Paperclip className="w-3 h-3" />
                             Files
@@ -1924,30 +1985,42 @@ const MyEventsPage: React.FC = () => {
 
       {/* Event Details Modal */}
       <Dialog open={showEventModal} onOpenChange={setShowEventModal}>
-        <DialogContent className="max-w-none w-[40vw] min-w-[40vw] max-h-[90vh] overflow-y-auto p-8" style={{ width: '40vw', maxWidth: '40vw' }}>
+        <DialogContent className="w-[calc(100vw-2rem)] sm:w-[95vw] md:w-[90vw] lg:w-[85vw] xl:w-[80vw] max-w-7xl max-h-[90vh] overflow-y-auto p-4 md:p-6 lg:p-8">
           <DialogHeader>
-            <DialogTitle className="text-xl">Event Details</DialogTitle>
-            <DialogDescription>
+            <DialogTitle className="text-lg md:text-xl">Event Details</DialogTitle>
+            <DialogDescription className="text-xs md:text-sm">
               Complete information about your event request
             </DialogDescription>
           </DialogHeader>
 
           {selectedEvent && (
-            <div className="space-y-6 py-4">
+            <div className="space-y-4 md:space-y-6 py-3 md:py-4">
               {/* Basic Info */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+                <div className="space-y-3 md:space-y-4">
                   <div>
-                    <label className="text-sm font-medium text-gray-700">Event Title</label>
-                    <p className="text-sm text-gray-900 mt-1 truncate" title={selectedEvent.eventTitle}>{selectedEvent.eventTitle}</p>
+                    <label className="text-xs md:text-sm font-medium text-gray-700">Event Title</label>
+                    <p className="text-xs md:text-sm text-gray-900 mt-1 truncate" title={selectedEvent.eventTitle}>{selectedEvent.eventTitle}</p>
                   </div>
                   <div>
-                    <label className="text-sm font-medium text-gray-700">Requestor</label>
-                    <p className="text-sm text-gray-900 mt-1">{selectedEvent.requestor}</p>
+                    <label className="text-xs md:text-sm font-medium text-gray-700">Requestor</label>
+                    <p className="text-xs md:text-sm text-gray-900 mt-1">{selectedEvent.requestor}</p>
                   </div>
                   <div>
-                    <label className="text-sm font-medium text-gray-700">Location</label>
-                    <p className="text-sm text-gray-900 mt-1">{selectedEvent.location}</p>
+                    <label className="text-xs md:text-sm font-medium text-gray-700">
+                      Location{selectedEvent.locations && selectedEvent.locations.length > 1 ? 's' : ''}
+                    </label>
+                    {selectedEvent.locations && selectedEvent.locations.length > 1 ? (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {selectedEvent.locations.map((loc, idx) => (
+                          <Badge key={idx} variant="secondary" className="text-xs">
+                            {loc}
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs md:text-sm text-gray-900 mt-1">{selectedEvent.location}</p>
+                    )}
                   </div>
                 </div>
                 
@@ -2071,28 +2144,28 @@ const MyEventsPage: React.FC = () => {
 
       {/* Tagged Departments Modal */}
       <Dialog open={showDepartmentsModal} onOpenChange={setShowDepartmentsModal}>
-        <DialogContent className="!max-w-6xl !w-[90vw] !h-[85vh] overflow-hidden p-0">
-          <div className="flex flex-col h-full max-h-[85vh]">
+        <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-[95vw] md:max-w-[90vw] lg:max-w-6xl max-h-[90vh] overflow-hidden p-0">
+          <div className="flex flex-col max-h-[90vh]">
             {/* Modern Header */}
-            <div className="px-6 py-4 border-b bg-gradient-to-r from-blue-50 to-indigo-50">
-              <DialogTitle className="text-2xl font-bold text-gray-900 flex items-center gap-3">
-                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <Building2 className="w-5 h-5 text-blue-600" />
+            <div className="px-4 md:px-6 py-3 md:py-4 border-b bg-gradient-to-r from-blue-50 to-indigo-50 flex-shrink-0">
+              <DialogTitle className="text-lg md:text-xl lg:text-2xl font-bold text-gray-900 flex items-center gap-2 md:gap-3">
+                <div className="w-8 h-8 md:w-10 md:h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <Building2 className="w-4 h-4 md:w-5 md:h-5 text-blue-600" />
                 </div>
-                Tagged Departments & Requirements
+                <span className="truncate">Tagged Departments & Requirements</span>
               </DialogTitle>
-              <DialogDescription className="text-gray-600 mt-2">
+              <DialogDescription className="text-xs md:text-sm text-gray-600 mt-1 md:mt-2">
                 Real-time status and coordination details for all involved departments
               </DialogDescription>
             </div>
             
             {/* Scrollable Content */}
-            <div className="flex-1 overflow-y-auto min-h-0">
+            <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0" style={{ WebkitOverflowScrolling: 'touch' }}>
               {selectedEventDepartments && (
-                <div className="p-6 space-y-8">
+                <div className="p-3 md:p-4 lg:p-6 space-y-4 md:space-y-6 lg:space-y-8">
                   {/* Quick Status Overview */}
-                  <div className="bg-white rounded-xl border shadow-sm p-6">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                  <div className="bg-white rounded-xl border shadow-sm p-4 md:p-6">
+                    <h3 className="text-base md:text-lg font-semibold text-gray-900 mb-3 md:mb-4 flex items-center gap-2">
                       <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center">
                         <CheckCircle className="w-4 h-4 text-green-600" />
                       </div>
@@ -2116,17 +2189,17 @@ const MyEventsPage: React.FC = () => {
                       });
 
                       return (
-                        <div className="grid grid-cols-4 gap-4">
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 md:gap-4">
                           <button
                             onClick={() => setSelectedStatusFilter('all')}
-                            className={`text-center p-4 rounded-lg border transition-all hover:shadow-md ${
+                            className={`text-center p-2 md:p-3 lg:p-4 rounded-lg border transition-all hover:shadow-md ${
                               selectedStatusFilter === 'all' 
                                 ? 'bg-gray-100 border-gray-400 ring-2 ring-gray-300' 
                                 : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
                             }`}
                           >
-                            <div className="text-2xl font-bold text-gray-600">{statusCounts.confirmed + statusCounts.pending + statusCounts.declined + statusCounts.partially_fulfill + statusCounts.in_preparation}</div>
-                            <div className="text-sm text-gray-700 font-medium">All</div>
+                            <div className="text-lg md:text-xl lg:text-2xl font-bold text-gray-600">{statusCounts.confirmed + statusCounts.pending + statusCounts.declined + statusCounts.partially_fulfill + statusCounts.in_preparation}</div>
+                            <div className="text-xs md:text-sm text-gray-700 font-medium">All</div>
                           </button>
                           <button
                             onClick={() => setSelectedStatusFilter('confirmed')}
@@ -2192,27 +2265,27 @@ const MyEventsPage: React.FC = () => {
                         return (
                           <div key={index} className="bg-white rounded-xl border shadow-sm overflow-hidden">
                             {/* Department Header */}
-                            <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 border-b">
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-3">
-                                  <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                                    <Building2 className="w-5 h-5 text-blue-600" />
+                            <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-3 md:px-4 lg:px-6 py-3 md:py-4 border-b">
+                              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                                <div className="flex items-center gap-2 md:gap-3">
+                                  <div className="w-8 h-8 md:w-10 md:h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                                    <Building2 className="w-4 h-4 md:w-5 md:h-5 text-blue-600" />
                                   </div>
                                   <div>
-                                    <h4 className="text-lg font-semibold text-gray-900">{dept}</h4>
-                                    <p className="text-sm text-gray-600">
+                                    <h4 className="text-base md:text-lg font-semibold text-gray-900">{dept}</h4>
+                                    <p className="text-xs md:text-sm text-gray-600">
                                       {Array.isArray(parsedRequirements) ? parsedRequirements.length : 0} Requirements
                                     </p>
                                   </div>
                                 </div>
-                                <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                                <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-xs">
                                   Department
                                 </Badge>
                               </div>
                             </div>
 
                             {/* Requirements Grid */}
-                            <div className="p-6">
+                            <div className="p-3 md:p-4 lg:p-6">
                               {Array.isArray(parsedRequirements) ? (
                                 (() => {
                                   const filteredRequirements = parsedRequirements.filter((req: any) => {
@@ -2226,47 +2299,49 @@ const MyEventsPage: React.FC = () => {
                                       {filteredRequirements.map((req: any, reqIndex: number) => {
                                     const statusBadge = getRequirementStatusBadge(req.status);
                                     return (
-                                      <div key={reqIndex} className="bg-gray-50 rounded-lg border p-4 hover:shadow-md transition-all">
+                                      <div key={reqIndex} className="bg-gray-50 rounded-lg border p-3 md:p-4 hover:shadow-md transition-all">
                                         {/* Requirement Header */}
-                                        <div className="flex items-start justify-between mb-3">
+                                        <div className="flex flex-col gap-3 mb-3">
                                           <div className="flex-1">
-                                            <h5 className="font-medium text-gray-900 mb-1">
+                                            <h5 className="text-sm md:text-base font-medium text-gray-900 mb-1">
                                               {req.name || `Requirement ${reqIndex + 1}`}
                                             </h5>
-                                            <div className="flex items-center gap-2">
+                                            <div className="flex items-center gap-1.5 md:gap-2 flex-wrap">
                                               {req.type && (
-                                                <Badge variant="outline" className="text-xs">
+                                                <Badge variant="outline" className="text-[10px] md:text-xs">
                                                   {req.type}
                                                 </Badge>
                                               )}
-                                              <Badge variant="secondary" className="text-xs">
+                                              <Badge variant="secondary" className="text-[10px] md:text-xs">
                                                 {dept}
                                               </Badge>
                                             </div>
                                           </div>
-                                          <div className="flex items-center gap-2 ml-3">
+                                          <div className="flex items-center gap-1.5 md:gap-2 flex-wrap">
                                             <Button
                                               variant="outline"
                                               size="sm"
                                               onClick={() => handleChangeDepartment(req, selectedEventDepartments._id, dept)}
-                                              className="h-7 px-2 gap-1 bg-white text-black border-gray-300 hover:bg-gray-100 hover:border-gray-400"
+                                              className="h-7 px-2 gap-1 bg-white text-black border-gray-300 hover:bg-gray-100 hover:border-gray-400 text-[10px] md:text-xs whitespace-nowrap"
                                               title="Change Department"
                                             >
-                                              <Building2 className="w-3.5 h-3.5" />
-                                              <span className="text-xs">Change Dept</span>
+                                              <Building2 className="w-3 h-3 md:w-3.5 md:h-3.5" />
+                                              <span className="hidden sm:inline">Change Dept</span>
+                                              <span className="sm:hidden">Change</span>
                                             </Button>
                                             <Button
                                               variant="outline"
                                               size="sm"
                                               onClick={() => handleEditRequirement(req, selectedEventDepartments._id, dept)}
-                                              className="h-7 px-2 gap-1 bg-black text-white border-gray-700 hover:bg-gray-800 hover:border-gray-600 hover:text-white"
+                                              className="h-7 px-2 gap-1 bg-black text-white border-gray-700 hover:bg-gray-800 hover:border-gray-600 hover:text-white text-[10px] md:text-xs whitespace-nowrap"
                                               title="Edit Quantity/Notes"
                                             >
-                                              <Edit className="w-3.5 h-3.5 text-white" />
-                                              <span className="text-xs text-white">Quantity/Notes</span>
+                                              <Edit className="w-3 h-3 md:w-3.5 md:h-3.5 text-white" />
+                                              <span className="hidden sm:inline text-white">Quantity/Notes</span>
+                                              <span className="sm:hidden text-white">Edit</span>
                                             </Button>
                                             {getRequirementStatusIcon(req.status)}
-                                            <Badge className={`text-xs ${statusBadge.className}`}>
+                                            <Badge className={`text-[10px] md:text-xs ${statusBadge.className}`}>
                                               {statusBadge.label}
                                             </Badge>
                                           </div>
@@ -3209,18 +3284,18 @@ const MyEventsPage: React.FC = () => {
 
       {/* Add Departments Modal - Select Department */}
       <Dialog open={showAddDepartmentsModal} onOpenChange={setShowAddDepartmentsModal}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Plus className="w-5 h-5 text-blue-600" />
+            <DialogTitle className="flex items-center gap-2 text-base md:text-lg">
+              <Plus className="w-4 h-4 md:w-5 md:h-5 text-blue-600" />
               Add Department to Event
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="text-xs md:text-sm">
               Select a department to tag to this event
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-4">
+          <div className="space-y-3 md:space-y-4 py-3 md:py-4">
             {/* Event Info */}
             {addingToEvent && (
               <div className="bg-gray-50 rounded-lg p-3 border">
@@ -3298,13 +3373,13 @@ const MyEventsPage: React.FC = () => {
 
       {/* Department Requirements Modal */}
       <Dialog open={showDepartmentRequirementsModal} onOpenChange={setShowDepartmentRequirementsModal}>
-        <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
+        <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <FileText className="w-5 h-5 text-blue-600" />
+            <DialogTitle className="flex items-center gap-2 text-base md:text-lg">
+              <FileText className="w-4 h-4 md:w-5 md:h-5 text-blue-600" />
               {selectedDepartmentData?.name} - Requirements
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="text-xs md:text-sm">
               Select requirements for this department
             </DialogDescription>
           </DialogHeader>
@@ -3807,9 +3882,6 @@ const MyEventsPage: React.FC = () => {
           </div>
         </DialogContent>
       </Dialog>
-          </CardContent>
-        </Card>
-      </div>
     </div>
   );
 };

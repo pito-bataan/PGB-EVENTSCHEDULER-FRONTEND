@@ -41,6 +41,7 @@ interface Event {
   requestor: string;
   requestorDepartment?: string;
   location: string;
+  locations?: string[];
   startDate: string;
   startTime: string;
   endDate: string;
@@ -376,25 +377,21 @@ const Dashboard: React.FC = () => {
   // }, [onStatusUpdate, offStatusUpdate, fetchEventsAndNotifications]);
 
   return (
-  <div className="space-y-6">
-    {/* Header with Notification */}
-    <div className="flex justify-between items-start">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
-        <p className="text-gray-600 mt-2">Welcome to the Event Scheduler Dashboard</p>
-      </div>
-      
-      {/* Notification Dropdown */}
+  <div className="space-y-4 md:space-y-6 relative">
+    {/* Notification Button - Fixed Top Right */}
+    <div className="absolute top-0 right-0 z-10">
       <DropdownMenu open={notificationOpen} onOpenChange={setNotificationOpen}>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="icon" className="relative">
+          <Button variant="outline" size="icon" className="relative shadow-sm">
             <Bell className="h-5 w-5" />
             {getUnreadCount() > 0 && (
-              <span className="absolute -top-1 -right-1 h-3 w-3 bg-red-500 rounded-full"></span>
+              <span className="absolute -top-1 -right-1 h-5 w-5 bg-red-500 rounded-full flex items-center justify-center">
+                <span className="text-white text-xs font-bold">{getUnreadCount() > 9 ? '9+' : getUnreadCount()}</span>
+              </span>
             )}
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent className="w-96 p-0" align="end">
+        <DropdownMenuContent className="w-[calc(100vw-2rem)] sm:w-96 p-0" align="end">
           <div className="p-3 border-b">
             <div className="flex items-center justify-between">
               <h3 className="font-medium text-sm">Notifications</h3>
@@ -637,18 +634,24 @@ const Dashboard: React.FC = () => {
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+    {/* Header */}
+    <div className="pr-14">
+      <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Dashboard</h1>
+      <p className="text-sm md:text-base text-gray-600 mt-1 md:mt-2">Welcome to the Event Scheduler Dashboard</p>
+    </div>
       
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
         <Card>
           <CardContent className="p-6">
             <div className="flex items-center gap-4">
-              <div className="p-3 bg-blue-100 rounded-lg">
-                <Calendar className="h-6 w-6 text-blue-600" />
+              <div className="p-2 md:p-3 bg-blue-100 rounded-lg">
+                <Calendar className="h-5 w-5 md:h-6 md:w-6 text-blue-600" />
               </div>
               <div>
-                <h3 className="text-lg font-semibold text-gray-900">Total Events</h3>
-                <p className="text-3xl font-bold text-blue-600 mt-1">
+                <h3 className="text-base md:text-lg font-semibold text-gray-900">Total Events</h3>
+                <p className="text-2xl md:text-3xl font-bold text-blue-600 mt-1">
                   {loading ? '...' : totalUserEvents}
                 </p>
                 <p className="text-sm text-gray-500">Your events</p>
@@ -658,14 +661,14 @@ const Dashboard: React.FC = () => {
         </Card>
         
         <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 bg-green-100 rounded-lg">
-                <CalendarDays className="h-6 w-6 text-green-600" />
+          <CardContent className="p-4 md:p-6">
+            <div className="flex items-center gap-3 md:gap-4">
+              <div className="p-2 md:p-3 bg-green-100 rounded-lg">
+                <CalendarDays className="h-5 w-5 md:h-6 md:w-6 text-green-600" />
               </div>
               <div>
-                <h3 className="text-lg font-semibold text-gray-900">Upcoming Events</h3>
-                <p className="text-3xl font-bold text-green-600 mt-1">
+                <h3 className="text-base md:text-lg font-semibold text-gray-900">Upcoming Events</h3>
+                <p className="text-2xl md:text-3xl font-bold text-green-600 mt-1">
                   {loading ? '...' : upcomingEvents.length}
                 </p>
                 <p className="text-sm text-gray-500">Next 30 days</p>
@@ -675,14 +678,14 @@ const Dashboard: React.FC = () => {
         </Card>
         
         <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 bg-purple-100 rounded-lg">
-                <Building2 className="h-6 w-6 text-purple-600" />
+          <CardContent className="p-4 md:p-6">
+            <div className="flex items-center gap-3 md:gap-4">
+              <div className="p-2 md:p-3 bg-purple-100 rounded-lg">
+                <Building2 className="h-5 w-5 md:h-6 md:w-6 text-purple-600" />
               </div>
               <div>
-                <h3 className="text-lg font-semibold text-gray-900">Department Events</h3>
-                <p className="text-3xl font-bold text-purple-600 mt-1">
+                <h3 className="text-base md:text-lg font-semibold text-gray-900">Department Events</h3>
+                <p className="text-2xl md:text-3xl font-bold text-purple-600 mt-1">
                   {loading ? '...' : totalSystemEvents}
                 </p>
                 <p className="text-sm text-gray-500">All system events</p>
@@ -694,17 +697,17 @@ const Dashboard: React.FC = () => {
       
       {/* Upcoming Events Section */}
       <Card>
-        <CardHeader>
-          <div className="flex justify-between items-center">
-            <CardTitle>Upcoming Events</CardTitle>
-            <Button variant="outline" size="sm" className="gap-2">
+        <CardHeader className="p-4 md:p-6">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+            <CardTitle className="text-lg md:text-xl">Upcoming Events</CardTitle>
+            <Button variant="outline" size="sm" className="gap-2 text-xs md:text-sm">
               View All
-              <ArrowRight className="h-4 w-4" />
+              <ArrowRight className="h-3 w-3 md:h-4 md:w-4" />
             </Button>
           </div>
         </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
+        <CardContent className="p-4 md:p-6">
+          <div className="space-y-3 md:space-y-4">
             {loading ? (
               <div className="text-center py-8">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
@@ -718,26 +721,30 @@ const Dashboard: React.FC = () => {
               </div>
             ) : (
               upcomingEvents.map((event) => (
-                <div key={event._id} className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                <div key={event._id} className="flex flex-col sm:flex-row items-start sm:items-center gap-3 md:gap-4 p-3 md:p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
                   <div className="flex-shrink-0">
-                    <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                      <Calendar className="h-6 w-6 text-blue-600" />
+                    <div className="w-10 h-10 md:w-12 md:h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                      <Calendar className="h-5 w-5 md:h-6 md:w-6 text-blue-600" />
                     </div>
                   </div>
                   
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-gray-900 truncate">{event.eventTitle}</h3>
-                    <p className="text-sm text-gray-600 truncate">
+                  <div className="flex-1 min-w-0 w-full sm:w-auto">
+                    <h3 className="text-sm md:text-base font-semibold text-gray-900 truncate">{event.eventTitle}</h3>
+                    <p className="text-xs md:text-sm text-gray-600 truncate">
                       {event.requestorDepartment || 'Unknown Department'}
                     </p>
-                    <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 mt-2 text-xs md:text-sm text-gray-500">
                       <div className="flex items-center gap-1">
-                        <Clock className="h-4 w-4" />
-                        <span>{new Date(event.startDate).toLocaleDateString()} at {formatTime(event.startTime)}</span>
+                        <Clock className="h-3 w-3 md:h-4 md:w-4" />
+                        <span className="truncate">{new Date(event.startDate).toLocaleDateString()} at {formatTime(event.startTime)}</span>
                       </div>
                       <div className="flex items-center gap-1">
-                        <MapPin className="h-4 w-4" />
-                        <span>{event.location}</span>
+                        <MapPin className="h-3 w-3 md:h-4 md:w-4" />
+                        {event.locations && event.locations.length > 1 ? (
+                          <span className="truncate">{event.locations.join(', ')}</span>
+                        ) : (
+                          <span className="truncate">{event.location}</span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -756,13 +763,13 @@ const Dashboard: React.FC = () => {
 
       {/* Requirements Status Overview Section */}
       <Card>
-        <CardHeader>
-          <div className="flex justify-between items-center">
-            <CardTitle>Requirements Status Overview</CardTitle>
-            <div className="flex items-center gap-3">
+        <CardHeader className="p-4 md:p-6">
+          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3 lg:gap-4">
+            <CardTitle className="text-lg md:text-xl">Requirements Status Overview</CardTitle>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3 w-full lg:w-auto">
               {/* Event Filter Dropdown */}
               <Select value={selectedEventFilter} onValueChange={setSelectedEventFilter}>
-                <SelectTrigger className="w-64">
+                <SelectTrigger className="w-full sm:w-64">
                   <SelectValue placeholder="Select an event" />
                 </SelectTrigger>
                 <SelectContent>
@@ -777,15 +784,15 @@ const Dashboard: React.FC = () => {
               </SelectContent>
             </Select>
             
-            <Badge variant="outline" className="gap-1">
+            <Badge variant="outline" className="gap-1 text-xs md:text-sm">
               <AlertCircle className="h-3 w-3" />
               {getFilteredRequirements(selectedEventFilter).length} Showing
             </Badge>
             </div>
           </div>
         </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
+        <CardContent className="p-4 md:p-6">
+          <div className="space-y-3 md:space-y-4">
             {loading ? (
               <div className="text-center py-8">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
@@ -804,13 +811,13 @@ const Dashboard: React.FC = () => {
                 </p>
               </div>
             ) : (
-              <div className="max-h-[600px] overflow-y-auto pr-2 space-y-4">
+              <div className="max-h-[600px] overflow-y-auto pr-1 md:pr-2 space-y-3 md:space-y-4">
                 {getFilteredRequirements(selectedEventFilter).map((req) => (
-                  <div key={`${req.eventId}-${req.id}`} className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-md transition-all duration-200">
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-start gap-4 flex-1">
+                  <div key={`${req.eventId}-${req.id}`} className="bg-white border border-gray-200 rounded-lg md:rounded-xl p-3 md:p-5 hover:shadow-md transition-all duration-200">
+                    <div className="flex flex-col sm:flex-row items-start justify-between gap-3">
+                      <div className="flex items-start gap-3 md:gap-4 flex-1 w-full sm:w-auto">
                         {/* Status Indicator */}
-                        <div className="flex-shrink-0 mt-1">
+                        <div className="flex-shrink-0 mt-0.5 md:mt-1">
                           <div className={`w-4 h-4 rounded-full flex items-center justify-center ${
                             req.status === 'confirmed' ? 'bg-green-100' :
                             req.status === 'pending' ? 'bg-yellow-100' :
@@ -832,39 +839,39 @@ const Dashboard: React.FC = () => {
                         
                         {/* Content */}
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-3 mb-2">
-                            <h3 className="font-semibold text-gray-900 text-lg">{req.name}</h3>
-                            <Badge variant="outline" className="text-xs font-medium px-2 py-1">
+                          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-2">
+                            <h3 className="font-semibold text-gray-900 text-sm md:text-base lg:text-lg">{req.name}</h3>
+                            <Badge variant="outline" className="text-xs font-medium px-2 py-1 w-fit">
                               {req.department}
                             </Badge>
                           </div>
                           
-                          <p className="text-sm text-gray-600 mb-2">{req.eventTitle}</p>
+                          <p className="text-xs md:text-sm text-gray-600 mb-2 truncate">{req.eventTitle}</p>
                           
                           {/* Show quantity for physical requirements, notes for service requirements */}
                           {req.quantity ? (
-                            <p className="text-sm text-gray-500 mb-2">
+                            <p className="text-xs md:text-sm text-gray-500 mb-2">
                               Quantity: <span className="font-medium">{req.quantity}</span> of {req.totalQuantity} available
                             </p>
                           ) : req.notes && (
-                            <div className="bg-blue-50 rounded-lg p-3 mb-2">
+                            <div className="bg-blue-50 rounded-lg p-2 md:p-3 mb-2">
                               <p className="text-xs text-blue-600 font-medium mb-1">Requestor's Notes:</p>
-                              <p className="text-sm text-gray-700">{req.notes}</p>
+                              <p className="text-xs md:text-sm text-gray-700 break-words">{req.notes}</p>
                             </div>
                           )}
                           
                           {req.departmentNotes && (
-                            <div className="bg-gray-50 rounded-lg p-3 mt-3">
+                            <div className="bg-gray-50 rounded-lg p-2 md:p-3 mt-2 md:mt-3">
                               <p className="text-xs text-gray-600 font-medium mb-1">Department Notes:</p>
-                              <p className="text-sm text-gray-700">{req.departmentNotes}</p>
+                              <p className="text-xs md:text-sm text-gray-700 break-words">{req.departmentNotes}</p>
                             </div>
                           )}
                         </div>
                       </div>
                       
                       {/* Status Badge */}
-                      <div className="flex-shrink-0 ml-4">
-                        <div className={`px-4 py-2 rounded-full text-sm font-medium ${
+                      <div className="flex-shrink-0 sm:ml-4 w-full sm:w-auto">
+                        <div className={`px-3 md:px-4 py-1.5 md:py-2 rounded-full text-xs md:text-sm font-medium text-center ${
                           req.status === 'confirmed' ? 'bg-green-100 text-green-800' :
                           req.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
                           req.status === 'declined' ? 'bg-red-100 text-red-800' :

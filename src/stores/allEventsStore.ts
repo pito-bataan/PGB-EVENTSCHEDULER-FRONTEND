@@ -10,6 +10,7 @@ export interface Event {
   requestor: string;
   requestorDepartment?: string;
   location: string;
+  locations?: string[];
   participants: number;
   vip?: number;
   vvip?: number;
