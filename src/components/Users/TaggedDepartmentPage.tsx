@@ -163,15 +163,12 @@ const TaggedDepartmentPage: React.FC = () => {
     // Set up Socket.IO listener for real-time updates (NO POLLING!)
     if (typeof onNewNotification === 'function') {
       const handleNewNotification = (notificationData: any) => {
-        console.log('🔔 [TAGGED DEPT] Socket.IO notification received:', notificationData);
-        
         // Check if this notification is for a tagged event
         const userData = JSON.parse(localStorage.getItem('userData') || '{}');
         const userDepartment = userData.department || userData.departmentName || '';
         
         // If user's department is tagged in this event, refresh the list
         if (userDepartment && notificationData.taggedDepartments?.includes(userDepartment)) {
-          console.log('✅ [TAGGED DEPT] User department is tagged, refreshing events list');
           fetchTaggedEvents(true); // Force refresh to get new tagged event
         }
       };
@@ -193,11 +190,7 @@ const TaggedDepartmentPage: React.FC = () => {
   useEffect(() => {
     if (typeof onStatusUpdate === 'function') {
       const handleStatusUpdate = (data: any) => {
-        console.log('🔄 [TAGGED DEPT] Socket.IO status update received');
-        console.log('📦 Update data:', data);
-        
         // Immediately refresh events list to update tabs
-        console.log('🔄 Refreshing events list to update Ongoing/Completed tabs');
         fetchTaggedEvents(true);
       };
 
@@ -217,7 +210,6 @@ const TaggedDepartmentPage: React.FC = () => {
     if (selectedEvent && events.length > 0) {
       const updatedEvent = events.find(event => event._id === selectedEvent._id);
       if (updatedEvent) {
-        console.log('📝 Syncing selected event with updated events list');
         setSelectedEvent(updatedEvent);
       }
     }
@@ -234,15 +226,12 @@ const TaggedDepartmentPage: React.FC = () => {
       // Update status to declined with the reason
       await updateRequirementStatus(declineDialog.eventId, declineDialog.requirementId, 'declined', declineReason);
       
-      console.log('✅ Status updated to declined with reason');
-      
       // Close dialog and reset
       setDeclineDialog({ open: false, eventId: '', requirementId: '', requirementName: '' });
       setDeclineReason('');
       
       // Force a small delay then fetch to ensure backend has the latest data
       setTimeout(async () => {
-        console.log('🔄 Fetching events to update Ongoing/Completed tabs');
         await fetchTaggedEvents(true);
         
         // After fetching, check if current event is now completed
@@ -295,12 +284,9 @@ const TaggedDepartmentPage: React.FC = () => {
     try {
       await updateRequirementStatus(eventId, requirementId, status);
       
-      console.log('✅ Status updated successfully - store already has fresh data');
-      
       // Force a small delay then fetch to ensure backend has the latest data
       // This will update the Ongoing/Completed tabs
       setTimeout(async () => {
-        console.log('🔄 Fetching events to update Ongoing/Completed tabs');
         await fetchTaggedEvents(true);
         
         // After fetching, check if current event is now completed
@@ -309,46 +295,28 @@ const TaggedDepartmentPage: React.FC = () => {
           const freshEvents = useTaggedDepartmentsStore.getState().events;
           const freshEvent = freshEvents.find(e => e._id === eventId);
           
-          console.log('🔍 Fresh events count:', freshEvents.length);
-          
           if (freshEvent) {
             const userDeptReqs = freshEvent.departmentRequirements[currentUserDepartment] || [];
             const confirmedCount = userDeptReqs.filter(r => (r.status || 'pending') === 'confirmed').length;
             const totalCount = userDeptReqs.length;
             const isNowCompleted = totalCount > 0 && confirmedCount === totalCount;
             
-            console.log('📊 Checking completion (FRESH data):', { 
-              eventTitle: freshEvent.eventTitle,
-              confirmedCount, 
-              totalCount, 
-              isNowCompleted 
-            });
-            
             if (isNowCompleted) {
-              console.log('🎉 Event is now completed! Auto-selecting next ongoing event...');
-              
               // Get next ongoing event from store
               const ongoingEvents = getOngoingEvents();
-              console.log('📋 Ongoing events available:', ongoingEvents.length);
               
               if (ongoingEvents.length > 0) {
                 // Select the first ongoing event
                 const nextEvent = ongoingEvents[0];
                 setSelectedEvent(nextEvent);
-                console.log('✅ Auto-selected next event:', nextEvent.eventTitle);
                 
                 // Switch to Ongoing tab to show the next event
                 setActiveEventTab('ongoing');
-                console.log('📑 Switched to Ongoing tab');
               } else {
                 // No more ongoing events, switch to Completed tab
                 setSelectedEvent(null);
                 setActiveEventTab('completed');
-                console.log('✅ No more ongoing events, switched to Completed tab');
               }
-            } else {
-              console.log('⏭️ Event not yet completed, keeping current selection');
-              console.log(`   Still need ${totalCount - confirmedCount} more confirmations`);
             }
           }
         }, 300); // Increased delay to ensure store is updated
@@ -366,7 +334,6 @@ const TaggedDepartmentPage: React.FC = () => {
 
   const handleNoteUpdate = async (eventId: string, requirementId: string, note: string) => {
     try {
-      console.log('Updating notes:', { eventId, requirementId, note });
       const token = localStorage.getItem('authToken');
       
       if (!token) {
@@ -374,9 +341,6 @@ const TaggedDepartmentPage: React.FC = () => {
         return;
       }
 
-      console.log('Making API request to:', `${import.meta.env.VITE_API_URL}/api/events/${eventId}/requirements/${requirementId}/notes`);
-      console.log('Request body:', { departmentNotes: note });
-      
       const response = await fetch(`${import.meta.env.VITE_API_URL}/api/events/${eventId}/requirements/${requirementId}/notes`, {
         method: 'PATCH',
         headers: {
@@ -385,8 +349,6 @@ const TaggedDepartmentPage: React.FC = () => {
         },
         body: JSON.stringify({ departmentNotes: note })
       });
-
-      console.log('API Response status:', response.status);
 
       if (response.status === 403) {
         toast.error('You do not have permission to update notes for this requirement');
@@ -400,16 +362,10 @@ const TaggedDepartmentPage: React.FC = () => {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
-        console.error('Error response:', errorData);
-        console.error('Response status:', response.status);
-        console.error('Response statusText:', response.statusText);
         throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`);
       }
 
       const responseData = await response.json();
-      console.log('Update notes response:', responseData);
-      console.log('Response data type:', typeof responseData);
-      console.log('Response data keys:', Object.keys(responseData || {}));
 
       // Refresh the events list to get updated data
       const updatedResponse = await fetch(`${import.meta.env.VITE_API_URL}/api/events/tagged`, {
@@ -420,14 +376,12 @@ const TaggedDepartmentPage: React.FC = () => {
       
       if (updatedResponse.ok) {
         const updatedData: ApiResponse = await updatedResponse.json();
-        console.log('Refresh data response:', updatedData);
         
         if (updatedData.success && Array.isArray(updatedData.data)) {
           // Events will be updated by the store's fetchTaggedEvents method
           // Update selected event with new data
           const updatedEvent = updatedData.data.find(event => event._id === eventId);
           if (updatedEvent) {
-            console.log('Updated event:', updatedEvent);
             setSelectedEvent(updatedEvent);
             
             // Update local notes state to match the updated data
@@ -436,27 +390,22 @@ const TaggedDepartmentPage: React.FC = () => {
               .find(r => r.id === requirementId);
               
             if (requirement) {
-              console.log('Found requirement after update:', requirement);
               setNotes(requirementId, requirement.departmentNotes || note);
             } else {
               // Fallback: if requirement not found, use the note we just saved
-              console.log('Requirement not found, using fallback note');
               setNotes(requirementId, note);
             }
           }
           toast.success('Notes updated successfully');
         } else {
-          console.error('Unexpected API response structure:', updatedData);
           toast.error('Invalid data format received from server');
         }
       } else {
         // If refresh fails, still update local state with the note
-        console.log('Refresh failed, updating local state only');
         setNotes(requirementId, note);
         toast.success('Notes updated successfully');
       }
     } catch (error) {
-      console.error('Error updating note:', error);
       if (error instanceof Error) {
         toast.error(error.message);
       } else {

@@ -230,7 +230,6 @@ const MyEventsPage: React.FC = () => {
         setAvailableDates([]);
       }
     } catch (error) {
-      console.error('Error fetching available dates:', error);
       setAvailableDates([]);
     }
   };
@@ -477,7 +476,7 @@ const MyEventsPage: React.FC = () => {
             }
           }
         } catch (error) {
-          console.error('Error checking requirement availability:', error);
+          // Error checking requirement availability
         }
       } else if (!showEditModal) {
         setRequirementConflicts([]);
@@ -556,15 +555,11 @@ const MyEventsPage: React.FC = () => {
     const socket = getGlobalSocket();
     
     if (!socket) {
-      console.log('⚠️ Socket not available for MyEventsPage');
       return;
     }
 
-    console.log('🔌 Setting up WebSocket listeners for MyEventsPage');
-
     // Listen for event status updates (including automatic completion)
     const handleEventStatusUpdated = (data: any) => {
-      console.log('📊 MyEventsPage: Received event-status-updated:', data);
       
       // Check if this is an automatic completion
       if (data.status === 'completed' && data.autoCompleted) {
@@ -577,7 +572,6 @@ const MyEventsPage: React.FC = () => {
 
     // Listen for general event updates
     const handleEventUpdated = (data: any) => {
-      console.log('📊 MyEventsPage: Received event-updated:', data);
       fetchMyEvents();
     };
 
@@ -591,7 +585,6 @@ const MyEventsPage: React.FC = () => {
 
     // Cleanup on unmount
     return () => {
-      console.log('🧹 Cleaning up WebSocket listeners for MyEventsPage');
       socket.off('event-status-updated', handleEventStatusUpdated);
       socket.off('event-updated', handleEventUpdated);
     };
@@ -902,7 +895,6 @@ const MyEventsPage: React.FC = () => {
       toast.success('Event deleted successfully');
       fetchMyEvents(); // Refresh the list
     } catch (error) {
-      console.error('Error deleting event:', error);
       toast.error('Failed to delete event');
     }
   };
@@ -1080,7 +1072,6 @@ const MyEventsPage: React.FC = () => {
         toast.error('Failed to update event details');
       }
     } catch (error: any) {
-      console.error('Error updating event details:', error);
       toast.error(error.response?.data?.message || 'Failed to update event details');
     }
   };
@@ -1237,7 +1228,6 @@ const MyEventsPage: React.FC = () => {
         }
       }
     } catch (error: any) {
-      console.error('Error updating departments:', error);
       toast.error(error.response?.data?.message || 'Failed to update departments');
     }
   };
@@ -1378,7 +1368,6 @@ const MyEventsPage: React.FC = () => {
         }
       }
     } catch (error) {
-      console.error('Error fetching department:', error);
       toast.error('Failed to load department requirements');
     }
   };
@@ -1439,7 +1428,6 @@ const MyEventsPage: React.FC = () => {
         fetchMyEvents();
       }
     } catch (error: any) {
-      console.error('Error adding department:', error);
       toast.error(error.response?.data?.message || 'Failed to add department');
     }
   };
@@ -1531,7 +1519,6 @@ const MyEventsPage: React.FC = () => {
         toast.error('Failed to update event');
       }
     } catch (error) {
-      console.error('Error updating event:', error);
       toast.error('Failed to update event');
     }
   };
