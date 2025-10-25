@@ -35,7 +35,7 @@ import { Toaster } from 'sonner';
 const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api`;
 
 
-interface Event {
+interface EventData {
   _id: string;
   eventTitle: string;
   requestor: string;
@@ -145,7 +145,7 @@ const Dashboard: React.FC = () => {
   };
 
   // Helper function to generate notification message
-  const generateNotificationMessage = (event: Event, isUserEvent: boolean, isTaggedEvent: boolean = false): string => {
+  const generateNotificationMessage = (event: EventData, isUserEvent: boolean, isTaggedEvent: boolean = false): string => {
     const daysUntil = getDaysUntilEvent(event.startDate);
     const formattedTime = formatTime(event.startTime);
     
@@ -175,7 +175,7 @@ const Dashboard: React.FC = () => {
   };
 
   // Generate notifications from upcoming events
-  const generateUpcomingEventNotifications = (events: Event[]): Notification[] => {
+  const generateUpcomingEventNotifications = (events: EventData[]): Notification[] => {
     const currentUser = JSON.parse(localStorage.getItem('userData') || '{}');
     const userDepartment = currentUser.department || currentUser.departmentName || '';
     const userName = currentUser.name || '';
@@ -264,7 +264,7 @@ const Dashboard: React.FC = () => {
   };
 
   // Create content fingerprint for upcoming events
-  const createUpcomingEventFingerprint = (event: Event) => {
+  const createUpcomingEventFingerprint = (event: EventData) => {
     const contentString = `${event.eventTitle}-${event.startDate}-${event.startTime}-${event.status}-${event.location}`;
     return btoa(contentString);
   };
@@ -740,10 +740,10 @@ const Dashboard: React.FC = () => {
                       </div>
                       <div className="flex items-center gap-1">
                         <MapPin className="h-3 w-3 md:h-4 md:w-4" />
-                        {event.locations && event.locations.length > 1 ? (
+                        {event.locations && event.locations.length > 0 ? (
                           <span className="truncate">{event.locations.join(', ')}</span>
                         ) : (
-                          <span className="truncate">{event.location}</span>
+                          <span className="truncate">{event.location || ''}</span>
                         )}
                       </div>
                     </div>

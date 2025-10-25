@@ -25,6 +25,7 @@ interface Event {
   requestor: string;
   requestorDepartment: string;
   location: string;
+  locations?: string[];
   startDate: string;
   startTime: string;
   endDate: string;
