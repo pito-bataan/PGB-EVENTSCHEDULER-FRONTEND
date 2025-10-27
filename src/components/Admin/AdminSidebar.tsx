@@ -14,7 +14,8 @@ import {
   ChevronLeft,
   ChevronRight,
   LogOut,
-  List
+  List,
+  FileText
 } from 'lucide-react';
 
 const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api`;
@@ -73,6 +74,7 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ user }) => {
     { icon: Calendar, label: 'All Events', href: '/admin/all-events', roles: ['superadmin', 'admin'] },
     { icon: List, label: 'Overall Events', href: '/admin/overall-events', roles: ['superadmin', 'admin'] },
     { icon: CalendarDays, label: 'Calendar', href: '/admin/calendar', roles: ['superadmin', 'admin'] },
+    { icon: FileText, label: 'Event Reports', href: '/admin/event-reports', roles: ['superadmin', 'admin'] },
     { icon: Users, label: 'Users', href: '/admin/users', roles: ['superadmin'] },
     { icon: Activity, label: 'Users Logs', href: '/admin/users-logs', roles: ['superadmin'] },
     { icon: Building2, label: 'Departments', href: '/admin/departments', roles: ['superadmin'] },

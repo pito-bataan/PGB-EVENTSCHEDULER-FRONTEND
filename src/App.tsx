@@ -22,6 +22,7 @@ import AdminCalendarPage from './components/Admin/CalendarPage'
 import UsersManagement from './components/Admin/UsersManagement'
 import UsersLogsPage from './components/Admin/UsersLogsPage'
 import DepartmentsManagement from './components/Admin/DepartmentsManagement'
+import EventReportsManagement from './components/Admin/EventReportsManagement'
 import './App.css'
 
 function App() {
@@ -79,6 +80,7 @@ function App() {
                   <Route path="users" element={<UsersManagement />} />
                   <Route path="users-logs" element={<UsersLogsPage />} />
                   <Route path="departments" element={<DepartmentsManagement />} />
+                  <Route path="event-reports" element={<EventReportsManagement />} />
                   <Route path="reports" element={<div className="p-6"><h1 className="text-2xl font-bold">Reports</h1><p>Coming soon...</p></div>} />
                   <Route path="" element={
                     <Navigate 

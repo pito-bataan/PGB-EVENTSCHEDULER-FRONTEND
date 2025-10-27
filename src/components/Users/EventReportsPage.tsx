@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 import jsPDF from 'jspdf';
 import { 
@@ -30,6 +31,9 @@ import {
   Paperclip
 } from 'lucide-react';
 import { format } from 'date-fns';
+import PostActivityReportTemplate from './templates/PostActivityReportTemplate';
+import AssessmentEvaluationTemplate from './templates/AssessmentEvaluationTemplate';
+import PostEventFeedbackTemplate from './templates/PostEventFeedbackTemplate';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
 
@@ -54,6 +58,7 @@ interface Event {
     assessmentReport?: { uploaded: boolean; uploadedAt?: string; fileUrl?: string };
     feedbackForm?: { uploaded: boolean; uploadedAt?: string; fileUrl?: string };
   };
+  reportsStatus?: 'pending' | 'completed';
 }
 
 const EventReportsPage: React.FC = () => {
@@ -61,6 +66,7 @@ const EventReportsPage: React.FC = () => {
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('completion');
+  const [eventStatusTab, setEventStatusTab] = useState<'pending' | 'completed'>('pending');
   
   // Uploaded PDF files for each report type
   const [uploadedReports, setUploadedReports] = useState<{
@@ -77,9 +83,14 @@ const EventReportsPage: React.FC = () => {
 
   // Template modal states
   const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [showPostActivityModal, setShowPostActivityModal] = useState(false);
+  const [showAssessmentModal, setShowAssessmentModal] = useState(false);
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [currentTemplateType, setCurrentTemplateType] = useState<'completion' | 'post-activity' | 'assessment' | 'feedback'>('completion');
   const [showPdfPreview, setShowPdfPreview] = useState(false);
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string>('');
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [reportToDelete, setReportToDelete] = useState<string | null>(null);
 
   // Template form data
   const [templateData, setTemplateData] = useState({
@@ -124,6 +135,62 @@ const EventReportsPage: React.FC = () => {
       console.error('Error fetching completed events:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSubmitReport = async (reportKey: string) => {
+    if (!selectedEvent || !(uploadedReports as any)[reportKey]) {
+      toast.error('Please select a file to upload');
+      return;
+    }
+
+    try {
+      const formData = new FormData();
+      formData.append(reportKey, (uploadedReports as any)[reportKey]);
+
+      const token = localStorage.getItem('authToken');
+      const response = await axios.post(
+        `${API_BASE_URL}/event-reports/${selectedEvent._id}/upload`,
+        formData,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'multipart/form-data'
+          }
+        }
+      );
+
+      if (response.data.success) {
+        toast.success('Report uploaded successfully!');
+        
+        // Update the selected event with the new data immediately
+        setSelectedEvent(prev => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            eventReports: response.data.data.eventReports,
+            reportsStatus: response.data.data.reportsStatus
+          };
+        });
+        
+        // Clear the uploaded file from state
+        setUploadedReports(prev => ({
+          ...prev,
+          [reportKey]: null
+        }));
+
+        // Refresh events to get updated status in sidebar
+        await fetchCompletedEvents();
+
+        // If all reports are now completed, automatically switch to completed tab
+        if (response.data.data.reportsStatus === 'completed') {
+          toast.success('🎉 All reports completed! Event moved to Completed tab.');
+          setEventStatusTab('completed');
+        }
+      }
+    } catch (error: any) {
+      console.error('Error uploading report:', error);
+      toast.error(error.response?.data?.message || 'Failed to upload report');
     }
   };
 
@@ -175,6 +242,17 @@ const EventReportsPage: React.FC = () => {
     return { completed, total: 4 };
   };
 
+  // Filter events based on reports status
+  const getFilteredEvents = () => {
+    return completedEvents.filter(event => {
+      const stats = getCompletionStats(event);
+      const isCompleted = stats.completed === stats.total;
+      return eventStatusTab === 'completed' ? isCompleted : !isCompleted;
+    });
+  };
+
+  const filteredEvents = getFilteredEvents();
+
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
       {/* Header */}
@@ -204,6 +282,38 @@ const EventReportsPage: React.FC = () => {
             <CardHeader className="pb-3">
               <CardTitle className="text-lg">Your Completed Events</CardTitle>
               <CardDescription>Select an event to upload reports</CardDescription>
+              
+              {/* Status Tabs */}
+              <Tabs value={eventStatusTab} onValueChange={(value) => setEventStatusTab(value as 'pending' | 'completed')} className="w-full mt-4">
+                <TabsList className="grid w-full grid-cols-2 gap-2 bg-transparent p-0">
+                  <TabsTrigger 
+                    value="pending" 
+                    className="flex items-center justify-center gap-2 px-3 py-2 bg-yellow-50 text-yellow-800 data-[state=active]:bg-yellow-100 data-[state=active]:text-yellow-900 hover:bg-yellow-100 border data-[state=active]:border-yellow-400"
+                  >
+                    <Construction className="h-4 w-4 flex-shrink-0" />
+                    <span className="text-xs font-medium">Pending</span>
+                    <Badge variant="secondary" className="text-[10px] h-5 px-1.5 ml-auto">
+                      {completedEvents.filter(e => {
+                        const stats = getCompletionStats(e);
+                        return stats.completed < stats.total;
+                      }).length}
+                    </Badge>
+                  </TabsTrigger>
+                  <TabsTrigger 
+                    value="completed" 
+                    className="flex items-center justify-center gap-2 px-3 py-2 bg-green-50 text-green-800 data-[state=active]:bg-green-100 data-[state=active]:text-green-900 hover:bg-green-100 border data-[state=active]:border-green-400"
+                  >
+                    <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
+                    <span className="text-xs font-medium">Completed</span>
+                    <Badge variant="secondary" className="text-[10px] h-5 px-1.5 ml-auto">
+                      {completedEvents.filter(e => {
+                        const stats = getCompletionStats(e);
+                        return stats.completed === stats.total;
+                      }).length}
+                    </Badge>
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
             </CardHeader>
             <CardContent className="p-0">
               <ScrollArea className="h-[600px]">
@@ -212,16 +322,18 @@ const EventReportsPage: React.FC = () => {
                     <div className="text-center py-8 text-muted-foreground">
                       Loading events...
                     </div>
-                  ) : completedEvents.length === 0 ? (
+                  ) : filteredEvents.length === 0 ? (
                     <div className="text-center py-8 space-y-2">
                       <AlertCircle className="w-12 h-12 mx-auto text-muted-foreground" />
                       <p className="text-sm text-muted-foreground">
-                        No completed events found
+                        {eventStatusTab === 'pending' 
+                          ? 'No pending reports found' 
+                          : 'No completed reports found'}
                       </p>
                     </div>
                   ) : (
                     <AnimatePresence>
-                      {completedEvents.map((event) => {
+                      {filteredEvents.map((event) => {
                         const stats = getCompletionStats(event);
                         const isSelected = selectedEvent?._id === event._id;
                         return (
@@ -253,7 +365,14 @@ const EventReportsPage: React.FC = () => {
                                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                     <Calendar className="w-3 h-3" />
                                     <span>
-                                      {format(new Date(event.startDate), 'MMM dd, yyyy')}
+                                      {format(new Date(event.startDate), 'MMM dd, yyyy')} at {event.startTime}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                    <Calendar className="w-3 h-3" />
+                                    <span className="font-medium">End:</span>
+                                    <span>
+                                      {format(new Date(event.endDate), 'MMM dd, yyyy')} at {event.endTime}
                                     </span>
                                   </div>
                                 </div>
@@ -288,37 +407,52 @@ const EventReportsPage: React.FC = () => {
 
         {/* Right: Report Forms */}
         <div className="lg:col-span-8">
-          {selectedEvent ? (
-            <motion.div
-              key={selectedEvent._id}
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-            >
-              <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-                {/* Tab List */}
-                <TabsList className="grid w-full grid-cols-2 lg:grid-cols-4 h-auto gap-2 bg-transparent p-0">
-                  {reportTypes.map((report) => {
-                    const Icon = report.icon;
-                    const status = getReportStatus(report.key);
-                    return (
-                      <TabsTrigger
-                        key={report.value}
-                        value={report.value}
-                        className="flex flex-col items-center gap-2 p-3 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg border-2 data-[state=active]:border-primary data-[state=inactive]:border-border hover:bg-accent transition-all relative"
-                      >
-                        {status.uploaded && (
-                          <div className="absolute -top-1 -right-1 bg-green-500 rounded-full p-0.5">
-                            <CheckCircle2 className="w-3 h-3 text-white" />
-                          </div>
-                        )}
-                        <Icon className="w-4 h-4" />
-                        <span className="text-xs font-medium text-center leading-tight">
-                          {report.label.split(' ').slice(0, 2).join(' ')}
-                        </span>
-                      </TabsTrigger>
-                    );
-                  })}
-                </TabsList>
+          <Card className="h-full">
+            <CardContent className="p-6">
+              {!selectedEvent ? (
+                <motion.div
+                  key="no-event"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                >
+                  <div className="text-center py-8 space-y-2">
+                    <AlertCircle className="w-12 h-12 mx-auto text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground">
+                      Select an event to view and upload reports
+                    </p>
+                  </div>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key={selectedEvent._id}
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                >
+                  <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+                    {/* Tab List */}
+                    <TabsList className="grid w-full grid-cols-2 lg:grid-cols-4 h-auto gap-2 bg-transparent p-0">
+                      {reportTypes.map((report) => {
+                        const Icon = report.icon;
+                        const status = getReportStatus(report.key);
+                        return (
+                          <TabsTrigger
+                            key={report.value}
+                            value={report.value}
+                            className="flex flex-col items-center gap-2 p-3 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg border-2 data-[state=active]:border-primary data-[state=inactive]:border-border hover:bg-accent transition-all relative"
+                          >
+                            {status.uploaded && (
+                              <div className="absolute -top-1 -right-1 bg-green-500 rounded-full p-0.5">
+                                <CheckCircle2 className="w-3 h-3 text-white" />
+                              </div>
+                            )}
+                            <Icon className="w-4 h-4" />
+                            <span className="text-xs font-medium text-center leading-tight">
+                              {report.label.split(' ').slice(0, 2).join(' ')}
+                            </span>
+                          </TabsTrigger>
+                        );
+                      })}
+                    </TabsList>
 
                 {/* Tab Contents */}
                 {reportTypes.map((report) => {
@@ -368,7 +502,25 @@ const EventReportsPage: React.FC = () => {
                                 onClick={() => {
                                   setCurrentTemplateType(report.value as any);
                                   
-                                  // Auto-populate fields from selected event
+                                  // For post-activity report, open the new component
+                                  if (report.value === 'post-activity') {
+                                    setShowPostActivityModal(true);
+                                    return;
+                                  }
+                                  
+                                  // For assessment report, open the new component
+                                  if (report.value === 'assessment') {
+                                    setShowAssessmentModal(true);
+                                    return;
+                                  }
+                                  
+                                  // For feedback form, open the new component
+                                  if (report.value === 'feedback') {
+                                    setShowFeedbackModal(true);
+                                    return;
+                                  }
+                                  
+                                  // Auto-populate fields from selected event for other templates
                                   if (selectedEvent) {
                                     // Helper function to convert 24-hour to 12-hour format
                                     const formatTime = (time: string) => {
@@ -423,13 +575,67 @@ const EventReportsPage: React.FC = () => {
 
                             {/* PDF Upload Area */}
                             <div className="space-y-3">
-                              <Label className="text-sm font-medium">Upload Your Report (PDF)</Label>
+                              <Label className="text-sm font-medium">
+                                {status.uploaded ? 'Uploaded Report' : 'Upload Your Report (PDF)'}
+                              </Label>
+                              
+                              {/* Show uploaded file from server if exists */}
+                              {status.uploaded && status.fileUrl && (
+                                <div className="border-2 border-green-200 bg-green-50 rounded-lg p-4 mb-3">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                      <div className="p-2 rounded-lg bg-green-100">
+                                        <CheckCircle2 className="w-5 h-5 text-green-600" />
+                                      </div>
+                                      <div>
+                                        <p className="text-sm font-medium text-green-900">
+                                          Report uploaded successfully
+                                        </p>
+                                        <p className="text-xs text-green-700">
+                                          Uploaded on {status.uploadedAt ? new Date(status.uploadedAt).toLocaleDateString() : 'N/A'}
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <div className="flex gap-2">
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => {
+                                          const fileUrl = status.fileUrl?.startsWith('http') 
+                                            ? status.fileUrl 
+                                            : `${API_BASE_URL.replace('/api', '')}${status.fileUrl}`;
+                                          window.open(fileUrl, '_blank');
+                                        }}
+                                        className="gap-2"
+                                      >
+                                        <Eye className="w-4 h-4" />
+                                        View
+                                      </Button>
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => {
+                                          setReportToDelete(report.key);
+                                          setShowDeleteDialog(true);
+                                        }}
+                                        className="gap-2 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                      >
+                                        <X className="w-4 h-4" />
+                                        Delete
+                                      </Button>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Upload new file area - Only show for pending events */}
+                              {selectedEvent.reportsStatus !== 'completed' && (
                               <div className="border-2 border-dashed border-gray-200 rounded-lg p-6 hover:border-gray-300 transition-colors">
                                 {(uploadedReports as any)[report.key] ? (
                                   <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-3">
-                                      <div className="p-2 rounded-lg bg-green-50">
-                                        <Paperclip className="w-5 h-5 text-green-600" />
+                                      <div className="p-2 rounded-lg bg-blue-50">
+                                        <Paperclip className="w-5 h-5 text-blue-600" />
                                       </div>
                                       <div>
                                         <p className="text-sm font-medium text-gray-900">
@@ -448,6 +654,7 @@ const EventReportsPage: React.FC = () => {
                                           ...prev,
                                           [report.key]: null
                                         }));
+                                        toast.info('File removed. You can upload a new file.');
                                       }}
                                       className="text-red-600 hover:text-red-700 hover:bg-red-50"
                                     >
@@ -458,7 +665,7 @@ const EventReportsPage: React.FC = () => {
                                   <div className="text-center">
                                     <Upload className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                                     <p className="text-sm text-gray-600 mb-1">
-                                      Click to upload or drag and drop
+                                      {status.uploaded ? 'Upload a new file to replace' : 'Click to upload or drag and drop'}
                                     </p>
                                     <p className="text-xs text-gray-400 mb-4">
                                       PDF files only (Max 10MB)
@@ -493,15 +700,25 @@ const EventReportsPage: React.FC = () => {
                                   </div>
                                 )}
                               </div>
+                              )}
                             </div>
 
-                            {/* Submit Button */}
-                            {(uploadedReports as any)[report.key] && (
+                            {/* Submit Button - Only show for pending events */}
+                            {selectedEvent.reportsStatus !== 'completed' && (uploadedReports as any)[report.key] && (
                               <div className="flex justify-end gap-3 pt-4">
-                                <Button variant="outline">
-                                  Save as Draft
+                                <Button 
+                                  variant="outline"
+                                  onClick={() => {
+                                    setUploadedReports(prev => ({
+                                      ...prev,
+                                      [report.key]: null
+                                    }));
+                                    toast.info('Draft cleared');
+                                  }}
+                                >
+                                  Clear File
                                 </Button>
-                                <Button>
+                                <Button onClick={() => handleSubmitReport(report.key)}>
                                   <Upload className="w-4 h-4 mr-2" />
                                   Submit Report
                                 </Button>
@@ -515,21 +732,9 @@ const EventReportsPage: React.FC = () => {
                 })}
               </Tabs>
             </motion.div>
-          ) : (
-            <Card className="border-2 border-dashed">
-              <CardContent className="flex flex-col items-center justify-center py-16 space-y-4">
-                <div className="p-4 rounded-full bg-muted">
-                  <FileText className="w-12 h-12 text-muted-foreground" />
-                </div>
-                <div className="text-center space-y-2">
-                  <h3 className="text-lg font-semibold">No Event Selected</h3>
-                  <p className="text-sm text-muted-foreground max-w-md">
-                    Select a completed event from the list to upload reports
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
           )}
+          </CardContent>
+          </Card>
         </div>
       </div>
 
@@ -1062,6 +1267,149 @@ const EventReportsPage: React.FC = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Post Activity Report Template Component */}
+      <PostActivityReportTemplate
+        open={showPostActivityModal}
+        onOpenChange={setShowPostActivityModal}
+        initialData={selectedEvent ? {
+          activityTitle: selectedEvent.eventTitle,
+          officeOrganizer: selectedEvent.requestorDepartment,
+          dateAndTime: (() => {
+            const formatTime = (time: string) => {
+              if (!time) return '';
+              const [hours, minutes] = time.split(':');
+              const hour = parseInt(hours, 10);
+              const ampm = hour >= 12 ? 'PM' : 'AM';
+              const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+              return `${displayHour}:${minutes} ${ampm}`;
+            };
+            const startDate = format(new Date(selectedEvent.startDate), 'MMMM dd, yyyy');
+            const endDate = format(new Date(selectedEvent.endDate), 'MMMM dd, yyyy');
+            const startTime = formatTime(selectedEvent.startTime);
+            const endTime = formatTime(selectedEvent.endTime);
+            return `${startDate} ${startTime} - ${endDate} ${endTime}`;
+          })(),
+          venue: selectedEvent.locations && selectedEvent.locations.length > 1
+            ? selectedEvent.locations.join(', ')
+            : selectedEvent.location,
+          participantsBeneficiaries: `Total Participants: ${
+            selectedEvent.participants + (selectedEvent.vip || 0) + (selectedEvent.vvip || 0)
+          }`
+        } : undefined}
+      />
+
+      {/* Assessment & Evaluation Template Component */}
+      <AssessmentEvaluationTemplate
+        open={showAssessmentModal}
+        onOpenChange={setShowAssessmentModal}
+        initialData={selectedEvent ? {
+          eventTitle: selectedEvent.eventTitle,
+          dateAndVenue: (() => {
+            const formatTime = (time: string) => {
+              if (!time) return '';
+              const [hours, minutes] = time.split(':');
+              const hour = parseInt(hours, 10);
+              const ampm = hour >= 12 ? 'PM' : 'AM';
+              const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+              return `${displayHour}:${minutes} ${ampm}`;
+            };
+            const startDate = format(new Date(selectedEvent.startDate), 'MMMM dd, yyyy');
+            const endDate = format(new Date(selectedEvent.endDate), 'MMMM dd, yyyy');
+            const startTime = formatTime(selectedEvent.startTime);
+            const endTime = formatTime(selectedEvent.endTime);
+            const venue = selectedEvent.locations && selectedEvent.locations.length > 1
+              ? selectedEvent.locations.join(', ')
+              : selectedEvent.location;
+            return `${startDate} ${startTime} - ${endDate} ${endTime} at ${venue}`;
+          })(),
+          organizingOffice: selectedEvent.requestorDepartment
+        } : undefined}
+      />
+
+      {/* Post-Event Feedback Template Component */}
+      <PostEventFeedbackTemplate
+        open={showFeedbackModal}
+        onOpenChange={setShowFeedbackModal}
+        initialData={selectedEvent ? {
+          eventTitle: selectedEvent.eventTitle,
+          date: (() => {
+            const formatTime = (time: string) => {
+              if (!time) return '';
+              const [hours, minutes] = time.split(':');
+              const hour = parseInt(hours, 10);
+              const ampm = hour >= 12 ? 'PM' : 'AM';
+              const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+              return `${displayHour}:${minutes} ${ampm}`;
+            };
+            const startDate = format(new Date(selectedEvent.startDate), 'MMMM dd, yyyy');
+            const endDate = format(new Date(selectedEvent.endDate), 'MMMM dd, yyyy');
+            const startTime = formatTime(selectedEvent.startTime);
+            const endTime = formatTime(selectedEvent.endTime);
+            return `${startDate} ${startTime} - ${endDate} ${endTime}`;
+          })(),
+          venue: selectedEvent.locations && selectedEvent.locations.length > 1
+            ? selectedEvent.locations.join(', ')
+            : selectedEvent.location,
+          organizingOffice: selectedEvent.requestorDepartment
+        } : undefined}
+      />
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Report?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this report? You can upload a new one after deletion. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (!selectedEvent || !reportToDelete) return;
+                
+                try {
+                  const token = localStorage.getItem('authToken');
+                  const response = await axios.delete(
+                    `${API_BASE_URL}/event-reports/${selectedEvent._id}/${reportToDelete}`,
+                    {
+                      headers: { Authorization: `Bearer ${token}` }
+                    }
+                  );
+
+                  if (response.data.success) {
+                    toast.success('Report deleted successfully!');
+                    
+                    // Update the selected event with the new data
+                    setSelectedEvent(prev => {
+                      if (!prev) return prev;
+                      return {
+                        ...prev,
+                        eventReports: response.data.data.eventReports,
+                        reportsStatus: response.data.data.reportsStatus
+                      };
+                    });
+                    
+                    // Refresh events list to update the sidebar
+                    await fetchCompletedEvents();
+                  }
+                } catch (error: any) {
+                  console.error('Error deleting report:', error);
+                  toast.error(error.response?.data?.message || 'Failed to delete report');
+                } finally {
+                  setShowDeleteDialog(false);
+                  setReportToDelete(null);
+                }
+              }}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
