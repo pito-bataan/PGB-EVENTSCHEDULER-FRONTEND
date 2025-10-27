@@ -2276,6 +2276,10 @@ const MyEventsPage: React.FC = () => {
                               {Array.isArray(parsedRequirements) ? (
                                 (() => {
                                   const filteredRequirements = parsedRequirements.filter((req: any) => {
+                                    // Filter out yesno requirements with 'no' answer
+                                    if (req.type === 'yesno' && req.yesNoAnswer === 'no') {
+                                      return false;
+                                    }
                                     if (selectedStatusFilter === 'all') return true;
                                     const reqStatus = req.status?.toLowerCase() || 'pending';
                                     return reqStatus === selectedStatusFilter;
@@ -2284,80 +2288,84 @@ const MyEventsPage: React.FC = () => {
                                   return filteredRequirements.length > 0 ? (
                                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                                       {filteredRequirements.map((req: any, reqIndex: number) => {
-                                    const statusBadge = getRequirementStatusBadge(req.status);
-                                    return (
-                                      <div key={reqIndex} className="bg-gray-50 rounded-lg border p-3 md:p-4 hover:shadow-md transition-all">
-                                        {/* Requirement Header */}
-                                        <div className="flex flex-col gap-3 mb-3">
-                                          <div className="flex-1">
-                                            <h5 className="text-sm md:text-base font-medium text-gray-900 mb-1">
-                                              {req.name || `Requirement ${reqIndex + 1}`}
-                                            </h5>
-                                            <div className="flex items-center gap-1.5 md:gap-2 flex-wrap">
-                                              {req.type && (
-                                                <Badge variant="outline" className="text-[10px] md:text-xs">
-                                                  {req.type}
-                                                </Badge>
-                                              )}
-                                              <Badge variant="secondary" className="text-[10px] md:text-xs">
-                                                {dept}
-                                              </Badge>
-                                            </div>
-                                          </div>
-                                          <div className="flex items-center gap-1.5 md:gap-2 flex-wrap">
-                                            <Button
-                                              variant="outline"
-                                              size="sm"
-                                              onClick={() => handleChangeDepartment(req, selectedEventDepartments._id, dept)}
-                                              className="h-7 px-2 gap-1 bg-white text-black border-gray-300 hover:bg-gray-100 hover:border-gray-400 text-[10px] md:text-xs whitespace-nowrap"
-                                              title="Change Department"
-                                            >
-                                              <Building2 className="w-3 h-3 md:w-3.5 md:h-3.5" />
-                                              <span className="hidden sm:inline">Change Dept</span>
-                                              <span className="sm:hidden">Change</span>
-                                            </Button>
-                                            <Button
-                                              variant="outline"
-                                              size="sm"
-                                              onClick={() => handleEditRequirement(req, selectedEventDepartments._id, dept)}
-                                              className="h-7 px-2 gap-1 bg-black text-white border-gray-700 hover:bg-gray-800 hover:border-gray-600 hover:text-white text-[10px] md:text-xs whitespace-nowrap"
-                                              title="Edit Quantity/Notes"
-                                            >
-                                              <Edit className="w-3 h-3 md:w-3.5 md:h-3.5 text-white" />
-                                              <span className="hidden sm:inline text-white">Quantity/Notes</span>
-                                              <span className="sm:hidden text-white">Edit</span>
-                                            </Button>
-                                            {getRequirementStatusIcon(req.status)}
-                                            <Badge className={`text-[10px] md:text-xs ${statusBadge.className}`}>
-                                              {statusBadge.label}
-                                            </Badge>
-                                          </div>
-                                        </div>
-
-                                        {/* Requirement Details */}
-                                        <div className="space-y-3">
-                                          {/* Quantity/Notes */}
-                                          {req.type === 'physical' && req.quantity ? (
-                                            <div className="text-sm text-gray-600 bg-white rounded p-2">
-                                              <span className="font-medium">Requested:</span> {req.quantity}
-                                              {req.totalQuantity && <span className="text-gray-500"> of {req.totalQuantity} available</span>}
-                                            </div>
-                                          ) : req.notes ? (
-                                            <div className="text-sm text-gray-600 bg-white rounded p-2">
-                                              <span className="font-medium">Notes:</span> {req.notes}
-                                            </div>
-                                          ) : null}
-
-                                          {/* Department Notes */}
-                                          {req.departmentNotes && (
-                                            <div className="bg-blue-50 border border-blue-200 rounded p-3">
-                                              <div className="text-xs font-medium text-blue-800 mb-1 flex items-center gap-1">
-                                                <FileText className="w-3 h-3" />
-                                                Department Notes:
+                                        const statusBadge = getRequirementStatusBadge(req.status);
+                                        return (
+                                          <div key={reqIndex} className="bg-gray-50 rounded-lg border p-3 md:p-4 hover:shadow-md transition-all">
+                                            {/* Requirement Header */}
+                                            <div className="flex flex-col gap-3 mb-3">
+                                              <div className="flex-1">
+                                                <h5 className="text-sm md:text-base font-medium text-gray-900 mb-1">
+                                                  {req.name || `Requirement ${reqIndex + 1}`}
+                                                </h5>
+                                                <div className="flex items-center gap-1.5 md:gap-2 flex-wrap">
+                                                  {req.type && (
+                                                    <Badge variant="outline" className="text-[10px] md:text-xs">
+                                                      {req.type === 'physical' ? 'Physical' : req.type === 'yesno' ? 'Service - Yes/No' : 'Service'}
+                                                    </Badge>
+                                                  )}
+                                                  <Badge variant="secondary" className="text-[10px] md:text-xs">
+                                                    {dept}
+                                                  </Badge>
+                                                </div>
                                               </div>
-                                              <div className="text-sm text-blue-700">{req.departmentNotes}</div>
+                                              <div className="flex items-center gap-1.5 md:gap-2 flex-wrap">
+                                                <Button
+                                                  variant="outline"
+                                                  size="sm"
+                                                  onClick={() => handleChangeDepartment(req, selectedEventDepartments._id, dept)}
+                                                  className="h-7 px-2 gap-1 bg-white text-black border-gray-300 hover:bg-gray-100 hover:border-gray-400 text-[10px] md:text-xs whitespace-nowrap"
+                                                  title="Change Department"
+                                                >
+                                                  <Building2 className="w-3 h-3 md:w-3.5 md:h-3.5" />
+                                                  <span className="hidden sm:inline">Change Dept</span>
+                                                  <span className="sm:hidden">Change</span>
+                                                </Button>
+                                                <Button
+                                                  variant="outline"
+                                                  size="sm"
+                                                  onClick={() => handleEditRequirement(req, selectedEventDepartments._id, dept)}
+                                                  className="h-7 px-2 gap-1 bg-black text-white border-gray-700 hover:bg-gray-800 hover:border-gray-600 hover:text-white text-[10px] md:text-xs whitespace-nowrap"
+                                                  title="Edit Quantity/Notes"
+                                                >
+                                                  <Edit className="w-3 h-3 md:w-3.5 md:h-3.5 text-white" />
+                                                  <span className="hidden sm:inline text-white">Quantity/Notes</span>
+                                                  <span className="sm:hidden text-white">Edit</span>
+                                                </Button>
+                                                {getRequirementStatusIcon(req.status)}
+                                                <Badge className={`text-[10px] md:text-xs ${statusBadge.className}`}>
+                                                  {statusBadge.label}
+                                                </Badge>
+                                              </div>
                                             </div>
-                                          )}
+
+                                            {/* Requirement Details */}
+                                            <div className="space-y-3">
+                                              {/* Quantity/Notes */}
+                                              {req.type === 'physical' && req.quantity ? (
+                                                <div className="text-sm text-gray-600 bg-white rounded p-2">
+                                                  <span className="font-medium">Requested:</span> {req.quantity}
+                                                  {req.totalQuantity && <span className="text-gray-500"> of {req.totalQuantity} available</span>}
+                                                </div>
+                                              ) : req.type === 'yesno' && req.yesNoAnswer ? (
+                                                <div className="text-sm text-gray-600 bg-white rounded p-2">
+                                                  <span className="font-medium">Answer:</span> <span className="text-green-600 font-semibold">✓ Yes</span>
+                                                </div>
+                                              ) : req.notes ? (
+                                                <div className="text-sm text-gray-600 bg-white rounded p-2">
+                                                  <span className="font-medium">Notes:</span> {req.notes}
+                                                </div>
+                                              ) : null}
+
+                                              {/* Department Notes */}
+                                              {req.departmentNotes && (
+                                                <div className="bg-blue-50 border border-blue-200 rounded p-3">
+                                                  <div className="text-xs font-medium text-blue-800 mb-1 flex items-center gap-1">
+                                                    <FileText className="w-3 h-3" />
+                                                    Department Notes:
+                                                  </div>
+                                                  <div className="text-sm text-blue-700">{req.departmentNotes}</div>
+                                                </div>
+                                              )}
 
                                           {/* Decline Reason */}
                                           {req.status?.toLowerCase() === 'declined' && req.declineReason && (

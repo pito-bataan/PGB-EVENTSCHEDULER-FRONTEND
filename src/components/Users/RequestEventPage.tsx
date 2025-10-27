@@ -66,12 +66,13 @@ interface DepartmentRequirement {
   selected: boolean;
   notes: string;
   quantity?: number;  // For physical requirements
-  type?: 'physical' | 'service';
+  type?: 'physical' | 'service' | 'yesno';
   totalQuantity?: number;
   isAvailable?: boolean;
   responsiblePerson?: string;
   availabilityNotes?: string; // Notes from resource availability
   isCustom?: boolean; // Flag for custom requirements added by user
+  yesNoAnswer?: 'yes' | 'no'; // For yesno type requirements
 }
 
 interface DepartmentRequirements {
@@ -900,7 +901,7 @@ const RequestEventPage: React.FC = () => {
       const eventsData = await response.json();
       const events = eventsData.data || [];
       
-      // Helper function to check if two locations conflict (Pavilion hierarchy)
+      // Helper function to check if two locations conflict (Pavilion & Conference Room hierarchy)
       const locationsConflict = (loc1: string, loc2: string): boolean => {
         // Exact match
         if (loc1 === loc2) return true;
@@ -932,6 +933,30 @@ const RequestEventPage: React.FC = () => {
           
           // Both are sections - only conflict if same section
           return loc1 === loc2;
+        }
+        
+        // Check Conference Room hierarchy (4th Conference Room 1, 2, 3)
+        const isConferenceRoom1 = loc1.includes('Conference Room');
+        const isConferenceRoom2 = loc2.includes('Conference Room');
+        
+        if (isConferenceRoom1 && isConferenceRoom2) {
+          // Extract the base conference room name (e.g., "4th Conference Room")
+          const getBaseRoom = (loc: string) => {
+            // Match patterns like "4th Conference Room 1", "4th Conference Room 2", etc.
+            const match = loc.match(/(.+Conference Room)\s*\d+/);
+            if (match) return match[1].trim();
+            // If no number, it might be the entire room
+            return loc.trim();
+          };
+          
+          const baseRoom1 = getBaseRoom(loc1);
+          const baseRoom2 = getBaseRoom(loc2);
+          
+          // Different conference rooms don't conflict
+          if (baseRoom1 !== baseRoom2) return false;
+          
+          // Same base room - they conflict (e.g., "4th Conference Room 1" conflicts with "4th Conference Room 2")
+          return true;
         }
         
         return false;
@@ -1329,10 +1354,19 @@ const RequestEventPage: React.FC = () => {
     return times;
   };
 
-  // Helper function to check if two locations conflict (Pavilion hierarchy)
+  // Helper function to check if two locations conflict (Pavilion & Conference Room hierarchy)
   const locationsConflict = (loc1: string, loc2: string): boolean => {
-    // Exact match
+    // Exact match - always conflicts
     if (loc1 === loc2) return true;
+    
+    // Check if both are Conference Rooms
+    const isConferenceRoom1 = loc1.includes('Conference Room');
+    const isConferenceRoom2 = loc2.includes('Conference Room');
+    
+    // Conference Rooms only conflict if they're the exact same room
+    if (isConferenceRoom1 && isConferenceRoom2) {
+      return loc1 === loc2;
+    }
     
     // Check Pavilion hierarchy
     const isPavilion1 = loc1.includes('Pavilion');
@@ -1363,6 +1397,7 @@ const RequestEventPage: React.FC = () => {
       return loc1 === loc2;
     }
     
+    // Different location types don't conflict
     return false;
   };
 
@@ -1373,8 +1408,18 @@ const RequestEventPage: React.FC = () => {
     }
 
     return conflictingEvents.some(event => {
-      // Check if locations conflict (handles Pavilion hierarchy)
-      if (!locationsConflict(event.location, formData.location)) return false;
+      // Check if current user's location conflicts with ANY of the event's locations
+      // Event might have multiple locations (locations array) or single location
+      const eventLocations = event.locations && Array.isArray(event.locations) && event.locations.length > 0
+        ? event.locations
+        : [event.location];
+      
+      // Check if formData.location conflicts with ANY of the event's locations
+      const hasLocationConflict = eventLocations.some((eventLoc: string) => 
+        locationsConflict(eventLoc, formData.location)
+      );
+      
+      if (!hasLocationConflict) return false;
       
       const eventStartTime = event.startTime;
       const eventEndTime = event.endTime;
@@ -1577,6 +1622,9 @@ const RequestEventPage: React.FC = () => {
               const isActive = step.id === currentStep;
               const isCompleted = step.id < currentStep || 
                                 (step.id === 2 && isAttachmentsCompleted) ||
+                                (step.id === 5 && formData.startDate && formData.startTime && formData.endDate && formData.endTime && 
+                                 formData.contactNumber && formData.contactEmail && 
+                                 formData.contactNumber.length === 11 && formData.contactEmail.includes('@')) ||
                                 (step.id === 6 && isFormReadyToSubmit());
               
               return (
@@ -1593,7 +1641,7 @@ const RequestEventPage: React.FC = () => {
                     </div>
                     <div className="hidden sm:block">
                       <p className={`text-sm font-medium ${
-                        isActive ? 'text-blue-700' : isCompleted ? 'text-green-700' : 'text-gray-500'
+                        isCompleted ? 'text-green-700' : isActive ? 'text-blue-700' : 'text-gray-500'
                       }`}>
                         {step.title}
                       </p>
@@ -1776,7 +1824,7 @@ const RequestEventPage: React.FC = () => {
                     />
                   </div>
                   <div>
-                    <Label htmlFor="vip" className="text-sm font-medium">VIP</Label>
+                    <Label htmlFor="vip" className="text-sm font-medium">VIP (Local)</Label>
                     <Input
                       id="vip"
                       type="number"
@@ -1788,7 +1836,7 @@ const RequestEventPage: React.FC = () => {
                     />
                   </div>
                   <div>
-                    <Label htmlFor="vvip" className="text-sm font-medium">VVIP</Label>
+                    <Label htmlFor="vvip" className="text-sm font-medium">VVIP (Foreign)</Label>
                     <Input
                       id="vvip"
                       type="number"
@@ -1801,7 +1849,7 @@ const RequestEventPage: React.FC = () => {
                   </div>
                   <div>
                     <Label htmlFor="withoutGov" className="text-sm font-medium">
-                      {formData.withoutGov ? 'w/ gov' : 'w/o gov'}
+                      {formData.withoutGov ? 'w/ Governor' : 'w/o Governor'}
                     </Label>
                     <div className="mt-1 h-10 flex items-center border border-input rounded-md px-3 bg-background">
                       <Switch
@@ -2044,8 +2092,14 @@ const RequestEventPage: React.FC = () => {
                                           <span className="font-medium">{req.name}</span>
                                           <div className="flex items-center gap-1">
                                             {req.type && (
-                                              <span className="text-xs bg-blue-200 px-1 py-0.5 rounded">
-                                                {req.type === 'physical' ? '📦' : '🔧'}
+                                              <span className="text-xs bg-blue-200 px-1 py-0.5 rounded flex items-center">
+                                                {req.type === 'physical' ? (
+                                                  <Package className="w-2.5 h-2.5" />
+                                                ) : req.type === 'yesno' ? (
+                                                  <CheckSquare className="w-2.5 h-2.5" />
+                                                ) : (
+                                                  <Settings className="w-2.5 h-2.5" />
+                                                )}
                                               </span>
                                             )}
                                             {req.notes && req.notes.trim() && (
@@ -2073,6 +2127,8 @@ const RequestEventPage: React.FC = () => {
                                               <span>
                                                 {req.type === 'physical' && req.quantity 
                                                   ? `Requested: ${req.quantity}${req.totalQuantity ? ` of ${req.totalQuantity}` : ''}` 
+                                                  : req.type === 'yesno' && req.yesNoAnswer
+                                                  ? `Answer: ${req.yesNoAnswer === 'yes' ? '✓ Yes' : '✗ No'}`
                                                   : `Available: ${req.totalQuantity || 'N/A'}`}
                                               </span>
                                               <span className={`flex items-center gap-1 ${
@@ -2597,11 +2653,25 @@ const RequestEventPage: React.FC = () => {
                             <div className="flex items-center gap-1">
                               {requirement.type === 'physical' ? (
                                 <><Package className="w-3 h-3" /> Physical</>
+                              ) : requirement.type === 'yesno' ? (
+                                <><Settings className="w-3 h-3" /> Yes/No</>
                               ) : (
                                 <><Settings className="w-3 h-3" /> Service</>
                               )}
                             </div>
                           </Badge>
+                          {requirement.type === 'yesno' && requirement.yesNoAnswer && (
+                            <Badge 
+                              variant="secondary" 
+                              className={`text-xs ${requirement.yesNoAnswer === 'yes' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}
+                            >
+                              {requirement.yesNoAnswer === 'yes' ? (
+                                <><Check className="w-3 h-3 mr-1" /> Yes</>
+                              ) : (
+                                <><X className="w-3 h-3 mr-1" /> No</>
+                              )}
+                            </Badge>
+                          )}
                         </div>
                         
                         {/* Conflict Warning - Only show if THIS requirement has conflicts */}
@@ -2736,6 +2806,48 @@ const RequestEventPage: React.FC = () => {
                                     }
                                   </p>
                                 )}
+                              </div>
+                            ) : requirement.type === 'yesno' ? (
+                              <div className="space-y-2">
+                                <Label className="text-xs font-medium text-gray-900">Select Answer</Label>
+                                <div className="flex gap-2">
+                                  <Button
+                                    type="button"
+                                    variant={requirement.yesNoAnswer === 'yes' ? 'default' : 'outline'}
+                                    className={`flex-1 ${requirement.yesNoAnswer === 'yes' ? 'bg-green-600 hover:bg-green-700' : ''}`}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const currentReqs = formData.departmentRequirements[selectedDepartment] || [];
+                                      const updatedReqs = currentReqs.map(req => 
+                                        req.id === requirement.id ? { ...req, yesNoAnswer: 'yes' as 'yes' | 'no' } : req
+                                      );
+                                      const newDeptReqs = { ...formData.departmentRequirements };
+                                      newDeptReqs[selectedDepartment] = updatedReqs;
+                                      handleInputChange('departmentRequirements', newDeptReqs);
+                                    }}
+                                  >
+                                    <Check className="w-4 h-4 mr-1" />
+                                    Yes
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant={requirement.yesNoAnswer === 'no' ? 'default' : 'outline'}
+                                    className={`flex-1 ${requirement.yesNoAnswer === 'no' ? 'bg-red-600 hover:bg-red-700' : ''}`}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const currentReqs = formData.departmentRequirements[selectedDepartment] || [];
+                                      const updatedReqs = currentReqs.map(req => 
+                                        req.id === requirement.id ? { ...req, yesNoAnswer: 'no' as 'yes' | 'no' } : req
+                                      );
+                                      const newDeptReqs = { ...formData.departmentRequirements };
+                                      newDeptReqs[selectedDepartment] = updatedReqs;
+                                      handleInputChange('departmentRequirements', newDeptReqs);
+                                    }}
+                                  >
+                                    <X className="w-4 h-4 mr-1" />
+                                    No
+                                  </Button>
+                                </div>
                               </div>
                             ) : (
                               <div className="space-y-2">
@@ -2891,6 +3003,20 @@ const RequestEventPage: React.FC = () => {
                       <Badge variant="secondary" className="text-xs bg-green-600 text-white flex items-center gap-1">
                         <StickyNote className="w-3 h-3" />
                         Notes
+                      </Badge>
+                    )}
+                    {requirement.type === 'yesno' && requirement.yesNoAnswer && (
+                      <Badge 
+                        variant="secondary" 
+                        className={`text-xs flex items-center gap-1 ${
+                          requirement.yesNoAnswer === 'yes' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+                        }`}
+                      >
+                        {requirement.yesNoAnswer === 'yes' ? (
+                          <><Check className="w-3 h-3" /> Yes</>
+                        ) : (
+                          <><X className="w-3 h-3" /> No</>
+                        )}
                       </Badge>
                     )}
                     <Button
@@ -4437,6 +4563,8 @@ const RequestEventPage: React.FC = () => {
                                     <div className="flex-shrink-0">
                                       {req.type === 'physical' ? (
                                         <Package className="w-4 h-4 text-gray-400" />
+                                      ) : req.type === 'yesno' ? (
+                                        <CheckSquare className="w-4 h-4 text-gray-400" />
                                       ) : (
                                         <Settings className="w-4 h-4 text-gray-400" />
                                       )}
@@ -4444,14 +4572,23 @@ const RequestEventPage: React.FC = () => {
                                     <span className="font-medium text-sm text-gray-900 truncate">{req.name}</span>
                                   </div>
                                   <div className="flex items-center gap-2 flex-shrink-0">
-                                    {req.isCustom && (
-                                      <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-200">
-                                        Custom
-                                      </Badge>
-                                    )}
                                     {req.type === 'physical' && req.quantity && (
                                       <Badge variant="secondary" className="text-xs">
                                         Qty: {req.quantity}
+                                      </Badge>
+                                    )}
+                                    {req.type === 'yesno' && req.yesNoAnswer && (
+                                      <Badge 
+                                        variant="secondary" 
+                                        className={`text-xs flex items-center gap-1 ${
+                                          req.yesNoAnswer === 'yes' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+                                        }`}
+                                      >
+                                        {req.yesNoAnswer === 'yes' ? (
+                                          <><Check className="w-3 h-3" /> Yes</>
+                                        ) : (
+                                          <><X className="w-3 h-3" /> No</>
+                                        )}
                                       </Badge>
                                     )}
                                     {req.notes && req.notes.trim() && (

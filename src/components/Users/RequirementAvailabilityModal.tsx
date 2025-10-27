@@ -29,7 +29,7 @@ import { format } from 'date-fns';
 interface Requirement {
   _id: string;
   text: string;
-  type: 'physical' | 'service';
+  type: 'physical' | 'service' | 'yesno';
   totalQuantity?: number;
   isActive: boolean;
   isAvailable?: boolean;
@@ -510,7 +510,7 @@ const RequirementAvailabilityModal: React.FC<RequirementAvailabilityModalProps> 
                   )}
 
                   {/* Services Requirements Selection */}
-                  {requirements.filter(req => req.type === 'service').length > 0 && (
+                  {requirements.filter(req => req.type === 'service' || req.type === 'yesno').length > 0 && (
                     <div>
                       <div className="flex items-center gap-2 mb-4 pb-2 border-b">
                         <Settings className="w-5 h-5 text-orange-600" />
@@ -518,7 +518,7 @@ const RequirementAvailabilityModal: React.FC<RequirementAvailabilityModalProps> 
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         {requirements
-                          .filter(req => req.type === 'service')
+                          .filter(req => req.type === 'service' || req.type === 'yesno')
                           .map(req => (
                             <Button
                               key={req._id}
@@ -529,7 +529,14 @@ const RequirementAvailabilityModal: React.FC<RequirementAvailabilityModalProps> 
                               <div className="flex items-center gap-3 w-full">
                                 <Settings className="w-4 h-4 flex-shrink-0" />
                                 <div className="flex-1 min-w-0">
-                                  <p className="font-medium truncate">{req.text}</p>
+                                  <div className="flex items-center gap-2">
+                                    <p className="font-medium truncate">{req.text}</p>
+                                    {req.type === 'yesno' && (
+                                      <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-700 border-blue-300">
+                                        Yes/No
+                                      </Badge>
+                                    )}
+                                  </div>
                                   <p className="text-xs opacity-70">
                                     {req.responsiblePerson ? `By: ${req.responsiblePerson}` : 'Service'}
                                   </p>
@@ -791,18 +798,18 @@ const RequirementAvailabilityModal: React.FC<RequirementAvailabilityModalProps> 
               )}
 
               {/* Services Requirements Section */}
-              {availabilities.filter(av => selectedRequirements.includes(av.requirementId) && requirements.find(req => req._id === av.requirementId)?.type === 'service').length > 0 && (
+              {availabilities.filter(av => selectedRequirements.includes(av.requirementId) && (requirements.find(req => req._id === av.requirementId)?.type === 'service' || requirements.find(req => req._id === av.requirementId)?.type === 'yesno')).length > 0 && (
                 <div>
                   <div className="flex items-center gap-2 mb-4 pb-2 border-b">
                     <Settings className="w-5 h-5 text-orange-600" />
                     <h3 className="text-lg font-semibold text-foreground">Services Requirements</h3>
                     <Badge variant="outline" className="ml-auto">
-                      {availabilities.filter(av => selectedRequirements.includes(av.requirementId) && requirements.find(req => req._id === av.requirementId)?.type === 'service').length} services
+                      {availabilities.filter(av => selectedRequirements.includes(av.requirementId) && (requirements.find(req => req._id === av.requirementId)?.type === 'service' || requirements.find(req => req._id === av.requirementId)?.type === 'yesno')).length} services
                     </Badge>
                   </div>
                   <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                     {availabilities
-                      .filter(av => selectedRequirements.includes(av.requirementId) && requirements.find(req => req._id === av.requirementId)?.type === 'service')
+                      .filter(av => selectedRequirements.includes(av.requirementId) && (requirements.find(req => req._id === av.requirementId)?.type === 'service' || requirements.find(req => req._id === av.requirementId)?.type === 'yesno'))
                       .map((availability, index) => (
                 <motion.div
                   key={availability.requirementId}
@@ -818,7 +825,14 @@ const RequirementAvailabilityModal: React.FC<RequirementAvailabilityModalProps> 
                         <Settings className="w-4 h-4" />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <h4 className="font-medium text-foreground text-sm leading-tight">{availability.requirementText}</h4>
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-medium text-foreground text-sm leading-tight">{availability.requirementText}</h4>
+                          {requirements.find(req => req._id === availability.requirementId)?.type === 'yesno' && (
+                            <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-700 border-blue-300">
+                              Yes/No
+                            </Badge>
+                          )}
+                        </div>
                         <p className="text-xs text-muted-foreground">ID: {availability.requirementId.slice(-8)}</p>
                       </div>
                     </div>

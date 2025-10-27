@@ -38,7 +38,7 @@ import {
 interface Requirement {
   _id: string;
   text: string;
-  type: 'physical' | 'service';
+  type: 'physical' | 'service' | 'yesno';
   totalQuantity?: number;
   isActive: boolean;
   isAvailable?: boolean; // For services
@@ -62,7 +62,7 @@ const MyRequirementsPage: React.FC = () => {
   const [deleteRequirementId, setDeleteRequirementId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     text: '',
-    type: 'physical' as 'physical' | 'service',
+    type: 'physical' as 'physical' | 'service' | 'yesno',
     totalQuantity: 1,
     isActive: true,
     isAvailable: true,
@@ -374,7 +374,7 @@ const MyRequirementsPage: React.FC = () => {
   const activeRequirements = department?.requirements.filter(req => req.isActive) || [];
   const inactiveRequirements = department?.requirements.filter(req => !req.isActive) || [];
   const physicalItems = activeRequirements.filter(req => req.type === 'physical');
-  const services = activeRequirements.filter(req => req.type === 'service');
+  const services = activeRequirements.filter(req => req.type === 'service' || req.type === 'yesno');
 
   return (
     <div className="p-2 max-w-[98%] mx-auto">
@@ -467,7 +467,7 @@ const MyRequirementsPage: React.FC = () => {
                         <Label htmlFor="type">Type</Label>
                         <Select 
                           value={formData.type} 
-                          onValueChange={(value: 'physical' | 'service') => 
+                          onValueChange={(value: 'physical' | 'service' | 'yesno') => 
                             setFormData({...formData, type: value})
                           }
                         >
@@ -476,7 +476,8 @@ const MyRequirementsPage: React.FC = () => {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="physical">Physical Item (has quantity)</SelectItem>
-                            <SelectItem value="service">Service/Task (no quantity)</SelectItem>
+                            <SelectItem value="service">Service/Task (Notes)</SelectItem>
+                            <SelectItem value="yesno">Service/Task (Yes or No)</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -505,6 +506,35 @@ const MyRequirementsPage: React.FC = () => {
                     {formData.type === 'service' && (
                       <div className="space-y-4">
                         <h3 className="font-medium">Service Details</h3>
+                        <div className="space-y-2">
+                          <Label htmlFor="responsiblePerson">Responsible Person</Label>
+                          <Input
+                            id="responsiblePerson"
+                            value={formData.responsiblePerson}
+                            onChange={(e) => setFormData({...formData, responsiblePerson: e.target.value})}
+                            placeholder="e.g., John Doe, IT Team, etc."
+                          />
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <Switch
+                            id="isAvailable"
+                            checked={formData.isAvailable}
+                            onCheckedChange={(checked) => setFormData({...formData, isAvailable: checked})}
+                          />
+                          <Label htmlFor="isAvailable">Service Available</Label>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Yes/No Fields */}
+                    {formData.type === 'yesno' && (
+                      <div className="space-y-4">
+                        <h3 className="font-medium">Yes/No Service Details</h3>
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                          <p className="text-sm text-blue-800">
+                            <strong>Note:</strong> Requestors will be able to select <strong>Yes</strong> or <strong>No</strong> for this requirement.
+                          </p>
+                        </div>
                         <div className="space-y-2">
                           <Label htmlFor="responsiblePerson">Responsible Person</Label>
                           <Input
@@ -892,7 +922,7 @@ const MyRequirementsPage: React.FC = () => {
                             <div className="flex-1 min-w-0 pr-3">
                               <h3 className="font-medium text-foreground truncate">{requirement.text}</h3>
                               <Badge variant="outline" className="mt-1 text-xs">
-                                {requirement.type === 'physical' ? 'Physical Item' : 'Service'}
+                                {requirement.type === 'physical' ? 'Physical Item' : requirement.type === 'yesno' ? 'Service (Yes/No)' : 'Service'}
                               </Badge>
                             </div>
                             <div className="flex flex-col gap-1">

@@ -13,6 +13,7 @@ import ManageLocationPage from './components/Users/ManageLocationPage'
 import MessagesPage from './components/Users/MessagesPage'
 import TaggedDepartmentPage from './components/Users/TaggedDepartmentPage'
 import UserAllEventsPage from './components/Users/AllEventsPage'
+import EventReportsPage from './components/Users/EventReportsPage'
 import AdminMainLayout from './components/Admin/AdminMainLayout'
 import AdminDashboard from './components/Admin/AdminDashboard'
 import AllEventsPage from './components/Admin/AllEventsPage'
@@ -59,6 +60,7 @@ function App() {
                   <Route path="all-events" element={<UserAllEventsPage />} />
                   <Route path="messages" element={<MessagesPage />} />
                   <Route path="tagged-departments" element={<TaggedDepartmentPage />} />
+                  <Route path="event-reports" element={<EventReportsPage />} />
                   <Route path="" element={<Navigate to="dashboard" replace />} />
                 </Routes>
               </MainLayout>

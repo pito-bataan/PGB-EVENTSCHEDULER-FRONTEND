@@ -75,6 +75,7 @@ interface Requirement {
   lastUpdated?: string;
   declineReason?: string;
   requirementsStatus?: 'on-hold' | 'released'; // Track if requirements are on-hold or released
+  yesNoAnswer?: 'yes' | 'no'; // For yesno type requirements
 }
 
 interface Event {
@@ -1036,7 +1037,13 @@ const TaggedDepartmentPage: React.FC = () => {
                                     <h4 className="font-medium text-gray-900">{req.name}</h4>
                                   </div>
                                   <p className="text-sm text-gray-600">
-                                    Quantity: {req.quantity} of {req.totalQuantity} • Type: {req.type}
+                                    {req.type === 'physical' ? (
+                                      <>Quantity: {req.quantity} of {req.totalQuantity} • Type: Physical</>
+                                    ) : req.type === 'yesno' ? (
+                                      <>Quantity: of 1 • Type: Service - Yes/No</>
+                                    ) : (
+                                      <>Type: Service</>
+                                    )}
                                   </p>
                                 </div>
                                 <Select 
@@ -1077,15 +1084,23 @@ const TaggedDepartmentPage: React.FC = () => {
 
                               <Separator />
 
-                              {/* Requestor's Note */}
+                              {/* Requestor's Note/Answer */}
                               <div className="space-y-2">
                                 <Label className="text-sm font-medium flex items-center gap-2">
                                   <User className="h-3.5 w-3.5" />
-                                  Requestor's Note
+                                  {req.type === 'yesno' ? 'Requestor\'s Answer' : 'Requestor\'s Note'}
                                 </Label>
                                 <div className="bg-gray-50 rounded-md p-3 border">
                                   <p className="text-sm text-gray-700">
-                                    {req.notes || 'No notes provided'}
+                                    {req.type === 'yesno' ? (
+                                      req.yesNoAnswer ? (
+                                        <span className="font-semibold text-green-600">✓ Yes</span>
+                                      ) : (
+                                        'No answer provided'
+                                      )
+                                    ) : (
+                                      req.notes || 'No notes provided'
+                                    )}
                                   </p>
                                 </div>
                               </div>
@@ -1221,7 +1236,13 @@ const TaggedDepartmentPage: React.FC = () => {
                                               <h4 className="font-medium text-gray-900">{req.name}</h4>
                                             </div>
                                             <p className="text-sm text-gray-600">
-                                              Quantity: {req.quantity} of {req.totalQuantity} • Type: {req.type}
+                                              {req.type === 'physical' ? (
+                                                <>Quantity: {req.quantity} of {req.totalQuantity} • Type: Physical</>
+                                              ) : req.type === 'yesno' ? (
+                                                <>Quantity: of 1 • Type: Service - Yes/No</>
+                                              ) : (
+                                                <>Type: Service</>
+                                              )}
                                             </p>
                                           </div>
                                           <Select 
@@ -1262,15 +1283,23 @@ const TaggedDepartmentPage: React.FC = () => {
 
                                         <Separator />
 
-                                        {/* Requestor's Note */}
+                                        {/* Requestor's Note/Answer */}
                                         <div className="space-y-2">
                                           <Label className="text-sm font-medium flex items-center gap-2">
                                             <User className="h-3.5 w-3.5" />
-                                            Requestor's Note
+                                            {req.type === 'yesno' ? 'Requestor\'s Answer' : 'Requestor\'s Note'}
                                           </Label>
                                           <div className="bg-gray-50 rounded-md p-3 border">
                                             <p className="text-sm text-gray-700">
-                                              {req.notes || 'No notes provided'}
+                                              {req.type === 'yesno' ? (
+                                                req.yesNoAnswer ? (
+                                                  <span className="font-semibold text-green-600">✓ Yes</span>
+                                                ) : (
+                                                  'No answer provided'
+                                                )
+                                              ) : (
+                                                req.notes || 'No notes provided'
+                                              )}
                                             </p>
                                           </div>
                                         </div>

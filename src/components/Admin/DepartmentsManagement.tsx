@@ -124,12 +124,46 @@ const DepartmentsManagement: React.FC = () => {
     { id: '47', name: 'VET', isVisible: true, createdAt: '2024-05-28', userCount: 6 }
   ]);
 
-  const toggleDepartmentVisibility = (id: string) => {
+  const toggleDepartmentVisibility = async (id: string) => {
+    // Optimistically update UI first
+    const department = departments.find(dept => dept.id === id);
+    if (!department) return;
+    
+    const newVisibility = !department.isVisible;
+    
     setDepartments(prev =>
       prev.map(dept =>
-        dept.id === id ? { ...dept, isVisible: !dept.isVisible } : dept
+        dept.id === id ? { ...dept, isVisible: newVisibility } : dept
       )
     );
+
+    // Save to database
+    try {
+      const token = localStorage.getItem('authToken');
+      const headers = {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      };
+
+      const response = await axios.put(
+        `${API_BASE_URL}/departments/${id}/visibility`,
+        { isVisible: newVisibility },
+        { headers }
+      );
+
+      if (response.data.success) {
+        toast.success(`${department.name} is now ${newVisibility ? 'visible' : 'hidden'}`);
+      }
+    } catch (error: any) {
+      console.error('Error updating visibility:', error);
+      // Rollback on error
+      setDepartments(prev =>
+        prev.map(dept =>
+          dept.id === id ? { ...dept, isVisible: !newVisibility } : dept
+        )
+      );
+      toast.error('Failed to update visibility');
+    }
   };
 
   const handleAddDepartment = () => {

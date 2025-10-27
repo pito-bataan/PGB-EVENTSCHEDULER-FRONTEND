@@ -19,7 +19,8 @@ import {
   PanelLeft,
   CalendarCheck,
   Menu,
-  X
+  X,
+  FileText
 } from 'lucide-react';
 
 interface UsersSidebarProps {
@@ -504,6 +505,9 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
     if (permissions.taggedDepartments) {
       conditionalItems.push({ icon: Building2, label: 'Tagged Departments', href: '/users/tagged-departments' });
     }
+
+    // Add Event Reports (always visible)
+    conditionalItems.push({ icon: FileText, label: 'Event Reports', href: '/users/event-reports' });
 
     return [...baseItems, ...middleItems, ...conditionalItems];
   };
