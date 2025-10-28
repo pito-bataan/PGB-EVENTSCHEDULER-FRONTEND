@@ -129,8 +129,8 @@ const RequirementAvailabilityModal: React.FC<RequirementAvailabilityModalProps> 
           requirementText: req.text,
           isAvailable: true,
           notes: '',
-          quantity: req.type === 'physical' ? 100 : 1, // Default to 100 for physical items
-          maxCapacity: req.type === 'physical' ? (req.totalQuantity || 100) : 1
+          quantity: req.type === 'physical' ? (req.totalQuantity || 0) : 1, // Use actual totalQuantity from requirement
+          maxCapacity: req.type === 'physical' ? (req.totalQuantity || 0) : 1
         };
       });
       setAvailabilities(initialAvailabilities);

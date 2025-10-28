@@ -1046,9 +1046,10 @@ const TaggedDepartmentPage: React.FC = () => {
                                     )}
                                   </p>
                                 </div>
-                                <Select 
+                                <Select
                                   key={req.id}
                                   value={getRequirementStatus(req)}
+                                  disabled={getRequirementStatus(req) === 'confirmed'}
                                   onValueChange={(value) => setStatusDialog({
                                     isOpen: true,
                                     eventId: selectedEvent._id,
@@ -1057,19 +1058,32 @@ const TaggedDepartmentPage: React.FC = () => {
                                   })}
                                 >
                                   <SelectTrigger className="w-[130px]">
-                                    <SelectValue />
+                                    <SelectValue>
+                                      {getRequirementStatus(req) === 'pending' && (
+                                        <div className="flex items-center gap-2">
+                                          <Clock className="h-3.5 w-3.5 text-yellow-600" />
+                                          Pending
+                                        </div>
+                                      )}
+                                      {getRequirementStatus(req) === 'confirmed' && (
+                                        <div className="flex items-center gap-2">
+                                          <CheckCircle className="h-3.5 w-3.5 text-green-600" />
+                                          Confirm
+                                        </div>
+                                      )}
+                                      {getRequirementStatus(req) === 'declined' && (
+                                        <div className="flex items-center gap-2">
+                                          <XCircle className="h-3.5 w-3.5 text-red-600" />
+                                          Decline
+                                        </div>
+                                      )}
+                                    </SelectValue>
                                   </SelectTrigger>
                                   <SelectContent>
                                     <SelectItem value="confirmed">
                                       <div className="flex items-center gap-2">
                                         <CheckCircle className="h-3.5 w-3.5 text-green-600" />
                                         Confirm
-                                      </div>
-                                    </SelectItem>
-                                    <SelectItem value="pending">
-                                      <div className="flex items-center gap-2">
-                                        <Clock className="h-3.5 w-3.5 text-yellow-600" />
-                                        Pending
                                       </div>
                                     </SelectItem>
                                     <SelectItem value="declined">
@@ -1248,6 +1262,7 @@ const TaggedDepartmentPage: React.FC = () => {
                                           <Select 
                                             key={`${req.id}-${getRequirementStatus(req)}`}
                                             value={getRequirementStatus(req)}
+                                            disabled={getRequirementStatus(req) === 'confirmed'}
                                             onValueChange={(value) => setStatusDialog({
                                               isOpen: true,
                                               eventId: selectedEvent._id,
@@ -1256,19 +1271,32 @@ const TaggedDepartmentPage: React.FC = () => {
                                             })}
                                           >
                                             <SelectTrigger className="w-[130px]">
-                                              <SelectValue />
+                                              <SelectValue>
+                                                {getRequirementStatus(req) === 'pending' && (
+                                                  <div className="flex items-center gap-2">
+                                                    <Clock className="h-3.5 w-3.5 text-yellow-600" />
+                                                    Pending
+                                                  </div>
+                                                )}
+                                                {getRequirementStatus(req) === 'confirmed' && (
+                                                  <div className="flex items-center gap-2">
+                                                    <CheckCircle className="h-3.5 w-3.5 text-green-600" />
+                                                    Confirm
+                                                  </div>
+                                                )}
+                                                {getRequirementStatus(req) === 'declined' && (
+                                                  <div className="flex items-center gap-2">
+                                                    <XCircle className="h-3.5 w-3.5 text-red-600" />
+                                                    Decline
+                                                  </div>
+                                                )}
+                                              </SelectValue>
                                             </SelectTrigger>
                                             <SelectContent>
                                               <SelectItem value="confirmed">
                                                 <div className="flex items-center gap-2">
                                                   <CheckCircle className="h-3.5 w-3.5 text-green-600" />
                                                   Confirm
-                                                </div>
-                                              </SelectItem>
-                                              <SelectItem value="pending">
-                                                <div className="flex items-center gap-2">
-                                                  <Clock className="h-3.5 w-3.5 text-yellow-600" />
-                                                  Pending
                                                 </div>
                                               </SelectItem>
                                               <SelectItem value="declined">
