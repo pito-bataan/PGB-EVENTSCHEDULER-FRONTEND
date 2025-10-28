@@ -180,7 +180,7 @@ const MyRequirementsPage: React.FC = () => {
 
       if (editingRequirement) {
         // Update existing requirement
-        const response = await fetch(`/api/departments/${department._id}/requirements/${editingRequirement._id}`, {
+        const response = await fetch(`${API_BASE_URL}/departments/${department._id}/requirements/${editingRequirement._id}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
@@ -272,7 +272,7 @@ const MyRequirementsPage: React.FC = () => {
         return;
       }
 
-      const response = await fetch(`/api/departments/${department._id}/requirements/${deleteRequirementId}`, {
+      const response = await fetch(`${API_BASE_URL}/departments/${department._id}/requirements/${deleteRequirementId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -328,7 +328,7 @@ const MyRequirementsPage: React.FC = () => {
       const requirement = department.requirements.find(req => req._id === requirementId);
       if (!requirement) return;
 
-      const response = await fetch(`/api/departments/${department._id}/requirements/${requirementId}/toggle`, {
+      const response = await fetch(`${API_BASE_URL}/departments/${department._id}/requirements/${requirementId}/toggle`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`
