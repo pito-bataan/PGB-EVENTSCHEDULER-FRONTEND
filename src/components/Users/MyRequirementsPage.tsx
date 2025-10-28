@@ -207,7 +207,7 @@ const MyRequirementsPage: React.FC = () => {
         });
       } else {
         // Add new requirement using department name
-        const apiUrl = `/api/departments/name/${encodeURIComponent(department.name)}/requirements`;
+        const apiUrl = `${API_BASE_URL}/departments/name/${encodeURIComponent(department.name)}/requirements`;
         console.log('Making API call to:', apiUrl);
         console.log('With request body:', formData);
         
