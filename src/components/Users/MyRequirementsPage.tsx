@@ -35,6 +35,8 @@ import {
   Zap
 } from 'lucide-react';
 
+const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api`;
+
 interface Requirement {
   _id: string;
   text: string;
@@ -89,7 +91,7 @@ const MyRequirementsPage: React.FC = () => {
   // Fetch department requirements
   const fetchDepartmentRequirements = async (departmentName: string) => {
     try {
-      const response = await fetch('/api/departments/visible');
+      const response = await fetch(`${API_BASE_URL}/departments/visible`);
       if (!response.ok) {
         throw new Error('Failed to fetch departments');
       }

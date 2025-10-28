@@ -1155,6 +1155,8 @@ const RequestEventPage: React.FC = () => {
     
     setIsSubmitting(true);
     
+    let uploadToastId: string | undefined = undefined;
+    
     try {
       const token = localStorage.getItem('authToken');
       if (!token) {
@@ -1261,9 +1263,12 @@ const RequestEventPage: React.FC = () => {
 
       console.log('📤 [EVENT SUBMISSION] Submitting event request...');
       
-      // Show initial loading toast
-      const toastId = toast.loading('Submitting event request...', {
-        description: 'Preparing your submission (0%)',
+      // Show initial loading toast with unique ID
+      uploadToastId = `upload-${Date.now()}`;
+      toast.loading('Submitting event request...', {
+        id: uploadToastId,
+        description: 'Preparing your submission... 0%',
+        duration: Infinity, // Keep toast until we dismiss it
       });
       
       // Add timeout for large file uploads (5 minutes)
@@ -1275,17 +1280,18 @@ const RequestEventPage: React.FC = () => {
             const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
             console.log(`📤 Upload progress: ${percentCompleted}%`);
             
-            // Update toast with progress
+            // Update the SAME toast with new progress
             toast.loading('Submitting event request...', {
-              id: toastId,
+              id: uploadToastId,
               description: `Upload progress: ${percentCompleted}%`,
+              duration: Infinity,
             });
           }
         }
       });
       
       // Dismiss loading toast after upload completes
-      toast.dismiss(toastId);
+      toast.dismiss(uploadToastId);
 
       console.log('✅ [EVENT SUBMISSION] Response received:', response.data);
 
@@ -1303,6 +1309,11 @@ const RequestEventPage: React.FC = () => {
       }
     } catch (error: any) {
       console.error('❌ [EVENT SUBMISSION] Error:', error);
+      
+      // Dismiss loading toast if it exists
+      if (uploadToastId) {
+        toast.dismiss(uploadToastId);
+      }
       
       let errorMessage = 'Please try again later.';
       
