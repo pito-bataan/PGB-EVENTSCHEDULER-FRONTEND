@@ -1262,6 +1262,9 @@ const RequestEventPage: React.FC = () => {
       };
 
       console.log('📤 [EVENT SUBMISSION] Submitting event request...');
+      console.log('📤 [EVENT SUBMISSION] API URL:', `${API_BASE_URL}/events`);
+      console.log('📤 [EVENT SUBMISSION] Total files:', formData.attachments.length);
+      console.log('📤 [EVENT SUBMISSION] Total size:', formData.attachments.reduce((sum, f) => sum + f.size, 0) / 1024 / 1024, 'MB');
       
       // Show initial loading toast with unique ID
       uploadToastId = `upload-${Date.now()}`;
@@ -1271,19 +1274,23 @@ const RequestEventPage: React.FC = () => {
         duration: Infinity, // Keep toast until we dismiss it
       });
       
-      // Add timeout for large file uploads (5 minutes)
+      // Add timeout for large file uploads (10 minutes for production)
       const response = await axios.post(`${API_BASE_URL}/events`, formDataToSubmit, { 
         headers,
-        timeout: 300000, // 5 minutes timeout
+        timeout: 600000, // 10 minutes timeout (increased for production)
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity,
         onUploadProgress: (progressEvent) => {
           if (progressEvent.total) {
             const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-            console.log(`📤 Upload progress: ${percentCompleted}%`);
+            const loadedMB = (progressEvent.loaded / 1024 / 1024).toFixed(2);
+            const totalMB = (progressEvent.total / 1024 / 1024).toFixed(2);
+            console.log(`📤 Upload progress: ${percentCompleted}% (${loadedMB}MB / ${totalMB}MB)`);
             
             // Update the SAME toast with new progress
             toast.loading('Submitting event request...', {
               id: uploadToastId,
-              description: `Upload progress: ${percentCompleted}%`,
+              description: `Upload progress: ${percentCompleted}% (${loadedMB}MB / ${totalMB}MB)`,
               duration: Infinity,
             });
           }
@@ -1309,6 +1316,9 @@ const RequestEventPage: React.FC = () => {
       }
     } catch (error: any) {
       console.error('❌ [EVENT SUBMISSION] Error:', error);
+      console.error('❌ [EVENT SUBMISSION] Error code:', error.code);
+      console.error('❌ [EVENT SUBMISSION] Error response:', error.response);
+      console.error('❌ [EVENT SUBMISSION] Error message:', error.message);
       
       // Dismiss loading toast if it exists
       if (uploadToastId) {
@@ -1316,19 +1326,32 @@ const RequestEventPage: React.FC = () => {
       }
       
       let errorMessage = 'Please try again later.';
+      let errorTitle = 'Failed to submit event request';
       
       if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
-        errorMessage = 'Request timeout. Your files might be too large. Please try with smaller files or check your internet connection.';
+        errorTitle = 'Request Timeout';
+        errorMessage = 'The upload is taking too long. This might be due to slow internet or server issues. Please try again or contact support.';
+      } else if (error.code === 'ERR_NETWORK') {
+        errorTitle = 'Network Error';
+        errorMessage = 'Cannot connect to the server. Please check your internet connection and try again.';
       } else if (error.response?.status === 413) {
-        errorMessage = 'Files are too large. Please reduce file sizes and try again.';
+        errorTitle = 'Files Too Large';
+        errorMessage = 'The total file size exceeds the server limit. Please reduce file sizes and try again.';
+      } else if (error.response?.status === 502 || error.response?.status === 504) {
+        errorTitle = 'Gateway Timeout';
+        errorMessage = 'The server is taking too long to respond. This might be a temporary issue. Please try again in a few moments.';
+      } else if (error.response?.status === 500) {
+        errorTitle = 'Server Error';
+        errorMessage = 'An error occurred on the server. Please try again or contact support if the issue persists.';
       } else if (error.response?.data?.message) {
         errorMessage = error.response.data.message;
       } else if (error.message) {
         errorMessage = error.message;
       }
       
-      toast.error('Failed to submit event request', {
-        description: errorMessage
+      toast.error(errorTitle, {
+        description: errorMessage,
+        duration: 10000 // Show error for 10 seconds
       });
     } finally {
       // Always reset submitting state
