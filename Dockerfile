@@ -4,15 +4,6 @@ FROM node:18-alpine AS builder
 # Set working directory
 WORKDIR /app
 
-# Copy package files first (for better layer caching)
-COPY package*.json ./
-
-# Install dependencies (removed cache mount for Coolify compatibility)
-RUN npm install --legacy-peer-deps
-
-# Copy source code (this layer changes most often, so it's last)
-COPY . .
-
 # Accept build arguments for environment variables
 ARG VITE_API_URL=https://eventscheduler-api.bataan.gov.ph
 ARG VITE_SOCKET_URL=https://eventscheduler-api.bataan.gov.ph
@@ -22,9 +13,19 @@ ARG VITE_NODE_ENV=production
 ENV VITE_API_URL=$VITE_API_URL
 ENV VITE_SOCKET_URL=$VITE_SOCKET_URL
 ENV VITE_NODE_ENV=$VITE_NODE_ENV
-ENV NODE_OPTIONS=--max-old-space-size=4096
+ENV NODE_OPTIONS=--max-old-space-size=2048
 
-# Build the application (removed cache mount to avoid issues)
+# Copy package files first (for better layer caching)
+COPY package*.json ./
+
+# Install dependencies with production flag and clean cache
+RUN npm ci --legacy-peer-deps --prefer-offline --no-audit && \
+    npm cache clean --force
+
+# Copy source code
+COPY . .
+
+# Build the application
 RUN npm run build
 
 # Production stage with Nginx
