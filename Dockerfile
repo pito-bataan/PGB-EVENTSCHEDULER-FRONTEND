@@ -17,8 +17,8 @@ RUN --mount=type=cache,target=/root/.npm \
 COPY . .
 
 # Accept build arguments for environment variables
-ARG VITE_API_URL
-ARG VITE_SOCKET_URL
+ARG VITE_API_URL=https://eventscheduler-api.bataan.gov.ph
+ARG VITE_SOCKET_URL=https://eventscheduler-api.bataan.gov.ph
 ARG VITE_NODE_ENV=production
 
 # Set environment variables for build
