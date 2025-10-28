@@ -1261,6 +1261,11 @@ const RequestEventPage: React.FC = () => {
 
       console.log('📤 [EVENT SUBMISSION] Submitting event request...');
       
+      // Show initial loading toast
+      const toastId = toast.loading('Submitting event request...', {
+        description: 'Preparing your submission (0%)',
+      });
+      
       // Add timeout for large file uploads (5 minutes)
       const response = await axios.post(`${API_BASE_URL}/events`, formDataToSubmit, { 
         headers,
@@ -1269,9 +1274,18 @@ const RequestEventPage: React.FC = () => {
           if (progressEvent.total) {
             const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
             console.log(`📤 Upload progress: ${percentCompleted}%`);
+            
+            // Update toast with progress
+            toast.loading('Submitting event request...', {
+              id: toastId,
+              description: `Upload progress: ${percentCompleted}%`,
+            });
           }
         }
       });
+      
+      // Dismiss loading toast after upload completes
+      toast.dismiss(toastId);
 
       console.log('✅ [EVENT SUBMISSION] Response received:', response.data);
 
