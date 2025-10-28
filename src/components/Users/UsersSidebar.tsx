@@ -20,8 +20,12 @@ import {
   CalendarCheck,
   Menu,
   X,
-  FileText
+  FileText,
+  BookOpen,
+  ChevronDown,
+  ChevronRight
 } from 'lucide-react';
+import { Separator } from '@/components/ui/separator';
 
 interface UsersSidebarProps {
   user?: {
@@ -60,6 +64,7 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
   }, [user]);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [requestEventOpen, setRequestEventOpen] = useState(true);
 
   // Prevent body scroll when mobile menu is open
   useEffect(() => {
@@ -467,52 +472,49 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
     }
   }, [currentUser.department]);
   
-  // Dynamic navigation items based on permissions
-  const getNavigationItems = () => {
-    const baseItems = [
-      { icon: LayoutDashboard, label: 'Dashboard', href: '/users/dashboard' },
-      { icon: CalendarPlus, label: 'Request Event', href: '/users/request-event' },
-      { icon: Calendar, label: 'My Events', href: '/users/my-events' },
-    ];
+  // Dynamic navigation items based on permissions - GROUPED
+  const getNavigationGroups = () => {
+    // Group 1: Requesting of Event
+    const group1 = {
+      label: 'Requesting of Event',
+      items: [
+        { icon: LayoutDashboard, label: 'Dashboard', href: '/users/dashboard' },
+        { icon: CalendarPlus, label: 'Request Event', href: '/users/request-event', hasSubmenu: true, submenu: [
+          { icon: BookOpen, label: 'Request Event Guide', href: '/users/request-event-guide' }
+        ]},
+        { icon: Calendar, label: 'My Events', href: '/users/my-events' },
+        { icon: MessageSquare, label: 'Messages', href: '/users/messages' },
+        { icon: FileText, label: 'Event Reports', href: '/users/event-reports' },
+      ]
+    };
 
-    const middleItems = [
-      { icon: MessageSquare, label: 'Messages', href: '/users/messages' },
-    ];
-
-    const conditionalItems = [];
-    
-    // Add My Calendar if permitted
+    // Group 2: Tagged Departments
+    const group2Items = [];
     if (permissions.myCalendar) {
-      conditionalItems.push({ icon: CalendarDays, label: 'My Calendar', href: '/users/my-calendar' });
+      group2Items.push({ icon: CalendarDays, label: 'My Calendar', href: '/users/my-calendar' });
     }
-    
-    // Add My Requirements if permitted
     if (permissions.myRequirements) {
-      conditionalItems.push({ icon: Package, label: 'My Requirements', href: '/users/my-requirements' });
+      group2Items.push({ icon: Package, label: 'My Requirements', href: '/users/my-requirements' });
     }
-    
-    // Add Manage Location if permitted
-    if (permissions.manageLocation) {
-      conditionalItems.push({ icon: MapPin, label: 'Manage Location', href: '/users/manage-location' });
-    }
-    
-    // Add All Events if permitted
-    if (permissions.allEvents) {
-      conditionalItems.push({ icon: CalendarCheck, label: 'All Events', href: '/users/all-events' });
-    }
-    
-    // Add Tagged Departments if permitted
     if (permissions.taggedDepartments) {
-      conditionalItems.push({ icon: Building2, label: 'Tagged Departments', href: '/users/tagged-departments' });
+      group2Items.push({ icon: Building2, label: 'Tagged Departments', href: '/users/tagged-departments' });
     }
+    const group2 = group2Items.length > 0 ? { label: 'Tagged Departments', items: group2Items } : null;
 
-    // Add Event Reports (always visible)
-    conditionalItems.push({ icon: FileText, label: 'Event Reports', href: '/users/event-reports' });
+    // Group 3: For PGSO Controls
+    const group3Items = [];
+    if (permissions.allEvents) {
+      group3Items.push({ icon: CalendarCheck, label: 'All Events', href: '/users/all-events' });
+    }
+    if (permissions.manageLocation) {
+      group3Items.push({ icon: MapPin, label: 'Manage Location', href: '/users/manage-location' });
+    }
+    const group3 = group3Items.length > 0 ? { label: 'For PGSO Controls', items: group3Items } : null;
 
-    return [...baseItems, ...middleItems, ...conditionalItems];
+    return [group1, group2, group3].filter(group => group !== null);
   };
 
-  const navigationItems = getNavigationItems();
+  const navigationGroups = getNavigationGroups();
 
   const handleNavigation = (href: string) => {
     try {
@@ -594,84 +596,150 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
       </div>
       
       {/* Navigation */}
-      <nav className="flex-1 p-2 space-y-1">
-        {navigationItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = location.pathname === item.href;
-          const isMyCalendar = item.label === 'My Calendar';
-          const isMessages = item.label === 'Messages';
-          const isManageLocation = item.label === 'Manage Location';
-          const isTaggedDepartments = item.label === 'Tagged Departments';
-          const isAllEvents = item.label === 'All Events';
-          const totalEventCount = isMyCalendar ? eventCount : 0;
-          
-
-          
-          return (
-            <div key={item.label} className="relative">
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  handleNavigation(item.href);
-                  setIsMobileMenuOpen(false); // Close mobile menu on navigation
-                }}
-                className={`w-full h-10 transition-all duration-200 ${
-                  isActive 
-                    ? 'bg-blue-100 text-blue-700 border-r-2 border-blue-600'
-                    : 'text-gray-700 hover:bg-blue-50 hover:text-blue-700'
-                } ${
-                  isCollapsed 
-                    ? 'lg:justify-center lg:px-2' 
-                    : 'justify-start gap-3 px-3'
-                }`}
-                title={isCollapsed ? item.label : undefined}
-              >
-                <Icon className="h-5 w-5 flex-shrink-0" />
-                <span className={`truncate transition-opacity duration-200 ${
-                  isCollapsed ? 'lg:opacity-0 lg:w-0 lg:overflow-hidden' : 'opacity-100'
-                }`}>
-                  {item.label}
-                </span>
-              </Button>
+      <nav className="flex-1 p-2 space-y-3 overflow-y-auto">
+        {navigationGroups.map((group, groupIndex) => (
+          <div key={groupIndex} className="space-y-1">
+            {/* Group Label */}
+            {!isCollapsed && (
+              <div className="px-3 py-1">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  {group.label}
+                </p>
+              </div>
+            )}
+            
+            {/* Group Items */}
+            {group.items.map((item: any) => {
+              const Icon = item.icon;
+              const isActive = location.pathname === item.href;
+              const isMyCalendar = item.label === 'My Calendar';
+              const isMessages = item.label === 'Messages';
+              const isManageLocation = item.label === 'Manage Location';
+              const isTaggedDepartments = item.label === 'Tagged Departments';
+              const isAllEvents = item.label === 'All Events';
+              const isRequestEvent = item.label === 'Request Event';
+              const totalEventCount = isMyCalendar ? eventCount : 0;
+              const hasSubmenu = item.hasSubmenu && item.submenu;
+              const isSubmenuOpen = isRequestEvent && requestEventOpen;
               
-              {/* Event Count Badge for My Calendar */}
-              {isMyCalendar && totalEventCount > 0 && !isCollapsed && (
-                <div className="absolute -top-1 -right-1 bg-red-500 text-white text-xs px-1.5 py-0.5 min-w-[20px] h-5 flex items-center justify-center rounded-full">
-                  {totalEventCount > 99 ? '99+' : totalEventCount}
-                </div>
-              )}
+              return (
+                <div key={item.label}>
+                  <div className="relative">
+                    <div className="flex items-center gap-0">
+                      <Button
+                        variant="ghost"
+                        onClick={() => {
+                          handleNavigation(item.href);
+                          setIsMobileMenuOpen(false);
+                        }}
+                        className={`flex-1 h-10 transition-all duration-200 ${
+                          isActive 
+                            ? 'bg-blue-100 text-blue-700 border-r-2 border-blue-600'
+                            : 'text-gray-700 hover:bg-blue-50 hover:text-blue-700'
+                        } ${
+                          isCollapsed 
+                            ? 'lg:justify-center lg:px-2' 
+                            : 'justify-start gap-3 px-3'
+                        } ${hasSubmenu && !isCollapsed ? 'rounded-r-none' : ''}`}
+                        title={isCollapsed ? item.label : undefined}
+                      >
+                        <Icon className="h-5 w-5 flex-shrink-0" />
+                        <span className={`flex-1 text-left truncate transition-opacity duration-200 ${
+                          isCollapsed ? 'lg:opacity-0 lg:w-0 lg:overflow-hidden' : 'opacity-100'
+                        }`}>
+                          {item.label}
+                        </span>
+                      </Button>
+                      {hasSubmenu && !isCollapsed && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setRequestEventOpen(!requestEventOpen)}
+                          className={`h-10 w-8 p-0 rounded-l-none ${
+                            isActive 
+                              ? 'text-blue-700 hover:bg-blue-200'
+                              : 'text-gray-700 hover:bg-blue-50'
+                          }`}
+                        >
+                          {isSubmenuOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                        </Button>
+                      )}
+                    </div>
+                  
+                  {/* Event Count Badge for My Calendar */}
+                  {isMyCalendar && totalEventCount > 0 && !isCollapsed && (
+                    <div className="absolute -top-1 -right-1 bg-red-500 text-white text-xs px-1.5 py-0.5 min-w-[20px] h-5 flex items-center justify-center rounded-full">
+                      {totalEventCount > 99 ? '99+' : totalEventCount}
+                    </div>
+                  )}
 
-              {/* Unread Messages Badge for Messages */}
-              {isMessages && totalUnreadMessages > 0 && !isCollapsed && !unreadLoading && (
-                <div className="absolute -top-1 -right-1 bg-red-500 text-white text-xs px-1.5 py-0.5 min-w-[20px] h-5 flex items-center justify-center rounded-full">
-                  {totalUnreadMessages > 99 ? '99+' : totalUnreadMessages}
-                </div>
-              )}
+                  {/* Unread Messages Badge for Messages */}
+                  {isMessages && totalUnreadMessages > 0 && !isCollapsed && !unreadLoading && (
+                    <div className="absolute -top-1 -right-1 bg-red-500 text-white text-xs px-1.5 py-0.5 min-w-[20px] h-5 flex items-center justify-center rounded-full">
+                      {totalUnreadMessages > 99 ? '99+' : totalUnreadMessages}
+                    </div>
+                  )}
 
-              {/* Location Event Count Badge for Manage Location */}
-              {isManageLocation && locationEventCount > 0 && !isCollapsed && (
-                <div className="absolute -top-1 -right-1 bg-red-500 text-white text-xs px-1.5 py-0.5 min-w-[20px] h-5 flex items-center justify-center rounded-full">
-                  {locationEventCount > 99 ? '99+' : locationEventCount}
-                </div>
-              )}
+                  {/* Location Event Count Badge for Manage Location */}
+                  {isManageLocation && locationEventCount > 0 && !isCollapsed && (
+                    <div className="absolute -top-1 -right-1 bg-red-500 text-white text-xs px-1.5 py-0.5 min-w-[20px] h-5 flex items-center justify-center rounded-full">
+                      {locationEventCount > 99 ? '99+' : locationEventCount}
+                    </div>
+                  )}
 
-              {/* Ongoing Events Count Badge for Tagged Departments */}
-              {isTaggedDepartments && taggedDepartmentsCount > 0 && !isCollapsed && (
-                <div className="absolute -top-1 -right-1 bg-red-500 text-white text-xs px-1.5 py-0.5 min-w-[20px] h-5 flex items-center justify-center rounded-full">
-                  {taggedDepartmentsCount > 99 ? '99+' : taggedDepartmentsCount}
-                </div>
-              )}
+                  {/* Ongoing Events Count Badge for Tagged Departments */}
+                  {isTaggedDepartments && taggedDepartmentsCount > 0 && !isCollapsed && (
+                    <div className="absolute -top-1 -right-1 bg-red-500 text-white text-xs px-1.5 py-0.5 min-w-[20px] h-5 flex items-center justify-center rounded-full">
+                      {taggedDepartmentsCount > 99 ? '99+' : taggedDepartmentsCount}
+                    </div>
+                  )}
 
-              {/* All Events Count Badge (all statuses) */}
-              {isAllEvents && allEventsCount > 0 && !isCollapsed && (
-                <div className="absolute -top-1 -right-1 bg-red-500 text-white text-xs px-1.5 py-0.5 min-w-[20px] h-5 flex items-center justify-center rounded-full">
-                  {allEventsCount > 99 ? '99+' : allEventsCount}
+                  {/* All Events Count Badge (all statuses) */}
+                  {isAllEvents && allEventsCount > 0 && !isCollapsed && (
+                    <div className="absolute -top-1 -right-1 bg-red-500 text-white text-xs px-1.5 py-0.5 min-w-[20px] h-5 flex items-center justify-center rounded-full">
+                      {allEventsCount > 99 ? '99+' : allEventsCount}
+                    </div>
+                  )}
+                  </div>
+
+                  {/* Submenu */}
+                  {hasSubmenu && isSubmenuOpen && !isCollapsed && (
+                    <div className="ml-8 mt-1 space-y-1">
+                      {item.submenu.map((subItem: any) => {
+                        const SubIcon = subItem.icon;
+                        const isSubActive = location.pathname === subItem.href;
+                        
+                        return (
+                          <Button
+                            key={subItem.label}
+                            variant="ghost"
+                            onClick={() => {
+                              handleNavigation(subItem.href);
+                              setIsMobileMenuOpen(false);
+                            }}
+                            className={`w-full h-9 transition-all duration-200 ${
+                              isSubActive 
+                                ? 'bg-blue-50 text-blue-700'
+                                : 'text-gray-600 hover:bg-blue-50 hover:text-blue-700'
+                            } justify-start gap-2 px-3 text-sm`}
+                          >
+                            <SubIcon className="h-4 w-4 flex-shrink-0" />
+                            <span className="truncate">{subItem.label}</span>
+                          </Button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-              )}
-              
-            </div>
-          );
-        })}
+              );
+            })}
+            
+            {/* Separator between groups (except after last group) */}
+            {groupIndex < navigationGroups.length - 1 && (
+              <Separator className="my-3" />
+            )}
+          </div>
+        ))}
       </nav>
       
       {/* Footer */}
