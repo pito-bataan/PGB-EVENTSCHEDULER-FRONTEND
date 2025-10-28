@@ -25,10 +25,10 @@ ARG VITE_NODE_ENV=production
 ENV VITE_API_URL=$VITE_API_URL
 ENV VITE_SOCKET_URL=$VITE_SOCKET_URL
 ENV VITE_NODE_ENV=$VITE_NODE_ENV
+ENV NODE_OPTIONS=--max-old-space-size=4096
 
-# Build the application with cache mount for faster builds
-RUN --mount=type=cache,target=/app/node_modules/.vite \
-    npm run build
+# Build the application (removed cache mount to avoid issues)
+RUN npm run build
 
 # Production stage with Nginx
 FROM nginx:alpine
