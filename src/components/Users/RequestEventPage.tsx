@@ -1840,18 +1840,36 @@ const RequestEventPage: React.FC = () => {
                           onChange={(e) => handleInputChange('location', e.target.value)}
                           className="mt-1"
                         />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setShowCustomLocation(false);
-                            handleInputChange('location', '');
-                          }}
-                          className="text-xs"
-                        >
-                          Choose from list instead
-                        </Button>
+                        <div className="flex gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setShowCustomLocation(false);
+                              handleInputChange('location', '');
+                            }}
+                            className="text-xs"
+                          >
+                            Choose from list instead
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="default"
+                            size="sm"
+                            onClick={() => {
+                              if (formData.location.trim()) {
+                                setShowScheduleModal(true);
+                              } else {
+                                toast.error('Please enter a custom location first');
+                              }
+                            }}
+                            className="text-xs"
+                            disabled={!formData.location.trim()}
+                          >
+                            Save & Check Schedule
+                          </Button>
+                        </div>
                       </div>
                     )}
                   </div>

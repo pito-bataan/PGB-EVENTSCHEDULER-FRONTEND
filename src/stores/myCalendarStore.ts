@@ -34,10 +34,15 @@ interface Event {
   eventTitle: string;
   startDate: string;
   endDate: string;
+  startTime: string;
+  endTime: string;
   taggedDepartments: string[];
   requestor: string;
   location: string;
   status: string; // Event status: submitted, approved, rejected, etc.
+  numberOfParticipants: number;
+  numberOfVIP: number;
+  numberOfVVIP: number;
 }
 
 interface User {

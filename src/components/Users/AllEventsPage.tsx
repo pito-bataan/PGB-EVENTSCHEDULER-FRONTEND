@@ -297,17 +297,102 @@ const AllEventsPage: React.FC = () => {
         yPos += splitDescription.length * 4 + 5;
       }
 
-      // Tagged Departments if exists
+      // Add new page for Tagged Departments & Requirements
       if (selectedEvent.taggedDepartments && selectedEvent.taggedDepartments.length > 0) {
-        pdf.setFontSize(10);
-        pdf.setFont('helvetica', 'bold');
-        pdf.text('Tagged Departments', margin, yPos);
-        yPos += 6;
+        pdf.addPage();
+        yPos = margin;
 
+        // Add logo if available (same as page 1)
+        if (logoImg) {
+          const logoWidth = 15;
+          const logoHeight = 15;
+          const logoX = (pageWidth - logoWidth) / 2;
+          pdf.addImage(logoImg, 'PNG', logoX, yPos, logoWidth, logoHeight);
+          yPos += logoHeight + 5;
+        } else {
+          yPos += 3;
+        }
+
+        // Header (same as page 1)
+        pdf.setFontSize(14);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('PROVINCIAL GOVERNMENT OF BATAAN', pageWidth / 2, yPos, { align: 'center' });
+        
+        yPos += 6;
+        pdf.setFontSize(10);
+        pdf.setFont('helvetica', 'normal');
+        pdf.text('Event Details Report', pageWidth / 2, yPos, { align: 'center' });
+        
+        yPos += 8;
         pdf.setFontSize(9);
         pdf.setFont('helvetica', 'normal');
-        pdf.text(selectedEvent.taggedDepartments.join(', '), margin, yPos);
-        yPos += 7;
+        pdf.text(`Generated on ${format(new Date(), 'MMMM dd, yyyy')} at ${format(new Date(), 'h:mm a')}`, pageWidth / 2, yPos, { align: 'center' });
+        yPos += 15;
+
+        // Section title
+        pdf.setFontSize(12);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('Tagged Departments & Requirements', margin, yPos);
+        yPos += 10;
+
+        selectedEvent.taggedDepartments.forEach((dept) => {
+          // Department name
+          pdf.setFontSize(10);
+          pdf.setFont('helvetica', 'bold');
+          pdf.setFillColor(59, 130, 246); // Blue background
+          pdf.rect(margin, yPos - 4, pageWidth - 2 * margin, 6, 'F');
+          pdf.setTextColor(255, 255, 255); // White text
+          pdf.text(`${dept}`, margin + 2, yPos);
+          pdf.setTextColor(0, 0, 0); // Reset to black
+          yPos += 8;
+
+          // Department requirements - simple list format
+          const deptReqs = selectedEvent.departmentRequirements?.[dept] || [];
+          if (deptReqs.length > 0) {
+            pdf.setFont('helvetica', 'normal');
+            deptReqs.forEach((req: any) => {
+              const reqText = req.requirementText || req.text || req.requirement || req.name || 'Requirement';
+              const status = req.status || 'Pending';
+              const notes = req.notes || '';
+              const quantity = req.quantity !== undefined ? req.quantity : '';
+
+              // Requirement text
+              pdf.setFontSize(9);
+              pdf.setFont('helvetica', 'bold');
+              pdf.text(`• ${reqText}`, margin + 3, yPos);
+              yPos += 5;
+
+              // Status and Quantity on same line
+              pdf.setFontSize(8);
+              pdf.setFont('helvetica', 'normal');
+              let detailsLine = `  Status: ${status}`;
+              if (quantity !== '') {
+                detailsLine += ` | Quantity: ${quantity}`;
+              }
+              pdf.text(detailsLine, margin + 5, yPos);
+              yPos += 4;
+
+              // Notes if exists
+              if (notes) {
+                pdf.setFontSize(7);
+                pdf.setTextColor(100, 100, 100);
+                const notesLines = pdf.splitTextToSize(`  Notes: ${notes}`, pageWidth - margin * 2 - 10);
+                pdf.text(notesLines, margin + 5, yPos);
+                yPos += notesLines.length * 3;
+                pdf.setTextColor(0, 0, 0);
+              }
+
+              yPos += 2;
+            });
+          } else {
+            pdf.setFontSize(8);
+            pdf.setFont('helvetica', 'italic');
+            pdf.text('No requirements', margin + 5, yPos);
+            yPos += 4;
+          }
+          
+          yPos += 5;
+        });
       }
 
       // Footer
@@ -462,9 +547,9 @@ const AllEventsPage: React.FC = () => {
         </div>
 
         {/* 2-Column Layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+        <div className="flex flex-col lg:flex-row gap-6 items-start">
           {/* LEFT COLUMN: Event List */}
-          <Card className="lg:col-span-2 border-none shadow-sm">
+          <Card className="w-full lg:w-2/5 border-none shadow-sm">
             <CardHeader className="pb-4">
               <div className="flex items-center gap-2">
                 <MapPin className="w-4 h-4 text-blue-600" />
@@ -512,7 +597,8 @@ const AllEventsPage: React.FC = () => {
                 </div>
                 
                 <TabsContent value={activeTab} className="mt-0">
-                  <ScrollArea className="h-[calc(100vh-480px)]">
+                  <ScrollArea className="h-[1000px]">
+                  <div className="px-4 pb-4">
                 {loading && filteredEvents.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-12">
                     <Loader2 className="w-8 h-8 text-blue-600 animate-spin mb-4" />
@@ -583,6 +669,7 @@ const AllEventsPage: React.FC = () => {
                     ))}
                   </div>
                 )}
+                  </div>
                   </ScrollArea>
                 </TabsContent>
               </Tabs>
@@ -590,7 +677,7 @@ const AllEventsPage: React.FC = () => {
           </Card>
 
           {/* RIGHT COLUMN: Event Details */}
-          <Card className="lg:col-span-3 border-none shadow-sm">
+          <Card className="w-full lg:w-3/5 border-none shadow-sm">
             <CardHeader className="pb-4">
               <div className="flex items-center justify-between">
                 <div>
@@ -616,8 +703,7 @@ const AllEventsPage: React.FC = () => {
             </CardHeader>
             <CardContent>
               {selectedEvent ? (
-                <ScrollArea className="h-[calc(100vh-420px)]">
-                  <div className="space-y-5 pr-4">
+                <div className="space-y-5">
                     {/* Event Title & Status */}
                     <div>
                       <div className="flex items-start justify-between gap-3 mb-2">
@@ -631,62 +717,63 @@ const AllEventsPage: React.FC = () => {
 
                     <Separator className="my-4" />
 
-                    {/* Location & Schedule */}
-                    <div className="space-y-2.5">
-                      <h3 className="text-sm font-medium text-foreground flex items-center gap-1.5">
-                        <MapPin className="w-3.5 h-3.5 text-blue-600" />
-                        Location{selectedEvent.locations && selectedEvent.locations.length > 1 ? 's' : ''} & Schedule
-                      </h3>
-                      <div className="bg-accent/30 rounded-lg p-3.5 space-y-2">
-                        <div className="flex items-center gap-2 text-sm">
-                          <MapPin className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
-                          {selectedEvent.locations && selectedEvent.locations.length > 1 ? (
-                            <div className="flex flex-wrap gap-1">
-                              {selectedEvent.locations.map((loc, idx) => (
-                                <Badge key={idx} variant="secondary" className="text-xs font-medium">
-                                  {loc}
-                                </Badge>
-                              ))}
-                            </div>
-                          ) : (
-                            <span className="font-medium text-foreground">{selectedEvent.location}</span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <Calendar className="w-3.5 h-3.5" />
-                          <span>{format(new Date(selectedEvent.startDate), 'PPP')}</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <Clock className="w-3.5 h-3.5" />
-                          <span>{formatTime(selectedEvent.startTime)} - {formatTime(selectedEvent.endTime)}</span>
+                    {/* Location & Schedule + Requestor Information - 2 Columns */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Location & Schedule */}
+                      <div className="space-y-2.5">
+                        <h3 className="text-sm font-medium text-foreground flex items-center gap-1.5">
+                          <MapPin className="w-3.5 h-3.5 text-blue-600" />
+                          Location{selectedEvent.locations && selectedEvent.locations.length > 1 ? 's' : ''} & Schedule
+                        </h3>
+                        <div className="bg-accent/30 rounded-lg p-3.5 space-y-2">
+                          <div className="flex items-center gap-2 text-sm">
+                            <MapPin className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                            {selectedEvent.locations && selectedEvent.locations.length > 1 ? (
+                              <div className="flex flex-wrap gap-1">
+                                {selectedEvent.locations.map((loc, idx) => (
+                                  <Badge key={idx} variant="secondary" className="text-xs font-medium">
+                                    {loc}
+                                  </Badge>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="font-medium text-foreground">{selectedEvent.location}</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <Calendar className="w-3.5 h-3.5" />
+                            <span>{format(new Date(selectedEvent.startDate), 'PPP')}</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <Clock className="w-3.5 h-3.5" />
+                            <span>{formatTime(selectedEvent.startTime)} - {formatTime(selectedEvent.endTime)}</span>
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    <Separator className="my-4" />
-
-                    {/* Requestor Information */}
-                    <div className="space-y-2.5">
-                      <h3 className="text-sm font-medium text-foreground flex items-center gap-1.5">
-                        <User className="w-3.5 h-3.5 text-blue-600" />
-                        Requestor Information
-                      </h3>
-                      <div className="bg-accent/30 rounded-lg p-3.5 space-y-2">
-                        <div className="flex items-center gap-2 text-sm">
-                          <User className="w-3.5 h-3.5 text-muted-foreground" />
-                          <span className="text-foreground">{selectedEvent.requestor}</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <Building2 className="w-3.5 h-3.5" />
-                          <span>{selectedEvent.requestorDepartment}</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <Phone className="w-3.5 h-3.5" />
-                          <span>{selectedEvent.contactNumber}</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <Mail className="w-3.5 h-3.5" />
-                          <span className="truncate">{selectedEvent.contactEmail}</span>
+                      {/* Requestor Information */}
+                      <div className="space-y-2.5">
+                        <h3 className="text-sm font-medium text-foreground flex items-center gap-1.5">
+                          <User className="w-3.5 h-3.5 text-blue-600" />
+                          Requestor Information
+                        </h3>
+                        <div className="bg-accent/30 rounded-lg p-3.5 space-y-2">
+                          <div className="flex items-center gap-2 text-sm">
+                            <User className="w-3.5 h-3.5 text-muted-foreground" />
+                            <span className="text-foreground">{selectedEvent.requestor}</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <Building2 className="w-3.5 h-3.5" />
+                            <span>{selectedEvent.requestorDepartment}</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <Phone className="w-3.5 h-3.5" />
+                            <span>{selectedEvent.contactNumber}</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <Mail className="w-3.5 h-3.5" />
+                            <span className="truncate">{selectedEvent.contactEmail}</span>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -721,21 +808,68 @@ const AllEventsPage: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Tagged Departments */}
+                    {/* Tagged Departments with Requirements */}
                     {selectedEvent.taggedDepartments && selectedEvent.taggedDepartments.length > 0 && (
                       <>
                         <Separator className="my-4" />
-                        <div className="space-y-2.5">
+                        <div className="space-y-3">
                           <h3 className="text-sm font-medium text-foreground flex items-center gap-1.5">
                             <Building2 className="w-3.5 h-3.5 text-blue-600" />
-                            Tagged Departments
+                            Tagged Departments & Requirements
                           </h3>
-                          <div className="flex flex-wrap gap-1.5">
-                            {selectedEvent.taggedDepartments.map((dept, index) => (
-                              <Badge key={index} variant="outline" className="bg-blue-50/80 text-blue-700 border-blue-200 text-xs font-medium">
-                                {dept}
-                              </Badge>
-                            ))}
+                          <div className="space-y-3">
+                            {selectedEvent.taggedDepartments.map((dept, index) => {
+                              const deptReqs = selectedEvent.departmentRequirements?.[dept] || [];
+                              console.log(`Department ${dept} requirements:`, deptReqs);
+                              return (
+                                <div key={index} className="border rounded-lg p-3 bg-blue-50/30">
+                                  <Badge variant="outline" className="bg-blue-50/80 text-blue-700 border-blue-200 text-xs font-medium mb-2">
+                                    {dept}
+                                  </Badge>
+                                  {deptReqs.length > 0 ? (
+                                    <div className="mt-2 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                                      {deptReqs.map((req: any, reqIndex: number) => {
+                                        console.log('Individual requirement:', req);
+                                        const status = req.status || 'Pending';
+                                        return (
+                                        <div key={reqIndex} className="bg-white rounded p-2 text-xs border">
+                                          <div className="flex items-start justify-between gap-2 mb-1">
+                                            <p className="font-medium text-gray-700">
+                                              {req.requirementText || req.text || req.requirement || req.name || 'Requirement'}
+                                            </p>
+                                            <Badge 
+                                              variant="outline" 
+                                              className={`text-[10px] capitalize ${
+                                                status.toLowerCase() === 'approved' ? 'bg-green-50 text-green-700 border-green-200' :
+                                                status.toLowerCase() === 'confirmed' ? 'bg-green-50 text-green-700 border-green-200' :
+                                                status.toLowerCase() === 'declined' ? 'bg-red-50 text-red-700 border-red-200' :
+                                                status.toLowerCase() === 'rejected' ? 'bg-red-50 text-red-700 border-red-200' :
+                                                'bg-yellow-50 text-yellow-700 border-yellow-200'
+                                              }`}
+                                            >
+                                              {status}
+                                            </Badge>
+                                          </div>
+                                          {req.notes && (
+                                            <p className="text-gray-600 mt-1">
+                                              <span className="font-medium">Notes:</span> {req.notes}
+                                            </p>
+                                          )}
+                                          {req.quantity !== undefined && (
+                                            <p className="text-gray-600 mt-1">
+                                              <span className="font-medium">Quantity:</span> {req.quantity}
+                                            </p>
+                                          )}
+                                        </div>
+                                      );
+                                      })}
+                                    </div>
+                                  ) : (
+                                    <p className="text-xs text-gray-500 mt-2">No requirements</p>
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
                       </>
@@ -752,7 +886,6 @@ const AllEventsPage: React.FC = () => {
                       </>
                     )}
                   </div>
-                </ScrollArea>
               ) : (
                 <div className="flex flex-col items-center justify-center h-[calc(100vh-420px)] text-muted-foreground">
                   <FileText className="w-12 h-12 mb-3 opacity-40" />

@@ -28,10 +28,13 @@ import {
   Settings,
   Trash2,
   X,
-  Shield
+  Shield,
+  List,
+  LayoutGrid
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { format } from 'date-fns';
+import CalendarListView from './CalendarListView';
 
 interface Requirement {
   _id: string;
@@ -103,6 +106,7 @@ const MyCalendarPage: React.FC = () => {
   const [showSelectiveDateDeleteDialog, setShowSelectiveDateDeleteDialog] = useState(false);
   const [selectedDatesForDeletion, setSelectedDatesForDeletion] = useState<string[]>([]);
   const [isSelectingDatesMode, setIsSelectingDatesMode] = useState(false);
+  const [viewMode, setViewMode] = useState<'calendar' | 'list'>('calendar');
 
   // Initialize user and fetch data using Zustand store
   // Empty deps array = only runs once on mount, respects Zustand cache
@@ -529,23 +533,48 @@ const MyCalendarPage: React.FC = () => {
                 Manage your department's resource availability
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="gap-1">
-                <Package className="w-3 h-3 text-blue-600" />
-                Total Resources: {totalRequirements}
-              </Badge>
-              <Badge variant="outline" className="gap-1">
-                <CheckCircle className="w-3 h-3 text-green-600" />
-                Available: {availableInMonth}
-              </Badge>
-              <Badge variant="outline" className="gap-1">
-                <XCircle className="w-3 h-3 text-red-600" />
-                Unavailable: {unavailableInMonth}
-              </Badge>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="gap-1">
+                  <Package className="w-3 h-3 text-blue-600" />
+                  Total Resources: {totalRequirements}
+                </Badge>
+                <Badge variant="outline" className="gap-1">
+                  <CheckCircle className="w-3 h-3 text-green-600" />
+                  Available: {availableInMonth}
+                </Badge>
+                <Badge variant="outline" className="gap-1">
+                  <XCircle className="w-3 h-3 text-red-600" />
+                  Unavailable: {unavailableInMonth}
+                </Badge>
+              </div>
+              
+              {/* View Toggle Buttons */}
+              <div className="flex items-center gap-1 border rounded-lg p-1">
+                <Button
+                  variant={viewMode === 'calendar' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setViewMode('calendar')}
+                  className="gap-2"
+                >
+                  <LayoutGrid className="w-4 h-4" />
+                  Calendar
+                </Button>
+                <Button
+                  variant={viewMode === 'list' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setViewMode('list')}
+                  className="gap-2"
+                >
+                  <List className="w-4 h-4" />
+                  List
+                </Button>
+              </div>
             </div>
           </motion.div>
 
-          {/* Bulk Availability Management - Minimalist ShadCN Design */}
+          {/* Bulk Availability Management - Minimalist ShadCN Design - Only show in Calendar view */}
+          {viewMode === 'calendar' && (
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -757,6 +786,7 @@ const MyCalendarPage: React.FC = () => {
               )}
             </div>
           </motion.div>
+          )}
 
           <Separator />
 
@@ -770,13 +800,13 @@ const MyCalendarPage: React.FC = () => {
             </div>
           )}
 
-          {/* Custom Calendar Component */}
+          {/* Calendar or List View */}
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
               <span className="ml-3 text-gray-600">Loading resources...</span>
             </div>
-          ) : (
+          ) : viewMode === 'calendar' ? (
             <CustomCalendar
               events={calendarEvents}
               onDateClick={handleDateClickForSelection}
@@ -788,6 +818,13 @@ const MyCalendarPage: React.FC = () => {
               getEventCountForDate={getEventCountForDate}
               selectedDates={isSelectingDatesMode ? selectedDatesForDeletion : []}
               isSelectionMode={isSelectingDatesMode}
+            />
+          ) : (
+            <CalendarListView
+              events={events.filter(event => 
+                event.taggedDepartments && 
+                event.taggedDepartments.includes(currentUser?.department || '')
+              ) as any}
             />
           )}
         </CardContent>
