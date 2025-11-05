@@ -15,6 +15,12 @@ export interface Event {
   startTime: string;
   endDate: string;
   endTime: string;
+  dateTimeSlots?: Array<{
+    startDate: string;
+    startTime: string;
+    endDate: string;
+    endTime: string;
+  }>;
   status: string;
   requestor: string;
   requestorDepartment: string;
@@ -110,7 +116,21 @@ export const useAdminCalendarStore = create<AdminCalendarState>()(
         const dateStr = format(date, 'yyyy-MM-dd');
         return state.events.filter(event => {
           const eventStartDate = format(new Date(event.startDate), 'yyyy-MM-dd');
-          return eventStartDate === dateStr;
+          
+          // Check if main date matches
+          if (eventStartDate === dateStr) {
+            return true;
+          }
+          
+          // Check if any additional dateTimeSlots match
+          if (event.dateTimeSlots && event.dateTimeSlots.length > 0) {
+            return event.dateTimeSlots.some(slot => {
+              const slotDate = format(new Date(slot.startDate), 'yyyy-MM-dd');
+              return slotDate === dateStr;
+            });
+          }
+          
+          return false;
         });
       },
       
@@ -119,31 +139,58 @@ export const useAdminCalendarStore = create<AdminCalendarState>()(
         
         events.forEach(event => {
           // Determine color based on status
-          console.log(`Event: ${event.eventTitle}, Status: "${event.status}"`);
           let color = '#E0E7FF'; // Default light blue
           if (event.status === 'approved') {
             color = '#D1FAE5'; // Light green for approved (green-200)
           } else if (event.status === 'submitted') {
             color = '#DBEAFE'; // Light blue for submitted (blue-200)
           } else if (event.status === 'cancelled') {
-            color = '#FEF08A'; // Light yellow for cancelled (yellow-200) - SAME SHADE AS OTHERS!
-            console.log(`✅ Cancelled event detected: ${event.eventTitle}, color: ${color}`);
+            color = '#FEF08A'; // Light yellow for cancelled (yellow-200)
           } else if (event.status === 'rejected') {
             color = '#FECACA'; // Light red for rejected (red-200)
           } else if (event.status === 'completed') {
             color = '#E9D5FF'; // Light purple for completed (purple-200)
           }
-          console.log(`Final color for ${event.eventTitle}: ${color}`);
+          
+          // Helper function to format date consistently
+          const formatDateForCalendar = (dateStr: string) => {
+            // Convert ISO date to YYYY-MM-DD format
+            const date = new Date(dateStr);
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+          };
           
           // Add event for start date
-          calEvents.push({
+          const mainDate = formatDateForCalendar(event.startDate);
+          
+          const mainEventEntry = {
             id: event._id,
-            date: event.startDate,
+            date: mainDate,
             title: event.eventTitle,
-            type: 'booking',
+            type: 'booking' as const,
             color: color,
             className: 'cursor-pointer hover:opacity-80 transition-opacity'
-          });
+          };
+          calEvents.push(mainEventEntry);
+          
+          // Add events for additional date/time slots
+          if (event.dateTimeSlots && event.dateTimeSlots.length > 0) {
+            event.dateTimeSlots.forEach((slot: any, index: number) => {
+              const slotDate = formatDateForCalendar(slot.startDate);
+              
+              const slotEventEntry = {
+                id: `${event._id}-slot-${index}`,
+                date: slotDate,
+                title: event.eventTitle,
+                type: 'booking' as const,
+                color: color,
+                className: 'cursor-pointer hover:opacity-80 transition-opacity'
+              };
+              calEvents.push(slotEventEntry);
+            });
+          }
         });
 
         return calEvents;

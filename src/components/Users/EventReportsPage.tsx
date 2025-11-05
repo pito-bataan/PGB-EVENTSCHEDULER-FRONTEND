@@ -194,7 +194,8 @@ const EventReportsPage: React.FC = () => {
     }
   };
 
-  const reportTypes = [
+  // All report types (including hidden ones for future use)
+  const allReportTypes = [
     {
       value: 'completion',
       label: 'Event Completion Report',
@@ -209,21 +210,28 @@ const EventReportsPage: React.FC = () => {
       description: 'Document post-event activities',
       key: 'postActivityReport'
     },
-    {
-      value: 'assessment',
-      label: 'Assessment & Evaluation',
-      icon: BarChart3,
-      description: 'Evaluate event performance',
-      key: 'assessmentReport'
-    },
-    {
-      value: 'feedback',
-      label: 'Post-Event Feedback',
-      icon: MessageSquare,
-      description: 'Collect feedback from participants',
-      key: 'feedbackForm'
-    }
+    // HIDDEN: Assessment & Evaluation - Temporarily hidden for users
+    // {
+    //   value: 'assessment',
+    //   label: 'Assessment & Evaluation',
+    //   icon: BarChart3,
+    //   description: 'Evaluate event performance',
+    //   key: 'assessmentReport'
+    // },
+    // HIDDEN: Post-Event Feedback - Temporarily hidden for users
+    // {
+    //   value: 'feedback',
+    //   label: 'Post-Event Feedback',
+    //   icon: MessageSquare,
+    //   description: 'Collect feedback from participants',
+    //   key: 'feedbackForm'
+    // }
   ];
+
+  // Filter to show only visible report types for users
+  const reportTypes = allReportTypes.filter(report => 
+    report.value === 'completion' || report.value === 'post-activity'
+  );
 
   const getReportStatus = (reportKey: string) => {
     if (!selectedEvent?.eventReports) return { uploaded: false };

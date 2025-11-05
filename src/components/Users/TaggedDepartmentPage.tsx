@@ -500,9 +500,9 @@ const TaggedDepartmentPage: React.FC = () => {
       </motion.div>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col md:flex-row gap-3 md:gap-4 lg:gap-6 p-3 md:p-4 lg:p-6 pt-4 md:pt-6 lg:pt-8 min-h-0 overflow-y-auto md:overflow-hidden">
+      <div className="flex-1 flex flex-col gap-3 md:gap-4 lg:gap-6 p-3 md:p-4 lg:p-6 pt-4 md:pt-6 lg:pt-8 overflow-y-auto">
         {/* Events List */}
-        <div className="md:w-[320px] lg:w-[380px] bg-muted/5 rounded-xl flex flex-col overflow-hidden border md:flex-shrink-0">
+        <div className="w-full bg-muted/5 rounded-xl flex flex-col border">
           <div className="p-4 bg-background/95 backdrop-blur-sm border-b">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-medium">Tagged Events</h3>
@@ -564,15 +564,15 @@ const TaggedDepartmentPage: React.FC = () => {
             </Tabs>
           </div>
           
-          <Tabs value={activeEventTab} className="flex-1 flex flex-col min-h-0">
-            <TabsContent value="ongoing" className="flex-1 mt-0 overflow-hidden bg-white">
-              <ScrollArea className="h-full">
+          <Tabs value={activeEventTab} className="flex-1 flex flex-col">
+            <TabsContent value="ongoing" className="flex-1 mt-0 bg-white">
                 <div className="p-3">
                   {loading ? (
                     <div className="flex items-center justify-center h-24">
                       <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
                     </div>
                   ) : (
+                    <div className="flex gap-3 overflow-x-auto pb-2">
                     <AnimatePresence>
                       {getOngoingEvents()
                         .map((event) => (
@@ -582,7 +582,7 @@ const TaggedDepartmentPage: React.FC = () => {
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, x: -20 }}
                     transition={{ duration: 0.2 }}
-                    className="mb-2 last:mb-0"
+                    className="flex-shrink-0 w-[280px]"
                   >
                     <Card 
                       className={`transition-all hover:shadow-md cursor-pointer overflow-hidden border ${
@@ -594,7 +594,7 @@ const TaggedDepartmentPage: React.FC = () => {
                         <div className="space-y-3">
                           {/* Header: Title + Status Badge */}
                           <div className="flex items-start justify-between gap-3">
-                            <h3 className="font-semibold text-sm leading-tight flex-1 line-clamp-2" title={event.eventTitle}>
+                            <h3 className="font-semibold text-sm leading-tight flex-1 truncate" title={event.eventTitle}>
                               {event.eventTitle}
                             </h3>
                             <Badge className={`text-[10px] px-2 py-0.5 flex-shrink-0 font-medium ${
@@ -671,19 +671,19 @@ const TaggedDepartmentPage: React.FC = () => {
                   </motion.div>
                         ))}
                     </AnimatePresence>
+                    </div>
                   )}
                 </div>
-              </ScrollArea>
             </TabsContent>
             
-            <TabsContent value="completed" className="flex-1 mt-0 overflow-hidden bg-white">
-              <ScrollArea className="h-full">
+            <TabsContent value="completed" className="flex-1 mt-0 bg-white">
                 <div className="p-3">
                   {loading ? (
                     <div className="flex items-center justify-center h-24">
                       <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
                     </div>
                   ) : (
+                    <div className="flex gap-3 overflow-x-auto pb-2">
                     <AnimatePresence>
                       {events
                         .filter(event => {
@@ -699,7 +699,7 @@ const TaggedDepartmentPage: React.FC = () => {
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, x: -20 }}
                             transition={{ duration: 0.2 }}
-                            className="mb-2 last:mb-0"
+                            className="flex-shrink-0 w-[280px]"
                           >
                             <Card 
                               className={`transition-all hover:shadow-md cursor-pointer overflow-hidden border-l-4 border ${
@@ -711,7 +711,7 @@ const TaggedDepartmentPage: React.FC = () => {
                                 <div className="space-y-4">
                                   <div className="overflow-hidden">
                                     <div className="flex items-start gap-2 mb-2">
-                                      <h3 className="font-medium text-sm flex-1 min-w-0 max-w-[180px] overflow-hidden text-ellipsis line-clamp-1" title={event.eventTitle}>{event.eventTitle}</h3>
+                                      <h3 className="font-semibold text-sm leading-tight flex-1 truncate" title={event.eventTitle}>{event.eventTitle}</h3>
                                       <Badge className={`text-xs px-2 py-1 flex-shrink-0 ${
                                         event.status === 'approved' ? 'bg-green-500 text-white' :
                                         event.status === 'submitted' ? 'bg-blue-500 text-white' :
@@ -778,19 +778,19 @@ const TaggedDepartmentPage: React.FC = () => {
                           </motion.div>
                         ))}
                     </AnimatePresence>
+                    </div>
                   )}
                 </div>
-              </ScrollArea>
             </TabsContent>
 
-            <TabsContent value="declined" className="flex-1 mt-0 overflow-hidden bg-white">
-              <ScrollArea className="h-full">
+            <TabsContent value="declined" className="flex-1 mt-0 bg-white">
                 <div className="p-3">
                   {loading ? (
                     <div className="flex items-center justify-center h-24">
                       <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
                     </div>
                   ) : (
+                    <div className="flex gap-3 overflow-x-auto pb-2">
                     <AnimatePresence>
                       {events
                         .filter(event => {
@@ -806,7 +806,7 @@ const TaggedDepartmentPage: React.FC = () => {
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, x: -20 }}
                             transition={{ duration: 0.2 }}
-                            className="mb-2 last:mb-0"
+                            className="flex-shrink-0 w-[280px]"
                           >
                             <Card 
                               className={`transition-all hover:shadow-md cursor-pointer overflow-hidden border-l-4 border ${
@@ -818,7 +818,7 @@ const TaggedDepartmentPage: React.FC = () => {
                                 <div className="space-y-4">
                                   <div className="overflow-hidden">
                                     <div className="flex items-start gap-2 mb-2">
-                                      <h3 className="font-medium text-sm flex-1 min-w-0 max-w-[180px] overflow-hidden text-ellipsis line-clamp-1" title={event.eventTitle}>{event.eventTitle}</h3>
+                                      <h3 className="font-semibold text-sm leading-tight flex-1 truncate" title={event.eventTitle}>{event.eventTitle}</h3>
                                       <Badge className={`text-xs px-2 py-1 flex-shrink-0 ${
                                         event.status === 'approved' ? 'bg-green-500 text-white' :
                                         event.status === 'submitted' ? 'bg-blue-500 text-white' :
@@ -871,103 +871,117 @@ const TaggedDepartmentPage: React.FC = () => {
                           </motion.div>
                         ))}
                     </AnimatePresence>
+                    </div>
                   )}
                 </div>
-              </ScrollArea>
             </TabsContent>
           </Tabs>
         </div>
 
         {/* Event Details */}
-        <div className="flex-1 bg-muted/5 rounded-xl border overflow-hidden flex flex-col md:min-h-0">
+        <div className="w-full bg-muted/5 rounded-xl border flex flex-col">
           {selectedEvent ? (
             <motion.div 
               key={selectedEvent._id}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="flex flex-col md:h-full"
+              className="flex flex-col"
             >
               {/* Event Header */}
-              <div className="bg-background/95 backdrop-blur-sm border-b p-6">
-                <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-2xl font-semibold">{selectedEvent.eventTitle}</h2>
-                  <Badge variant="outline" className="text-base px-3 py-1">
+              <div className="bg-background/95 backdrop-blur-sm border-b p-3">
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-lg font-semibold">{selectedEvent.eventTitle}</h2>
+                  <Badge variant="outline" className="text-sm px-2 py-0.5">
                     {(selectedEvent.departmentRequirements[currentUserDepartment] || []).length} Requirements
                   </Badge>
                 </div>
 
-                <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">Requestor's Department</Label>
-                    <div className="flex items-center gap-2">
-                      <Building2 className="w-3.5 h-3.5 text-muted-foreground" />
-                      <span className="text-sm font-medium">{selectedEvent.requestorDepartment}</span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-x-2 gap-y-2">
+                  <div className="space-y-0.5">
+                    <Label className="text-[10px] text-muted-foreground">Requestor's Department</Label>
+                    <div className="flex items-center gap-1.5">
+                      <Building2 className="w-3 h-3 text-muted-foreground" />
+                      <span className="text-xs font-medium">{selectedEvent.requestorDepartment}</span>
                     </div>
                   </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">Event Location{selectedEvent.locations && selectedEvent.locations.length > 1 ? 's' : ''}</Label>
-                    <div className="flex items-start gap-2">
-                      <MapPin className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 mt-0.5" />
+                  <div className="space-y-0.5">
+                    <Label className="text-[10px] text-muted-foreground">Event Location{selectedEvent.locations && selectedEvent.locations.length > 1 ? 's' : ''}</Label>
+                    <div className="flex items-start gap-1.5">
+                      <MapPin className="w-3 h-3 text-muted-foreground flex-shrink-0 mt-0.5" />
                       {selectedEvent.locations && selectedEvent.locations.length > 1 ? (
-                        <div className="flex flex-col gap-1 flex-1">
+                        <div className="flex flex-col gap-0.5 flex-1">
                           {selectedEvent.locations.map((loc: string, idx: number) => (
-                            <span key={idx} className="text-sm font-medium leading-tight">
+                            <span key={idx} className="text-xs font-medium leading-tight">
                               {loc}
                             </span>
                           ))}
                         </div>
                       ) : (
-                        <span className="text-sm font-medium leading-tight">{selectedEvent.location}</span>
+                        <span className="text-xs font-medium leading-tight">{selectedEvent.location}</span>
                       )}
                     </div>
                   </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">Event Schedule</Label>
-                    <div className="flex flex-col gap-1">
-                      <div className="flex items-center gap-2">
-                        <CalendarDays className="w-3.5 h-3.5 text-muted-foreground" />
-                        <span className="text-sm font-medium">
-                          {new Date(selectedEvent.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} - {new Date(selectedEvent.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Clock className="w-3.5 h-3.5 text-muted-foreground" />
-                        <span className="text-sm font-medium">
-                          {(() => {
-                            const formatTime = (time: string) => {
-                              if (!time) return '';
-                              const [hours, minutes] = time.split(':');
-                              const hour = parseInt(hours, 10);
-                              const ampm = hour >= 12 ? 'PM' : 'AM';
-                              const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
-                              return `${displayHour}:${minutes} ${ampm}`;
-                            };
-                            return `${formatTime(selectedEvent.startTime)} - ${formatTime(selectedEvent.endTime)}`;
-                          })()}
-                        </span>
-                      </div>
+                  <div className="space-y-0.5 xl:mr-8">
+                    <Label className="text-[10px] text-muted-foreground">Event Schedule</Label>
+                    <div className="flex flex-col gap-0.5">
+                      {(() => {
+                        const formatTime = (time: string) => {
+                          if (!time) return '';
+                          const [hours, minutes] = time.split(':');
+                          const hour = parseInt(hours, 10);
+                          const ampm = hour >= 12 ? 'PM' : 'AM';
+                          const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+                          return `${displayHour}:${minutes} ${ampm}`;
+                        };
+                        
+                        const allDates = [
+                          {
+                            date: selectedEvent.startDate,
+                            startTime: selectedEvent.startTime,
+                            endTime: selectedEvent.endTime
+                          },
+                          ...((selectedEvent as any).dateTimeSlots || [])
+                        ];
+                        
+                        return allDates.map((slot, index) => (
+                          <div key={index} className="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-1.5">
+                            <div className="flex items-center gap-1.5">
+                              <CalendarDays className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                              <span className="text-xs font-medium whitespace-nowrap">
+                                {new Date(slot.date || slot.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1.5 ml-4 sm:ml-0">
+                              <Clock className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                              <span className="text-xs font-medium whitespace-nowrap">
+                                {formatTime(slot.startTime)} - {formatTime(slot.endTime)}
+                              </span>
+                            </div>
+                          </div>
+                        ));
+                      })()}
                     </div>
                   </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">Contact Email</Label>
-                    <div className="flex items-center gap-2">
-                      <Mail className="w-3.5 h-3.5 text-muted-foreground" />
-                      <span className="text-sm font-medium">{selectedEvent.contactEmail}</span>
+                  <div className="space-y-0.5">
+                    <Label className="text-[10px] text-muted-foreground">Contact Email</Label>
+                    <div className="flex items-center gap-1.5">
+                      <Mail className="w-3 h-3 text-muted-foreground" />
+                      <span className="text-xs font-medium truncate">{selectedEvent.contactEmail}</span>
                     </div>
                   </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">Contact Number</Label>
-                    <div className="flex items-center gap-2">
-                      <Phone className="w-3.5 h-3.5 text-muted-foreground" />
-                      <span className="text-sm font-medium">{selectedEvent.contactNumber}</span>
+                  <div className="space-y-0.5">
+                    <Label className="text-[10px] text-muted-foreground">Contact Number</Label>
+                    <div className="flex items-center gap-1.5">
+                      <Phone className="w-3 h-3 text-muted-foreground" />
+                      <span className="text-xs font-medium">{selectedEvent.contactNumber}</span>
                     </div>
                   </div>
                 </div>
               </div>
 
               {/* Requirements List */}
-              <div className="flex-1 overflow-hidden">
-                <Tabs defaultValue="all" className="h-full flex flex-col">
+              <div className="flex-1">
+                <Tabs defaultValue="all" className="flex flex-col">
                   <div className="px-6 pt-4">
                     <TabsList className="w-full grid grid-cols-4">
                       {(() => {
@@ -1013,8 +1027,7 @@ const TaggedDepartmentPage: React.FC = () => {
                     </TabsList>
                   </div>
 
-                  <TabsContent value="all" className="flex-1 overflow-hidden">
-                <ScrollArea className="h-full">
+                  <TabsContent value="all" className="flex-1">
                   <div className="px-6 py-4 space-y-4">
                     <AnimatePresence>
                       {Object.entries(selectedEvent.departmentRequirements)
@@ -1219,13 +1232,11 @@ const TaggedDepartmentPage: React.FC = () => {
                       )}
                     </AnimatePresence>
                   </div>
-                </ScrollArea>
                   </TabsContent>
 
                   {/* Status-specific tabs */}
                   {['confirmed', 'pending', 'declined'].map((status) => (
-                    <TabsContent key={status} value={status} className="flex-1 overflow-hidden">
-                      <ScrollArea className="h-full">
+                    <TabsContent key={status} value={status} className="flex-1">
                         <div className="px-6 py-4 space-y-4">
                           <AnimatePresence>
                             {Object.entries(selectedEvent.departmentRequirements)
@@ -1432,7 +1443,6 @@ const TaggedDepartmentPage: React.FC = () => {
                             )}
                     </AnimatePresence>
                   </div>
-                </ScrollArea>
                     </TabsContent>
                   ))}
                 </Tabs>

@@ -545,27 +545,63 @@ const AllEventsPage: React.FC = () => {
         pdf.text(event.taggedDepartments?.length > 0 ? event.taggedDepartments.join(', ') : 'N/A', margin + 115, yPosition);
         yPosition += 7;
 
-        pdf.setFont('helvetica', 'bold');
-        pdf.text('Start Date:', margin, yPosition);
-        pdf.setFont('helvetica', 'normal');
-        pdf.text(format(new Date(event.startDate), 'MMMM dd, yyyy'), margin + 25, yPosition);
+        // Check if event has multiple date/time slots (multi-day event)
+        const hasSlots = event.dateTimeSlots && Array.isArray(event.dateTimeSlots) && event.dateTimeSlots.length > 0;
         
-        pdf.setFont('helvetica', 'bold');
-        pdf.text('Start Time:', margin + 90, yPosition);
-        pdf.setFont('helvetica', 'normal');
-        pdf.text(formatTime(event.startTime), margin + 115, yPosition);
-        yPosition += 7;
+        if (hasSlots) {
+          // Multi-Day Event Schedule
+          pdf.setFont('helvetica', 'bold');
+          pdf.text('Multi-Day Event Schedule:', margin, yPosition);
+          yPosition += 7;
+          
+          // Day 1 - Main date slot
+          pdf.setFont('helvetica', 'bold');
+          pdf.text('Day 1:', margin + 5, yPosition);
+          pdf.setFont('helvetica', 'normal');
+          pdf.text(
+            `${format(new Date(event.startDate), 'MMM dd, yyyy')} at ${formatTime(event.startTime)} - ${formatTime(event.endTime)}`,
+            margin + 20,
+            yPosition
+          );
+          yPosition += 6;
+          
+          // Additional Days
+          event.dateTimeSlots?.forEach((slot: any, idx: number) => {
+            pdf.setFont('helvetica', 'bold');
+            pdf.text(`Day ${idx + 2}:`, margin + 5, yPosition);
+            pdf.setFont('helvetica', 'normal');
+            pdf.text(
+              `${format(new Date(slot.startDate), 'MMM dd, yyyy')} at ${formatTime(slot.startTime)} - ${formatTime(slot.endTime)}`,
+              margin + 20,
+              yPosition
+            );
+            yPosition += 6;
+          });
+          yPosition += 1;
+        } else {
+          // Single date/time
+          pdf.setFont('helvetica', 'bold');
+          pdf.text('Start Date:', margin, yPosition);
+          pdf.setFont('helvetica', 'normal');
+          pdf.text(format(new Date(event.startDate), 'MMMM dd, yyyy'), margin + 25, yPosition);
+          
+          pdf.setFont('helvetica', 'bold');
+          pdf.text('Start Time:', margin + 90, yPosition);
+          pdf.setFont('helvetica', 'normal');
+          pdf.text(formatTime(event.startTime), margin + 115, yPosition);
+          yPosition += 7;
 
-        pdf.setFont('helvetica', 'bold');
-        pdf.text('End Date:', margin, yPosition);
-        pdf.setFont('helvetica', 'normal');
-        pdf.text(format(new Date(event.endDate), 'MMMM dd, yyyy'), margin + 25, yPosition);
-        
-        pdf.setFont('helvetica', 'bold');
-        pdf.text('End Time:', margin + 90, yPosition);
-        pdf.setFont('helvetica', 'normal');
-        pdf.text(formatTime(event.endTime), margin + 115, yPosition);
-        yPosition += 7;
+          pdf.setFont('helvetica', 'bold');
+          pdf.text('End Date:', margin, yPosition);
+          pdf.setFont('helvetica', 'normal');
+          pdf.text(format(new Date(event.endDate), 'MMMM dd, yyyy'), margin + 25, yPosition);
+          
+          pdf.setFont('helvetica', 'bold');
+          pdf.text('End Time:', margin + 90, yPosition);
+          pdf.setFont('helvetica', 'normal');
+          pdf.text(formatTime(event.endTime), margin + 115, yPosition);
+          yPosition += 7;
+        }
 
         pdf.setFont('helvetica', 'bold');
         pdf.text(event.locations && event.locations.length > 1 ? 'Locations:' : 'Location:', margin, yPosition);
@@ -1094,38 +1130,76 @@ const AllEventsPage: React.FC = () => {
                                     </div>
 
                                     {/* Date & Time & Status */}
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                      <div>
-                                        <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                                          <Calendar className="w-4 h-4" />
-                                          Start Date & Time
-                                        </label>
-                                        <p className="mt-1 text-sm text-gray-900">
-                                          {format(new Date(selectedEvent.startDate), 'MMM dd, yyyy')} at {formatTime(selectedEvent.startTime)}
-                                        </p>
-                                      </div>
-                                      <div>
-                                        <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                                          <Clock className="w-4 h-4" />
-                                          End Date & Time
-                                        </label>
-                                        <p className="mt-1 text-sm text-gray-900">
-                                          {format(new Date(selectedEvent.endDate), 'MMM dd, yyyy')} at {formatTime(selectedEvent.endTime)}
-                                        </p>
-                                      </div>
-                                      <div>
-                                        <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                                          <Tag className="w-4 h-4" />
-                                          Status
-                                        </label>
-                                        <div className="mt-1">
+                                    {selectedEvent.dateTimeSlots && selectedEvent.dateTimeSlots.length > 0 ? (
+                                      <div className="space-y-4">
+                                        <div className="flex items-center justify-between">
+                                          <label className="text-sm font-semibold text-gray-900 uppercase tracking-wide">
+                                            Multi-Day Event Schedule
+                                          </label>
                                           <Badge className={getStatusInfo(selectedEvent.status).className}>
                                             {getStatusInfo(selectedEvent.status).icon}
                                             {getStatusInfo(selectedEvent.status).label}
                                           </Badge>
                                         </div>
+                                        
+                                        {/* Day 1 */}
+                                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                                          <p className="text-xs font-medium text-blue-900 mb-1.5">Day 1</p>
+                                          <div className="flex items-center gap-2 text-sm text-blue-800">
+                                            <Calendar className="w-3.5 h-3.5" />
+                                            <span className="font-medium">{format(new Date(selectedEvent.startDate), 'MMM d, yyyy')}</span>
+                                            <Clock className="w-3.5 h-3.5 ml-2" />
+                                            <span>{formatTime(selectedEvent.startTime)} - {formatTime(selectedEvent.endTime)}</span>
+                                          </div>
+                                        </div>
+                                        
+                                        {/* Additional Days */}
+                                        {selectedEvent.dateTimeSlots.map((slot: any, idx: number) => (
+                                          <div key={idx} className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                                            <p className="text-xs font-medium text-blue-900 mb-1.5">Day {idx + 2}</p>
+                                            <div className="flex items-center gap-2 text-sm text-blue-800">
+                                              <Calendar className="w-3.5 h-3.5" />
+                                              <span className="font-medium">{format(new Date(slot.startDate), 'MMM d, yyyy')}</span>
+                                              <Clock className="w-3.5 h-3.5 ml-2" />
+                                              <span>{formatTime(slot.startTime)} - {formatTime(slot.endTime)}</span>
+                                            </div>
+                                          </div>
+                                        ))}
                                       </div>
-                                    </div>
+                                    ) : (
+                                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <div>
+                                          <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                                            <Calendar className="w-4 h-4" />
+                                            Event Date
+                                          </label>
+                                          <p className="mt-1 text-sm text-gray-900">
+                                            {format(new Date(selectedEvent.startDate), 'MMM dd, yyyy')}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                                            <Clock className="w-4 h-4" />
+                                            Time
+                                          </label>
+                                          <p className="mt-1 text-sm text-gray-900">
+                                            {formatTime(selectedEvent.startTime)} - {formatTime(selectedEvent.endTime)}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                                            <Tag className="w-4 h-4" />
+                                            Status
+                                          </label>
+                                          <div className="mt-1">
+                                            <Badge className={getStatusInfo(selectedEvent.status).className}>
+                                              {getStatusInfo(selectedEvent.status).icon}
+                                              {getStatusInfo(selectedEvent.status).label}
+                                            </Badge>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
 
                                     {/* Participants & Creator Info */}
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

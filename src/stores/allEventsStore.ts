@@ -22,6 +22,12 @@ export interface Event {
   startTime: string;
   endDate: string;
   endTime: string;
+  dateTimeSlots?: {
+    startDate: string;
+    startTime: string;
+    endDate: string;
+    endTime: string;
+  }[];
   contactNumber: string;
   contactEmail: string;
   attachments: any[];

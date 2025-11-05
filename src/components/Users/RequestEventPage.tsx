@@ -79,6 +79,13 @@ interface DepartmentRequirements {
   [department: string]: DepartmentRequirement[];
 }
 
+interface DateTimeSlot {
+  id: string;
+  date: Date;
+  startTime: string;
+  endTime: string;
+}
+
 interface FormData {
   eventTitle: string;
   requestor: string;
@@ -101,6 +108,7 @@ interface FormData {
   contactNumber: string;
   contactEmail: string;
   eventType: 'simple' | 'complex';
+  dateTimeSlots: DateTimeSlot[]; // Additional date slots for multi-day events
 }
 
 interface Department {
@@ -191,7 +199,8 @@ const RequestEventPage: React.FC = () => {
     endTime: '',
     contactNumber: '',
     contactEmail: '',
-    eventType: 'simple'
+    eventType: 'simple',
+    dateTimeSlots: [] // Initialize empty array for additional date slots
   });
 
   const steps = [
@@ -326,9 +335,17 @@ const RequestEventPage: React.FC = () => {
 
   // Auto-check for venue conflicts when schedule changes in modal
   useEffect(() => {
+    console.log('🚀 useEffect TRIGGERED:', {
+      startDate: formData.startDate?.toDateString(),
+      endDate: formData.endDate?.toDateString(),
+      location: formData.location,
+      showScheduleModal
+    });
+    
     const checkConflicts = async () => {
       
       if (formData.startDate && formData.location && showScheduleModal) {
+        console.log('🔄 useEffect: Checking conflicts for schedule modal');
         
         // Check conflicts for the entire day at this location to show booked time slots
         const response = await fetch(`${API_BASE_URL}/events`, {
@@ -342,10 +359,30 @@ const RequestEventPage: React.FC = () => {
           const eventsData = await response.json();
           const events = eventsData.data || [];
           
+          // Build list of all dates to check (Day 1 + additional days for multi-day events)
+          const datesToCheck: Date[] = [formData.startDate];
           
-          // Filter events that are on the same date (ALL locations for requirement conflicts)
+          // If multi-day event, add all additional days
+          if (formData.endDate && formData.startDate && formData.endDate.getTime() !== formData.startDate.getTime()) {
+            console.log('🗓️ useEffect: Multi-day event detected!');
+            const currentDate = new Date(formData.startDate);
+            const endDate = new Date(formData.endDate);
+            
+            // Skip the first day (already added)
+            currentDate.setDate(currentDate.getDate() + 1);
+            
+            while (currentDate <= endDate) {
+              datesToCheck.push(new Date(currentDate));
+              console.log('➕ useEffect: Added date:', currentDate.toDateString());
+              currentDate.setDate(currentDate.getDate() + 1);
+            }
+          }
+          
+          console.log('📅 useEffect: Checking dates:', datesToCheck.map(d => d.toDateString()));
+          
+          // Filter events that are on ANY of the dates in the range
           const conflicts = events.filter((event: any) => {
-            if (!event.startDate || !event.location || !formData.startDate) return false;
+            if (!event.startDate || !event.location) return false;
             
             // Only check approved or submitted events
             if (event.status !== 'approved' && event.status !== 'submitted') return false;
@@ -354,12 +391,37 @@ const RequestEventPage: React.FC = () => {
             if (!event.startTime || !event.endTime) return false;
             
             const eventStartDate = new Date(event.startDate);
-            const selectedDate = formData.startDate;
             
-            // Check if dates match (same day) - include ALL locations for requirement checking
-            return eventStartDate.toDateString() === selectedDate.toDateString();
+            // Check if event's main date matches ANY of our dates
+            const mainDateMatches = datesToCheck.some(checkDate => 
+              eventStartDate.toDateString() === checkDate.toDateString()
+            );
+            
+            // Also check if event has dateTimeSlots that match ANY of our dates
+            let slotDateMatches = false;
+            if (event.dateTimeSlots && Array.isArray(event.dateTimeSlots)) {
+              slotDateMatches = event.dateTimeSlots.some((slot: any) => {
+                if (!slot.startDate) return false;
+                const slotDate = new Date(slot.startDate);
+                return datesToCheck.some(checkDate => 
+                  slotDate.toDateString() === checkDate.toDateString()
+                );
+              });
+            }
+            
+            return mainDateMatches || slotDateMatches;
           });
           
+          console.log('⚠️ useEffect: Found conflicts:', conflicts.length);
+          if (conflicts.length > 0) {
+            console.log('📋 Conflict details:', conflicts.map((e: any) => ({
+              title: e.eventTitle,
+              startDate: new Date(e.startDate).toDateString(),
+              endDate: new Date(e.endDate).toDateString(),
+              hasDateTimeSlots: !!e.dateTimeSlots,
+              dateTimeSlotsCount: e.dateTimeSlots?.length || 0
+            })));
+          }
           setConflictingEvents(conflicts);
         }
       } else {
@@ -373,9 +435,9 @@ const RequestEventPage: React.FC = () => {
     // Debounce the conflict checking to avoid too many API calls
     const timeoutId = setTimeout(checkConflicts, 300);
     return () => clearTimeout(timeoutId);
-  }, [formData.startDate, formData.location, showScheduleModal]);
+  }, [formData.startDate, formData.endDate, formData.location, showScheduleModal]);
 
-  const handleInputChange = (field: keyof FormData, value: string | boolean | File[] | string[] | DepartmentRequirements | Date | undefined) => {
+  const handleInputChange = (field: keyof FormData, value: string | boolean | File[] | string[] | DepartmentRequirements | Date | undefined | DateTimeSlot[]) => {
     setFormData(prev => ({
       ...prev,
       [field]: value
@@ -995,6 +1057,15 @@ const RequestEventPage: React.FC = () => {
   // Fetch conflicting events for resource availability checking (across ALL locations)
   const fetchConflictingEvents = async (date: Date, startTime: string, endTime: string, location?: string) => {
     try {
+      console.log('🔍 fetchConflictingEvents called with:', {
+        date: date.toDateString(),
+        startTime,
+        endTime,
+        location,
+        formDataStartDate: formData.startDate?.toDateString(),
+        formDataEndDate: formData.endDate?.toDateString()
+      });
+      
       const response = await fetch(`${API_BASE_URL}/events`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
@@ -1009,7 +1080,29 @@ const RequestEventPage: React.FC = () => {
       const eventsData = await response.json();
       const events = eventsData.data || [];
       
-      // Filter events that conflict with the selected time
+      // Build list of all dates to check (Day 1 + additional days)
+      const datesToCheck: Date[] = [date]; // Start with Day 1
+      console.log('📅 Initial datesToCheck:', datesToCheck.map(d => d.toDateString()));
+      
+      // If multi-day event, add all additional days
+      if (formData.endDate && formData.startDate && formData.endDate.getTime() !== formData.startDate.getTime()) {
+        console.log('🗓️ Multi-day event detected!');
+        const currentDate = new Date(formData.startDate);
+        const endDate = new Date(formData.endDate);
+        
+        // Skip the first day (already added)
+        currentDate.setDate(currentDate.getDate() + 1);
+        
+        while (currentDate <= endDate) {
+          datesToCheck.push(new Date(currentDate));
+          console.log('➕ Added date:', currentDate.toDateString());
+          currentDate.setDate(currentDate.getDate() + 1);
+        }
+      }
+      
+      console.log('📅 Final datesToCheck:', datesToCheck.map(d => d.toDateString()));
+      
+      // Filter events that conflict with ANY of the dates in the range
       const conflicts = events.filter((event: any) => {
         if (!event.startDate || !event.startTime || !event.endDate || !event.endTime) {
           return false;
@@ -1017,16 +1110,24 @@ const RequestEventPage: React.FC = () => {
         
         const eventStartDate = new Date(event.startDate);
         
-        // Check if there's a time conflict (regardless of location for resource conflicts)
-        const hasConflict = hasTimeConflict(
-          startTime, endTime,
-          event.startTime, event.endTime,
-          date, eventStartDate
-        );
-        
-        
-        return hasConflict;
+        // Check if event conflicts with ANY of our dates
+        return datesToCheck.some(checkDate => {
+          const hasConflict = hasTimeConflict(
+            startTime, endTime,
+            event.startTime, event.endTime,
+            checkDate, eventStartDate
+          );
+          return hasConflict;
+        });
       });
+      
+      console.log('⚠️ Found conflicts:', conflicts.length);
+      console.log('Conflicting events:', conflicts.map((e: any) => ({
+        title: e.eventTitle,
+        date: new Date(e.startDate).toDateString(),
+        time: `${e.startTime}-${e.endTime}`,
+        location: e.location
+      })));
       
       setConflictingEvents(conflicts);
       return conflicts;
@@ -1204,6 +1305,23 @@ const RequestEventPage: React.FC = () => {
       formDataToSubmit.append('startTime', formData.startTime);
       formDataToSubmit.append('endDate', formatDateOnly(formData.endDate));
       formDataToSubmit.append('endTime', formData.endTime);
+      
+      // Multiple date/time slots (for multi-day events with different times per day)
+      // Only send fully configured slots (with both start and end times)
+      if (formData.dateTimeSlots && formData.dateTimeSlots.length > 0) {
+        const fullyConfiguredSlots = formData.dateTimeSlots.filter(slot => 
+          slot.startTime && slot.endTime
+        );
+        if (fullyConfiguredSlots.length > 0) {
+          const formattedSlots = fullyConfiguredSlots.map(slot => ({
+            startDate: formatDateOnly(slot.date),
+            startTime: slot.startTime,
+            endDate: formatDateOnly(slot.date), // Same day for each slot
+            endTime: slot.endTime
+          }));
+          formDataToSubmit.append('dateTimeSlots', JSON.stringify(formattedSlots));
+        }
+      }
       
       // Contact information
       formDataToSubmit.append('contactNumber', formData.contactNumber);
@@ -1450,97 +1568,174 @@ const RequestEventPage: React.FC = () => {
   };
 
   // Check if a specific time slot is booked for the selected location and date
-  const isTimeSlotBooked = (timeSlot: string) => {
-    if (!formData.startDate || !formData.location || conflictingEvents.length === 0) {
+  const isTimeSlotBooked = (timeSlot: string, checkDate?: Date) => {
+    // Use checkDate if provided, otherwise use formData.startDate (Day 1)
+    const dateToCheck = checkDate || formData.startDate;
+    
+    console.log('🔍 isTimeSlotBooked called:', {
+      timeSlot,
+      checkDate: checkDate?.toDateString(),
+      dateToCheck: dateToCheck?.toDateString(),
+      location: formData.location,
+      conflictingEventsCount: conflictingEvents.length
+    });
+    
+    if (!dateToCheck || !formData.location || conflictingEvents.length === 0) {
+      console.log('❌ Early return - missing data');
       return false;
     }
 
-    return conflictingEvents.some(event => {
-      // Check if current user's location conflicts with ANY of the event's locations
-      // Event might have multiple locations (locations array) or single location
+    const result = conflictingEvents.some(event => {
+      const checkDateStr = dateToCheck.toDateString();
+      
+      // Check if the main event date matches
+      const eventDate = new Date(event.startDate);
+      const eventDateStr = eventDate.toDateString();
+      const mainDateMatches = checkDateStr === eventDateStr;
+      
+      console.log('📅 Comparing dates:', {
+        checkDate: checkDateStr,
+        eventDate: eventDateStr,
+        eventTitle: event.eventTitle,
+        mainDateMatches,
+        hasDateTimeSlots: !!event.dateTimeSlots
+      });
+      
+      // Check location conflict
       const eventLocations = event.locations && Array.isArray(event.locations) && event.locations.length > 0
         ? event.locations
         : [event.location];
       
-      // Check if formData.location conflicts with ANY of the event's locations
       const hasLocationConflict = eventLocations.some((eventLoc: string) => 
         locationsConflict(eventLoc, formData.location)
       );
       
       if (!hasLocationConflict) return false;
       
-      const eventStartTime = event.startTime;
-      const eventEndTime = event.endTime;
-      
-      // Convert times to minutes for easier comparison
+      // Helper function to check time conflict
       const timeToMinutes = (time: string) => {
         const [hours, minutes] = time.split(':').map(Number);
         return hours * 60 + minutes;
       };
       
-      const slotMinutes = timeToMinutes(timeSlot);
-      const eventStartMinutes = timeToMinutes(eventStartTime);
-      const eventEndMinutes = timeToMinutes(eventEndTime);
+      const checkTimeConflict = (startTime: string, endTime: string) => {
+        const slotMinutes = timeToMinutes(timeSlot);
+        const eventStartMinutes = timeToMinutes(startTime);
+        const eventEndMinutes = timeToMinutes(endTime);
+        return slotMinutes >= eventStartMinutes && slotMinutes <= eventEndMinutes;
+      };
       
-      // For both start and end time: check if slot falls within existing event time range
-      // If existing event is 8:00-10:00, then 8:00, 8:30, 9:00, 9:30, 10:00 should all be blocked
-      // This prevents any overlap with existing bookings
-      return slotMinutes >= eventStartMinutes && slotMinutes <= eventEndMinutes;
+      // If main date matches, check main time
+      if (mainDateMatches) {
+        const isBlocked = checkTimeConflict(event.startTime, event.endTime);
+        if (isBlocked) {
+          console.log('🚫 MAIN DATE - Time slot BLOCKED:', {
+            timeSlot,
+            eventTitle: event.eventTitle,
+            eventTime: `${event.startTime}-${event.endTime}`
+          });
+          return true;
+        }
+      }
+      
+      // Check if any dateTimeSlots match the date we're checking
+      if (event.dateTimeSlots && Array.isArray(event.dateTimeSlots)) {
+        for (const slot of event.dateTimeSlots) {
+          if (!slot.startDate || !slot.startTime || !slot.endTime) continue;
+          
+          const slotDate = new Date(slot.startDate);
+          if (slotDate.toDateString() === checkDateStr) {
+            const isBlocked = checkTimeConflict(slot.startTime, slot.endTime);
+            if (isBlocked) {
+              console.log('🚫 SLOT DATE - Time slot BLOCKED:', {
+                timeSlot,
+                eventTitle: event.eventTitle,
+                slotDate: slotDate.toDateString(),
+                slotTime: `${slot.startTime}-${slot.endTime}`
+              });
+              return true;
+            }
+          }
+        }
+      }
+      
+      return false;
     });
+    
+    console.log(`✅ isTimeSlotBooked result for ${timeSlot}:`, result);
+    return result;
   };
 
   // Check if a specific time slot has requirement conflicts (any requirements used by existing events)
-  const hasRequirementConflictAtTime = (timeSlot: string) => {
-    // Only need startDate and conflictingEvents - location can be custom
-    if (!formData.startDate || conflictingEvents.length === 0) {
+  const hasRequirementConflictAtTime = (timeSlot: string, checkDate?: Date) => {
+    // Use checkDate if provided, otherwise use formData.startDate (Day 1)
+    const dateToCheck = checkDate || formData.startDate;
+    
+    if (!dateToCheck || conflictingEvents.length === 0) {
       return { hasConflict: false, conflictedRequirements: [] };
     }
 
     const conflictedRequirements: string[] = [];
+    const checkDateStr = dateToCheck.toDateString();
 
     // Check each conflicting event to see if it uses any requirements at this time slot
     conflictingEvents.forEach(event => {
-      // Skip if event doesn't have time information
-      if (!event.startTime || !event.endTime) {
-        return;
-      }
-      
-      // Convert times to minutes for easier comparison
+      // Helper function
       const timeToMinutes = (time: string) => {
         const [hours, minutes] = time.split(':').map(Number);
         return hours * 60 + minutes;
       };
       
-      const slotMinutes = timeToMinutes(timeSlot);
-      const eventStartMinutes = timeToMinutes(event.startTime);
-      const eventEndMinutes = timeToMinutes(event.endTime);
-      
-      // Check if this time slot overlaps with the event
-      const timeOverlaps = slotMinutes >= eventStartMinutes && slotMinutes <= eventEndMinutes;
-      
-      if (!timeOverlaps) {
-        return;
-      }
+      const checkRequirementsForTime = (startTime: string, endTime: string) => {
+        const slotMinutes = timeToMinutes(timeSlot);
+        const eventStartMinutes = timeToMinutes(startTime);
+        const eventEndMinutes = timeToMinutes(endTime);
+        
+        // Check if this time slot overlaps with the event
+        const timeOverlaps = slotMinutes >= eventStartMinutes && slotMinutes <= eventEndMinutes;
+        
+        if (!timeOverlaps) return;
 
-      // Check if this event uses ANY requirements
-      if (event.taggedDepartments && Array.isArray(event.taggedDepartments) && event.departmentRequirements) {
-        event.taggedDepartments.forEach((dept: string) => {
-          const deptReqs = event.departmentRequirements[dept] || [];
-          if (Array.isArray(deptReqs)) {
-            deptReqs.forEach((eventReq: any) => {
-              // Check if requirement is selected and has quantity
-              const isSelected = eventReq.selected === true;
-              // Check both quantity and totalQuantity fields
-              const quantity = eventReq.quantity || eventReq.totalQuantity || 0;
-              const hasQuantity = quantity > 0;
-              
-              if (isSelected && hasQuantity && eventReq.name) {
-                const reqName = `${eventReq.name} (${dept})`;
-                if (!conflictedRequirements.includes(reqName)) {
-                  conflictedRequirements.push(reqName);
+        // Check if this event uses ANY requirements
+        if (event.taggedDepartments && Array.isArray(event.taggedDepartments) && event.departmentRequirements) {
+          event.taggedDepartments.forEach((dept: string) => {
+            const deptReqs = event.departmentRequirements[dept] || [];
+            if (Array.isArray(deptReqs)) {
+              deptReqs.forEach((eventReq: any) => {
+                // Check if requirement is selected and has quantity
+                const isSelected = eventReq.selected === true;
+                // Check both quantity and totalQuantity fields
+                const quantity = eventReq.quantity || eventReq.totalQuantity || 0;
+                const hasQuantity = quantity > 0;
+                
+                if (isSelected && hasQuantity && eventReq.name) {
+                  const reqName = `${eventReq.name} (${dept})`;
+                  if (!conflictedRequirements.includes(reqName)) {
+                    conflictedRequirements.push(reqName);
+                  }
                 }
-              }
-            });
+              });
+            }
+          });
+        }
+      };
+      
+      // Check main event date
+      if (event.startTime && event.endTime) {
+        const eventDate = new Date(event.startDate);
+        if (eventDate.toDateString() === checkDateStr) {
+          checkRequirementsForTime(event.startTime, event.endTime);
+        }
+      }
+      
+      // Check dateTimeSlots for multi-day events
+      if (event.dateTimeSlots && Array.isArray(event.dateTimeSlots)) {
+        event.dateTimeSlots.forEach((slot: any) => {
+          if (!slot.startDate || !slot.startTime || !slot.endTime) return;
+          
+          const slotDate = new Date(slot.startDate);
+          if (slotDate.toDateString() === checkDateStr) {
+            checkRequirementsForTime(slot.startTime, slot.endTime);
           }
         });
       }
@@ -3125,7 +3320,7 @@ const RequestEventPage: React.FC = () => {
 
       {/* Schedule Modal */}
       <Dialog open={showScheduleModal} onOpenChange={setShowScheduleModal}>
-        <DialogContent className="!max-w-2xl !w-full">
+        <DialogContent className="!max-w-2xl !w-full max-h-[90vh] flex flex-col">
           <div className="flex items-center justify-between mb-6">
             <div>
               <h2 className="text-xl font-semibold text-gray-900">
@@ -3410,7 +3605,8 @@ const RequestEventPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="space-y-6">
+          {/* Scrollable Content Area */}
+          <div className="flex-1 overflow-y-auto pr-2 space-y-6">
             {/* Start Date & Time */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
@@ -3589,25 +3785,270 @@ const RequestEventPage: React.FC = () => {
               </div>
             </div>
 
+            {/* Multi-Day Event - Additional Date Slots */}
+            {formData.startDate && formData.endDate && formData.startDate.getTime() !== formData.endDate.getTime() && (
+              <div className="border-t pt-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h4 className="font-medium text-gray-900">Additional Days for Multi-Day Event</h4>
+                    <p className="text-sm text-gray-600">
+                      Your event spans from {format(formData.startDate, "MMM dd")} to {format(formData.endDate, "MMM dd")}. 
+                      Add time slots for each additional day.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Generate date slots for each day between start and end */}
+                {(() => {
+                  const days: Date[] = [];
+                  const currentDate = new Date(formData.startDate);
+                  const endDate = new Date(formData.endDate);
+                  
+                  // Skip the first day (already covered by main start/end time)
+                  currentDate.setDate(currentDate.getDate() + 1);
+                  
+                  while (currentDate <= endDate) {
+                    days.push(new Date(currentDate));
+                    currentDate.setDate(currentDate.getDate() + 1);
+                  }
+                  
+                  return (
+                    <div className="space-y-3">
+                      {days.map((date, index) => {
+                        const dateStr = date.toISOString();
+                        const existingSlot = formData.dateTimeSlots.find(slot => 
+                          slot.date.toDateString() === date.toDateString()
+                        );
+                        
+                        return (
+                          <div key={dateStr} className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                            <div className="flex items-center justify-between mb-3">
+                              <div className="flex items-center gap-2">
+                                <h5 className="text-sm font-medium text-gray-900">
+                                  Day {index + 2}: {format(date, "PPPP")}
+                                </h5>
+                                {existingSlot && existingSlot.startTime && existingSlot.endTime && (
+                                  <Badge variant="default" className="text-xs bg-green-600">
+                                    <Check className="w-3 h-3 mr-1" />
+                                    Configured
+                                  </Badge>
+                                )}
+                              </div>
+                              {existingSlot && existingSlot.startTime && existingSlot.endTime && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    const updatedSlots = formData.dateTimeSlots.filter(s => 
+                                      s.date.toDateString() !== date.toDateString()
+                                    );
+                                    handleInputChange('dateTimeSlots', updatedSlots);
+                                    toast.success(`Time slot for ${format(date, "MMM dd")} removed`);
+                                  }}
+                                  className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                >
+                                  <X className="w-4 h-4" />
+                                </Button>
+                              )}
+                            </div>
+                            
+                            {existingSlot && existingSlot.startTime && existingSlot.endTime ? (
+                              <div className="text-sm text-gray-700 bg-white p-3 rounded border">
+                                <p><strong>Start Time:</strong> {formatTime(existingSlot.startTime)}</p>
+                                <p><strong>End Time:</strong> {formatTime(existingSlot.endTime)}</p>
+                              </div>
+                            ) : (
+                              <div className="space-y-3">
+                                <div className="grid grid-cols-2 gap-3">
+                                  <div>
+                                    <Label className="text-xs font-medium text-gray-700 mb-1.5 block">
+                                      Start Time
+                                    </Label>
+                                    <Select 
+                                      value={existingSlot?.startTime || ''}
+                                      onValueChange={(value) => {
+                                        const currentSlot = formData.dateTimeSlots.find(s => 
+                                          s.date.toDateString() === date.toDateString()
+                                        );
+                                        const newSlot: DateTimeSlot = {
+                                          id: currentSlot?.id || `slot-${date.getTime()}`,
+                                          date: date,
+                                          startTime: value,
+                                          endTime: currentSlot?.endTime || ''
+                                        };
+                                        const updatedSlots = formData.dateTimeSlots.filter(s => 
+                                          s.date.toDateString() !== date.toDateString()
+                                        );
+                                        handleInputChange('dateTimeSlots', [...updatedSlots, newSlot]);
+                                      }}
+                                    >
+                                      <SelectTrigger className="w-full h-9 text-sm">
+                                        <SelectValue placeholder="Select start time" />
+                                      </SelectTrigger>
+                                      <SelectContent className="max-h-60" position="popper" sideOffset={5}>
+                                        {generateTimeOptions().map((timeOption) => {
+                                          console.log('🎯 START TIME - date variable:', date?.toDateString(), 'timeOption:', timeOption.value);
+                                          const isBooked = isTimeSlotBooked(timeOption.value, date);
+                                          const requirementConflict = hasRequirementConflictAtTime(timeOption.value, date);
+                                          
+                                          // Only disable if VENUE is booked (physical conflict)
+                                          const isDisabled = isBooked;
+                                          
+                                          return (
+                                            <SelectItem 
+                                              key={timeOption.value} 
+                                              value={timeOption.value}
+                                              disabled={isDisabled}
+                                              className={`text-sm ${isDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                            >
+                                              <div className="flex items-center justify-between w-full">
+                                                <span>{timeOption.label}</span>
+                                                {(isBooked || requirementConflict.hasConflict) && (
+                                                  <div className="flex items-center gap-1 ml-2">
+                                                    {isBooked && (
+                                                      <Badge variant="destructive" className="text-[10px] px-1 py-0 h-4">
+                                                        VENUE
+                                                      </Badge>
+                                                    )}
+                                                    {requirementConflict.hasConflict && (
+                                                      <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4 bg-yellow-100 text-yellow-800">
+                                                        REQ
+                                                      </Badge>
+                                                    )}
+                                                  </div>
+                                                )}
+                                              </div>
+                                            </SelectItem>
+                                          );
+                                        })}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+
+                                  <div>
+                                    <Label className="text-xs font-medium text-gray-700 mb-1.5 block">
+                                      End Time
+                                    </Label>
+                                    <Select 
+                                      value={existingSlot?.endTime || ''}
+                                      onValueChange={(value) => {
+                                        const currentSlot = formData.dateTimeSlots.find(s => 
+                                          s.date.toDateString() === date.toDateString()
+                                        );
+                                        if (currentSlot) {
+                                          const newSlot: DateTimeSlot = {
+                                            ...currentSlot,
+                                            endTime: value
+                                          };
+                                          const updatedSlots = formData.dateTimeSlots.filter(s => 
+                                            s.date.toDateString() !== date.toDateString()
+                                          );
+                                          handleInputChange('dateTimeSlots', [...updatedSlots, newSlot]);
+                                        }
+                                      }}
+                                      disabled={!formData.dateTimeSlots.find(s => s.date.toDateString() === date.toDateString())?.startTime}
+                                    >
+                                      <SelectTrigger className="w-full h-9 text-sm">
+                                        <SelectValue placeholder="Select end time" />
+                                      </SelectTrigger>
+                                      <SelectContent className="max-h-60" position="popper" sideOffset={5}>
+                                        {generateTimeOptions().filter(t => {
+                                          const slot = formData.dateTimeSlots.find(s => s.date.toDateString() === date.toDateString());
+                                          if (!slot?.startTime) return true;
+                                          const timeToMinutes = (time: string) => {
+                                            const [hours, minutes] = time.split(':').map(Number);
+                                            return hours * 60 + minutes;
+                                          };
+                                          return timeToMinutes(t.value) > timeToMinutes(slot.startTime);
+                                        }).map((timeOption) => {
+                                          console.log('🎯 END TIME - date variable:', date?.toDateString(), 'timeOption:', timeOption.value);
+                                          const isBooked = isTimeSlotBooked(timeOption.value, date);
+                                          const requirementConflict = hasRequirementConflictAtTime(timeOption.value, date);
+                                          
+                                          // Only disable if VENUE is booked (physical conflict)
+                                          const isDisabled = isBooked;
+                                          
+                                          return (
+                                            <SelectItem 
+                                              key={timeOption.value} 
+                                              value={timeOption.value}
+                                              disabled={isDisabled}
+                                              className={`text-sm ${isDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                            >
+                                              <div className="flex items-center justify-between w-full">
+                                                <span>{timeOption.label}</span>
+                                                {(isBooked || requirementConflict.hasConflict) && (
+                                                  <div className="flex items-center gap-1 ml-2">
+                                                    {isBooked && (
+                                                      <Badge variant="destructive" className="text-[10px] px-1 py-0 h-4">
+                                                        VENUE
+                                                      </Badge>
+                                                    )}
+                                                    {requirementConflict.hasConflict && (
+                                                      <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4 bg-yellow-100 text-yellow-800">
+                                                        REQ
+                                                      </Badge>
+                                                    )}
+                                                  </div>
+                                                )}
+                                              </div>
+                                            </SelectItem>
+                                          );
+                                        })}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+
+                {formData.dateTimeSlots.filter(slot => slot.startTime && slot.endTime).length === 0 && (
+                  <div className="text-center py-6 bg-gray-50 border border-dashed border-gray-300 rounded-lg">
+                    <Clock className="w-8 h-8 mx-auto text-gray-400 mb-2" />
+                    <p className="text-sm text-gray-600">No additional days fully configured yet</p>
+                    <p className="text-xs text-gray-500 mt-1">Set both start and end times for each day above</p>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Schedule Summary */}
             {(formData.startDate || formData.startTime || formData.endDate || formData.endTime) && (
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                 <h4 className="font-medium text-blue-900 mb-2">Event Schedule Summary</h4>
-                <div className="text-sm text-blue-800">
+                <div className="text-sm text-blue-800 space-y-2">
                   <p><strong>Location:</strong> {formData.location || selectedLocation}</p>
                   {formData.startDate && formData.startTime && (
-                    <p><strong>Start:</strong> {format(formData.startDate, "PPP")} at {formatTime(formData.startTime)}</p>
+                    <p><strong>Day 1:</strong> {format(formData.startDate, "PPP")} at {formatTime(formData.startTime)} - {formatTime(formData.endTime)}</p>
                   )}
-                  {formData.endDate && formData.endTime && (
-                    <p><strong>End:</strong> {format(formData.endDate, "PPP")} at {formatTime(formData.endTime)}</p>
+                  {formData.dateTimeSlots.filter(slot => slot.startTime && slot.endTime).length > 0 && (
+                    <div className="pt-2 border-t border-blue-300">
+                      <p className="font-medium mb-1">Additional Days ({formData.dateTimeSlots.filter(slot => slot.startTime && slot.endTime).length}):</p>
+                      {formData.dateTimeSlots
+                        .filter(slot => slot.startTime && slot.endTime)
+                        .map((slot, idx) => (
+                          <p key={slot.id} className="text-xs">
+                            • Day {idx + 2}: {format(slot.date, "PPP")} at {formatTime(slot.startTime)} - {formatTime(slot.endTime)}
+                          </p>
+                        ))}
+                    </div>
                   )}
                 </div>
               </div>
             )}
 
           </div>
+          {/* End Scrollable Content Area */}
 
-          <div className="flex justify-end gap-2 mt-6">
+          {/* Fixed Footer Buttons */}
+          <div className="flex justify-end gap-2 pt-4 border-t mt-4">
             <Button 
               variant="outline" 
               onClick={() => setShowScheduleModal(false)}
@@ -4699,37 +5140,68 @@ const RequestEventPage: React.FC = () => {
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="p-6">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="space-y-3">
-                          <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Start Date & Time</Label>
-                          <div className="flex items-center gap-2 text-sm">
-                            <CalendarIcon className="w-4 h-4 text-gray-400" />
-                            <span className="font-medium text-gray-900">
-                              {formData.startDate && format(formData.startDate, "PPP")}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2 text-sm">
-                            <Clock className="w-4 h-4 text-gray-400" />
-                            <span className="font-medium text-gray-900">
-                              {formData.startTime && formatTime(formData.startTime)}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="space-y-3">
-                          <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">End Date & Time</Label>
-                          <div className="flex items-center gap-2 text-sm">
-                            <CalendarIcon className="w-4 h-4 text-gray-400" />
-                            <span className="font-medium text-gray-900">
-                              {formData.endDate && format(formData.endDate, "PPP")}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2 text-sm">
-                            <Clock className="w-4 h-4 text-gray-400" />
-                            <span className="font-medium text-gray-900">
-                              {formData.endTime && formatTime(formData.endTime)}
-                            </span>
+                      <div className="space-y-6">
+                        <div>
+                          <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3 block">Day 1 - Primary Schedule</Label>
+                          <div className="space-y-3">
+                            <div className="flex items-center gap-2 text-sm">
+                              <CalendarIcon className="w-4 h-4 text-gray-400" />
+                              <span className="font-medium text-gray-900">
+                                {formData.startDate && format(formData.startDate, "PPP")}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-4 text-sm">
+                              <div className="flex items-center gap-2">
+                                <Clock className="w-4 h-4 text-gray-400" />
+                                <span className="text-gray-500">Start:</span>
+                                <span className="font-medium text-gray-900">
+                                  {formData.startTime && formatTime(formData.startTime)}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Clock className="w-4 h-4 text-gray-400" />
+                                <span className="text-gray-500">End:</span>
+                                <span className="font-medium text-gray-900">
+                                  {formData.endTime && formatTime(formData.endTime)}
+                                </span>
+                              </div>
+                            </div>
                           </div>
                         </div>
+
+                        {/* Additional Date Slots */}
+                        {formData.dateTimeSlots && formData.dateTimeSlots.length > 0 && (
+                          <div className="pt-4 border-t">
+                            <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3 block">
+                              Additional Days ({formData.dateTimeSlots.length})
+                            </Label>
+                            <div className="space-y-3">
+                              {formData.dateTimeSlots.map((slot, index) => (
+                                <div key={slot.id} className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                  <div className="flex items-center justify-between">
+                                    <div className="space-y-2">
+                                      <p className="text-xs font-medium text-blue-900">Day {index + 2}</p>
+                                      <div className="flex items-center gap-4 text-sm">
+                                        <div className="flex items-center gap-2">
+                                          <CalendarIcon className="w-4 h-4 text-blue-600" />
+                                          <span className="font-medium text-blue-900">
+                                            {format(slot.date, "PPP")}
+                                          </span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          <Clock className="w-4 h-4 text-blue-600" />
+                                          <span className="font-medium text-blue-900">
+                                            {formatTime(slot.startTime)} - {formatTime(slot.endTime)}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </CardContent>
                   </Card>

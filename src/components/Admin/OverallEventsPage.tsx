@@ -136,10 +136,15 @@ const OverallEventsPage: React.FC = () => {
 
   // Generate PDF for selected event
   const generateEventPdf = async () => {
+    console.log('🚀 PDF GENERATION STARTED');
+    
     if (!selectedEvent) {
       toast.error('No event selected');
       return;
     }
+
+    console.log('📋 Selected Event:', selectedEvent);
+    console.log('📅 DateTimeSlots:', selectedEvent.dateTimeSlots);
 
     try {
       // Create new PDF document
@@ -210,27 +215,63 @@ const OverallEventsPage: React.FC = () => {
       pdf.text(selectedEvent.requestorDepartment || 'N/A', margin + 115, yPos);
       yPos += 7;
 
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('Start Date:', margin, yPos);
-      pdf.setFont('helvetica', 'normal');
-      pdf.text(format(new Date(selectedEvent.startDate), 'MMMM dd, yyyy'), margin + 25, yPos);
+      // Check if event has multiple date/time slots (multi-day event)
+      const hasSlots = selectedEvent.dateTimeSlots && Array.isArray(selectedEvent.dateTimeSlots) && selectedEvent.dateTimeSlots.length > 0;
       
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('Start Time:', margin + 90, yPos);
-      pdf.setFont('helvetica', 'normal');
-      pdf.text(formatTime(selectedEvent.startTime), margin + 115, yPos);
-      yPos += 7;
+      if (hasSlots) {
+        // Multi-Day Event Schedule
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('Multi-Day Event Schedule:', margin, yPos);
+        yPos += 7;
+        
+        // Day 1 - Main date slot
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('Day 1:', margin + 5, yPos);
+        pdf.setFont('helvetica', 'normal');
+        pdf.text(
+          `${format(new Date(selectedEvent.startDate), 'MMM dd, yyyy')} at ${formatTime(selectedEvent.startTime)} - ${formatTime(selectedEvent.endTime)}`,
+          margin + 20,
+          yPos
+        );
+        yPos += 6;
+        
+        // Additional Days
+        selectedEvent.dateTimeSlots?.forEach((slot: any, idx: number) => {
+          pdf.setFont('helvetica', 'bold');
+          pdf.text(`Day ${idx + 2}:`, margin + 5, yPos);
+          pdf.setFont('helvetica', 'normal');
+          pdf.text(
+            `${format(new Date(slot.startDate), 'MMM dd, yyyy')} at ${formatTime(slot.startTime)} - ${formatTime(slot.endTime)}`,
+            margin + 20,
+            yPos
+          );
+          yPos += 6;
+        });
+        yPos += 1;
+      } else {
+        // Single date/time
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('Start Date:', margin, yPos);
+        pdf.setFont('helvetica', 'normal');
+        pdf.text(format(new Date(selectedEvent.startDate), 'MMMM dd, yyyy'), margin + 25, yPos);
+        
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('Start Time:', margin + 90, yPos);
+        pdf.setFont('helvetica', 'normal');
+        pdf.text(formatTime(selectedEvent.startTime), margin + 115, yPos);
+        yPos += 7;
 
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('End Date:', margin, yPos);
-      pdf.setFont('helvetica', 'normal');
-      pdf.text(format(new Date(selectedEvent.endDate), 'MMMM dd, yyyy'), margin + 25, yPos);
-      
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('End Time:', margin + 90, yPos);
-      pdf.setFont('helvetica', 'normal');
-      pdf.text(formatTime(selectedEvent.endTime), margin + 115, yPos);
-      yPos += 7;
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('End Date:', margin, yPos);
+        pdf.setFont('helvetica', 'normal');
+        pdf.text(format(new Date(selectedEvent.endDate), 'MMMM dd, yyyy'), margin + 25, yPos);
+        
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('End Time:', margin + 90, yPos);
+        pdf.setFont('helvetica', 'normal');
+        pdf.text(formatTime(selectedEvent.endTime), margin + 115, yPos);
+        yPos += 7;
+      }
 
       pdf.setFont('helvetica', 'bold');
       pdf.text('Location:', margin, yPos);
@@ -639,14 +680,45 @@ const OverallEventsPage: React.FC = () => {
                             <span className="font-medium text-foreground">{selectedEvent.location}</span>
                           )}
                         </div>
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <Calendar className="w-3.5 h-3.5" />
-                          <span>{format(new Date(selectedEvent.startDate), 'PPP')}</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <Clock className="w-3.5 h-3.5" />
-                          <span>{formatTime(selectedEvent.startTime)} - {formatTime(selectedEvent.endTime)}</span>
-                        </div>
+                        {/* Show multiple date/time slots if available */}
+                        {selectedEvent.dateTimeSlots && selectedEvent.dateTimeSlots.length > 0 ? (
+                          <div className="space-y-3">
+                            <p className="text-xs font-semibold text-foreground uppercase tracking-wide">Multi-Day Event Schedule:</p>
+                            {/* Day 1 - Main slot */}
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                              <p className="text-xs font-medium text-blue-900 mb-1.5">Day 1</p>
+                              <div className="flex items-center gap-2 text-sm text-blue-800">
+                                <Calendar className="w-3.5 h-3.5" />
+                                <span className="font-medium">{format(new Date(selectedEvent.startDate), 'MMM d, yyyy')}</span>
+                                <Clock className="w-3.5 h-3.5 ml-2" />
+                                <span>{formatTime(selectedEvent.startTime)} - {formatTime(selectedEvent.endTime)}</span>
+                              </div>
+                            </div>
+                            {/* Additional Days */}
+                            {selectedEvent.dateTimeSlots.map((slot, idx) => (
+                              <div key={idx} className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                                <p className="text-xs font-medium text-blue-900 mb-1.5">Day {idx + 2}</p>
+                                <div className="flex items-center gap-2 text-sm text-blue-800">
+                                  <Calendar className="w-3.5 h-3.5" />
+                                  <span className="font-medium">{format(new Date(slot.startDate), 'MMM d, yyyy')}</span>
+                                  <Clock className="w-3.5 h-3.5 ml-2" />
+                                  <span>{formatTime(slot.startTime)} - {formatTime(slot.endTime)}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <Calendar className="w-3.5 h-3.5" />
+                              <span>{format(new Date(selectedEvent.startDate), 'PPP')}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <Clock className="w-3.5 h-3.5" />
+                              <span>{formatTime(selectedEvent.startTime)} - {formatTime(selectedEvent.endTime)}</span>
+                            </div>
+                          </>
+                        )}
                       </div>
                     </div>
 

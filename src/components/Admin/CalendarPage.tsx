@@ -111,17 +111,40 @@ const AdminCalendarPage: React.FC = () => {
 
   // Custom event renderer with popover
   const renderEventWithPopover = (calEvent: CalendarEvent) => {
-    const event = events.find(e => e._id === calEvent.id);
+    // Extract base ID (remove -slot-X suffix if present)
+    const baseId = calEvent.id.includes('-slot-') 
+      ? calEvent.id.split('-slot-')[0] 
+      : calEvent.id;
+    
+    const event = events.find(e => e._id === baseId);
     if (!event) return null;
+    
+    // Determine if this is a slot and get the slot data
+    const isSlot = calEvent.id.includes('-slot-');
+    let displayStartDate = event.startDate;
+    let displayStartTime = event.startTime;
+    let displayEndDate = event.endDate;
+    let displayEndTime = event.endTime;
+    
+    if (isSlot && event.dateTimeSlots) {
+      const slotIndex = parseInt(calEvent.id.split('-slot-')[1]);
+      const slot = event.dateTimeSlots[slotIndex];
+      if (slot) {
+        displayStartDate = slot.startDate;
+        displayStartTime = slot.startTime;
+        displayEndDate = slot.endDate;
+        displayEndTime = slot.endTime;
+      }
+    }
 
     // Determine badge color based on event status
     const getBadgeColor = (status: string) => {
       if (status === 'approved') {
         return 'bg-green-100 text-green-800 border-green-200 hover:bg-green-200';
       } else if (status === 'submitted') {
-        return 'bg-blue-100 text-blue-800 border-blue-200 hover:bg-blue-200';
-      } else if (status === 'cancelled') {
         return 'bg-yellow-100 text-yellow-800 border-yellow-200 hover:bg-yellow-200';
+      } else if (status === 'cancelled') {
+        return 'bg-orange-100 text-orange-800 border-orange-200 hover:bg-orange-200';
       } else if (status === 'rejected') {
         return 'bg-red-100 text-red-800 border-red-200 hover:bg-red-200';
       } else if (status === 'completed') {
@@ -176,7 +199,7 @@ const AdminCalendarPage: React.FC = () => {
               <div>
                 <p className="font-medium text-gray-700">Start</p>
                 <p className="text-gray-600">
-                  {format(new Date(event.startDate), 'MMM dd, yyyy')} at {formatTime(event.startTime)}
+                  {format(new Date(displayStartDate), 'MMM dd, yyyy')} at {formatTime(displayStartTime)}
                 </p>
               </div>
             </div>
@@ -187,7 +210,7 @@ const AdminCalendarPage: React.FC = () => {
               <div>
                 <p className="font-medium text-gray-700">End</p>
                 <p className="text-gray-600">
-                  {format(new Date(event.endDate), 'MMM dd, yyyy')} at {formatTime(event.endTime)}
+                  {format(new Date(displayEndDate), 'MMM dd, yyyy')} at {formatTime(displayEndTime)}
                 </p>
               </div>
             </div>
@@ -230,7 +253,11 @@ const AdminCalendarPage: React.FC = () => {
         {eventsForDate.length > 0 && (
           <div className="space-y-1">
             {eventsForDate.slice(0, 3).map((event) => {
-              const calEvent = dateEvents.find(ce => ce.id === event._id);
+              // Find calendar event by matching either the exact ID or the base ID (for slots)
+              const calEvent = dateEvents.find(ce => 
+                ce.id === event._id || ce.id.startsWith(event._id + '-slot-')
+              );
+              
               return calEvent ? renderEventWithPopover(calEvent) : null;
             })}
             {eventsForDate.length > 3 && (

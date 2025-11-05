@@ -32,8 +32,12 @@ import {
   Settings,
   Save,
   Sparkles,
-  Zap
+  Zap,
+  Calendar,
+  CalendarDays
 } from 'lucide-react';
+import CustomCalendar from '@/components/ui/custom-calendar';
+import { format } from 'date-fns';
 
 const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api`;
 
@@ -41,6 +45,7 @@ interface Requirement {
   _id: string;
   text: string;
   type: 'physical' | 'service' | 'yesno';
+  serviceType?: 'notes' | 'yesno'; // To distinguish between service types
   totalQuantity?: number;
   isActive: boolean;
   isAvailable?: boolean; // For services
@@ -65,11 +70,19 @@ const MyRequirementsPage: React.FC = () => {
   const [formData, setFormData] = useState({
     text: '',
     type: 'physical' as 'physical' | 'service' | 'yesno',
+    serviceType: 'notes' as 'notes' | 'yesno',
     totalQuantity: 1,
     isActive: true,
     isAvailable: true,
     responsiblePerson: ''
   });
+
+  // Availability Calendar State
+  const [isAvailabilityModalOpen, setIsAvailabilityModalOpen] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<string>('');
+  const [availabilityData, setAvailabilityData] = useState<{[key: string]: any}>({});
+  const [calendarCurrentMonth, setCalendarCurrentMonth] = useState(new Date());
+  const [resourceAvailabilities, setResourceAvailabilities] = useState<any[]>([]);
 
   // Get current user
   useEffect(() => {
@@ -114,6 +127,9 @@ const MyRequirementsPage: React.FC = () => {
           ...dept,
           requirements: transformedRequirements
         });
+
+        // Fetch resource availabilities for this department
+        fetchResourceAvailabilities(dept._id);
       }
     } catch (error) {
       console.error('Error fetching department requirements:', error);
@@ -122,11 +138,88 @@ const MyRequirementsPage: React.FC = () => {
     }
   };
 
+  // Fetch resource availabilities
+  const fetchResourceAvailabilities = async (departmentId: string) => {
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await fetch(`${API_BASE_URL}/resource-availability/department/${departmentId}/availability`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        // Backend returns array directly, not wrapped in data
+        setResourceAvailabilities(Array.isArray(data) ? data : (data.data || []));
+        console.log('📊 Fetched resource availabilities:', Array.isArray(data) ? data.length : (data.data?.length || 0));
+      }
+    } catch (error) {
+      console.error('Error fetching resource availabilities:', error);
+    }
+  };
+
+  // Convert resource availabilities to calendar events
+  const getCalendarEvents = () => {
+    const events: any[] = [];
+    const dateMap: {[date: string]: any[]} = {};
+    
+    console.log('🔍 Total resourceAvailabilities:', resourceAvailabilities.length);
+    
+    // Group availabilities by date
+    resourceAvailabilities.forEach(av => {
+      if (!dateMap[av.date]) {
+        dateMap[av.date] = [];
+      }
+      dateMap[av.date].push(av);
+    });
+    
+    console.log('📅 Dates with availability:', Object.keys(dateMap));
+    
+    // Create calendar events for each date
+    Object.keys(dateMap).forEach(date => {
+      const dayAvailabilities = dateMap[date];
+      const availableCount = dayAvailabilities.filter(a => a.isAvailable).length;
+      const totalCount = dayAvailabilities.length;
+      
+      const event = {
+        id: date,
+        date: date,
+        title: `${availableCount}/${totalCount} Available`,
+        type: availableCount === totalCount ? 'available' : 
+              availableCount === 0 ? 'unavailable' : 'custom',
+        notes: `${availableCount} of ${totalCount} requirements available`
+      };
+      
+      console.log('📊 Created event for', date, ':', event);
+      events.push(event);
+    });
+    
+    console.log('✅ Total calendar events:', events.length);
+    return events;
+  };
+
+  // Get existing availability data for selected date
+  const getExistingAvailabilityForDate = (dateStr: string) => {
+    const existing: {[key: string]: any} = {};
+    resourceAvailabilities
+      .filter(av => av.date === dateStr)
+      .forEach(av => {
+        existing[av.requirementId] = {
+          isAvailable: av.isAvailable,
+          quantity: av.quantity,
+          notes: av.notes
+        };
+      });
+    return existing;
+  };
+
   // Reset form
   const resetForm = () => {
     setFormData({
       text: '',
       type: 'physical',
+      serviceType: 'notes',
       totalQuantity: 1,
       isActive: true,
       isAvailable: true,
@@ -145,9 +238,23 @@ const MyRequirementsPage: React.FC = () => {
 
   // Handle edit requirement
   const handleEditRequirement = (requirement: Requirement) => {
+    // Reconstruct the correct type based on serviceType or original type
+    let displayType: 'physical' | 'service' | 'yesno' = requirement.type;
+    let displayServiceType: 'notes' | 'yesno' = 'notes';
+    
+    // Check if it's a yesno service (either from serviceType or type field)
+    if (requirement.type === 'yesno' || requirement.serviceType === 'yesno') {
+      displayType = 'yesno';
+      displayServiceType = 'yesno';
+    } else if (requirement.type === 'service') {
+      displayType = 'service';
+      displayServiceType = requirement.serviceType || 'notes';
+    }
+    
     setFormData({
       text: requirement.text,
-      type: requirement.type,
+      type: displayType,
+      serviceType: displayServiceType,
       totalQuantity: requirement.totalQuantity || 1,
       isActive: requirement.isActive,
       isAvailable: requirement.isAvailable || true,
@@ -180,13 +287,21 @@ const MyRequirementsPage: React.FC = () => {
 
       if (editingRequirement) {
         // Update existing requirement
+        // Convert 'yesno' type to 'service' for backend compatibility
+        const requestData = {
+          ...formData,
+          type: formData.type === 'yesno' ? 'service' : formData.type,
+          serviceType: formData.type === 'yesno' ? 'yesno' : (formData.type === 'service' ? 'notes' : undefined),
+          totalQuantity: (formData.type === 'service' || formData.type === 'yesno') ? undefined : formData.totalQuantity
+        };
+        
         const response = await fetch(`${API_BASE_URL}/departments/${department._id}/requirements/${editingRequirement._id}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${token}`
           },
-          body: JSON.stringify(formData)
+          body: JSON.stringify(requestData)
         });
 
         if (!response.ok) {
@@ -211,32 +326,50 @@ const MyRequirementsPage: React.FC = () => {
         console.log('Making API call to:', apiUrl);
         console.log('With request body:', formData);
         
+        // Convert 'yesno' type to 'service' for backend compatibility
+        const requestData = {
+          ...formData,
+          type: formData.type === 'yesno' ? 'service' : formData.type,
+          serviceType: formData.type === 'yesno' ? 'yesno' : (formData.type === 'service' ? 'notes' : undefined),
+          totalQuantity: (formData.type === 'service' || formData.type === 'yesno') ? undefined : formData.totalQuantity
+        };
+        
+        console.log('🔍 ADD REQUIREMENT - formData.type:', formData.type);
+        console.log('📤 ADD REQUIREMENT - requestData:', requestData);
+        
         const response = await fetch(apiUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${token}`
           },
-          body: JSON.stringify(formData)
+          body: JSON.stringify(requestData)
         });
         
         console.log('API Response status:', response.status);
+        
         if (!response.ok) {
           const errorData = await response.json();
           console.error('API Error details:', errorData);
-        }
-
-        if (!response.ok) {
-          const errorData = await response.json();
           throw new Error(errorData.message || 'Failed to add requirement');
         }
 
         const result = await response.json();
+        console.log('📥 API Response data:', result.data);
+        console.log('📥 serviceType from response:', result.data?.serviceType);
+        
+        // WORKAROUND: Backend doesn't return serviceType, so we add it manually
+        const requirementWithServiceType = {
+          ...result.data,
+          serviceType: requestData.serviceType // Use the serviceType we sent
+        };
+        
+        console.log('✅ Fixed requirement data:', requirementWithServiceType);
         
         // Update local state
         setDepartment({
           ...department,
-          requirements: [...department.requirements, result.data]
+          requirements: [...department.requirements, requirementWithServiceType]
         });
       }
       
@@ -259,8 +392,8 @@ const MyRequirementsPage: React.FC = () => {
   };
 
   // Handle delete requirement
-  const handleDeleteRequirement = async () => {
-    if (!deleteRequirementId || !department) return;
+  const handleDeleteRequirement = async (requirementId: string) => {
+    if (!requirementId || !department) return;
     
     try {
       const token = localStorage.getItem('authToken');
@@ -272,7 +405,7 @@ const MyRequirementsPage: React.FC = () => {
         return;
       }
 
-      const response = await fetch(`${API_BASE_URL}/departments/${department._id}/requirements/${deleteRequirementId}`, {
+      const response = await fetch(`${API_BASE_URL}/departments/${department._id}/requirements/${requirementId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -285,10 +418,10 @@ const MyRequirementsPage: React.FC = () => {
       }
 
       // Find the deleted requirement name for toast
-      const deletedRequirement = department.requirements.find(req => req._id === deleteRequirementId);
+      const deletedRequirement = department.requirements.find(req => req._id === requirementId);
 
       // Update local state
-      const updatedRequirements = department.requirements.filter(req => req._id !== deleteRequirementId);
+      const updatedRequirements = department.requirements.filter(req => req._id !== requirementId);
       setDepartment({
         ...department,
         requirements: updatedRequirements
@@ -469,9 +602,12 @@ const MyRequirementsPage: React.FC = () => {
                         <Label htmlFor="type">Type</Label>
                         <Select 
                           value={formData.type} 
-                          onValueChange={(value: 'physical' | 'service' | 'yesno') => 
-                            setFormData({...formData, type: value})
-                          }
+                          onValueChange={(value: 'physical' | 'service' | 'yesno') => {
+                            // Update serviceType based on the selected type
+                            const newServiceType = value === 'yesno' ? 'yesno' : value === 'service' ? 'notes' : formData.serviceType;
+                            console.log('🎯 Type changed to:', value, 'serviceType:', newServiceType);
+                            setFormData({...formData, type: value, serviceType: newServiceType});
+                          }}
                         >
                           <SelectTrigger>
                             <SelectValue />
@@ -688,7 +824,7 @@ const MyRequirementsPage: React.FC = () => {
 
           {/* Requirements Tabs */}
           <Tabs defaultValue="active" className="space-y-6">
-            <TabsList className="grid w-fit grid-cols-2">
+            <TabsList className="grid w-fit grid-cols-3">
               <TabsTrigger value="active" className="gap-2">
                 <CheckCircle className="w-4 h-4" />
                 Active ({activeRequirements.length})
@@ -696,6 +832,10 @@ const MyRequirementsPage: React.FC = () => {
               <TabsTrigger value="inactive" className="gap-2">
                 <XCircle className="w-4 h-4" />
                 Inactive ({inactiveRequirements.length})
+              </TabsTrigger>
+              <TabsTrigger value="availability" className="gap-2">
+                <CalendarDays className="w-4 h-4" />
+                Availability Calendar
               </TabsTrigger>
             </TabsList>
 
@@ -765,10 +905,7 @@ const MyRequirementsPage: React.FC = () => {
                                   <AlertDialogFooter>
                                     <AlertDialogCancel>Cancel</AlertDialogCancel>
                                     <AlertDialogAction
-                                      onClick={() => {
-                                        setDeleteRequirementId(requirement._id);
-                                        handleDeleteRequirement();
-                                      }}
+                                      onClick={() => handleDeleteRequirement(requirement._id)}
                                       className="bg-red-600 hover:bg-red-700"
                                     >
                                       Delete
@@ -806,7 +943,10 @@ const MyRequirementsPage: React.FC = () => {
                           <div className="flex items-start justify-between">
                             <div className="flex-1 min-w-0 pr-3">
                               <h3 className="font-medium text-foreground truncate">{requirement.text}</h3>
-                              <div className="flex items-center gap-2 mt-1 text-sm">
+                              <div className="flex items-center gap-2 mt-1 text-sm flex-wrap">
+                                <Badge variant="outline" className="text-xs" onClick={() => console.log('🔍 Requirement data:', requirement)}>
+                                  {(requirement.serviceType === 'yesno' || requirement.type === 'yesno') ? 'Yes/No' : 'Notes'}
+                                </Badge>
                                 <span className={`px-2 py-1 rounded text-xs ${
                                   requirement.isAvailable 
                                     ? 'bg-green-100 text-green-800' 
@@ -861,10 +1001,7 @@ const MyRequirementsPage: React.FC = () => {
                                   <AlertDialogFooter>
                                     <AlertDialogCancel>Cancel</AlertDialogCancel>
                                     <AlertDialogAction
-                                      onClick={() => {
-                                        setDeleteRequirementId(requirement._id);
-                                        handleDeleteRequirement();
-                                      }}
+                                      onClick={() => handleDeleteRequirement(requirement._id)}
                                       className="bg-red-600 hover:bg-red-700"
                                     >
                                       Delete
@@ -924,7 +1061,9 @@ const MyRequirementsPage: React.FC = () => {
                             <div className="flex-1 min-w-0 pr-3">
                               <h3 className="font-medium text-foreground truncate">{requirement.text}</h3>
                               <Badge variant="outline" className="mt-1 text-xs">
-                                {requirement.type === 'physical' ? 'Physical Item' : requirement.type === 'yesno' ? 'Service (Yes/No)' : 'Service'}
+                                {requirement.type === 'physical' ? 'Physical Item' : 
+                                 (requirement.serviceType === 'yesno' || requirement.type === 'yesno') ? 'Service (Yes/No)' : 
+                                 'Service (Notes)'}
                               </Badge>
                             </div>
                             <div className="flex flex-col gap-1">
@@ -967,10 +1106,7 @@ const MyRequirementsPage: React.FC = () => {
                                   <AlertDialogFooter>
                                     <AlertDialogCancel>Cancel</AlertDialogCancel>
                                     <AlertDialogAction
-                                      onClick={() => {
-                                        setDeleteRequirementId(requirement._id);
-                                        handleDeleteRequirement();
-                                      }}
+                                      onClick={() => handleDeleteRequirement(requirement._id)}
                                       className="bg-red-600 hover:bg-red-700"
                                     >
                                       Delete
@@ -1003,9 +1139,268 @@ const MyRequirementsPage: React.FC = () => {
               </motion.div>
             )}
             </TabsContent>
+
+            <TabsContent value="availability" className="space-y-6">
+              {/* Availability Calendar Tab */}
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="space-y-4"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-lg font-semibold flex items-center gap-2">
+                      <CalendarDays className="w-5 h-5 text-blue-600" />
+                      Requirement Availability Calendar
+                    </h2>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Click on any date to set availability for your requirements
+                    </p>
+                  </div>
+                </div>
+
+                {/* Calendar */}
+                <Card>
+                  <CardContent className="p-6">
+                    <CustomCalendar
+                      events={getCalendarEvents()}
+                      onDateClick={(date) => {
+                        const dateStr = format(date, 'yyyy-MM-dd');
+                        setSelectedDate(dateStr);
+                        // Pre-fill with existing data
+                        const existing = getExistingAvailabilityForDate(dateStr);
+                        setAvailabilityData({ [dateStr]: existing });
+                        setIsAvailabilityModalOpen(true);
+                      }}
+                      onMonthChange={setCalendarCurrentMonth}
+                      showNavigation={true}
+                      showLegend={true}
+                      cellHeight="min-h-[120px]"
+                    />
+                  </CardContent>
+                </Card>
+
+                {/* Info Card */}
+                <Card className="border-blue-200 bg-blue-50/30">
+                  <CardContent className="p-4">
+                    <div className="flex flex-col gap-2 text-sm">
+                      <div className="flex items-start gap-2">
+                        <CheckCircle className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                        <p className="text-gray-700">
+                          <strong>Physical Items:</strong> Set quantity available per date
+                        </p>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <CheckCircle className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                        <p className="text-gray-700">
+                          <strong>Services:</strong> Mark as available/unavailable with notes
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            </TabsContent>
           </Tabs>
         </CardContent>
       </Card>
+
+      {/* Availability Modal */}
+      <Dialog open={isAvailabilityModalOpen} onOpenChange={setIsAvailabilityModalOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CalendarDays className="w-5 h-5 text-blue-600" />
+              Set Availability for {selectedDate && format(new Date(selectedDate), 'MMMM dd, yyyy')}
+            </DialogTitle>
+            <DialogDescription>
+              Set which requirements are available and their quantities for this date
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-6 py-4">
+            {/* Physical Requirements */}
+            {activeRequirements.filter(req => req.type === 'physical').length > 0 && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 pb-2 border-b">
+                  <Package className="w-5 h-5 text-purple-600" />
+                  <h3 className="font-semibold">Physical Requirements</h3>
+                </div>
+                <div className="grid gap-4">
+                  {activeRequirements
+                    .filter(req => req.type === 'physical')
+                    .map(req => (
+                      <Card key={req._id} className="p-4">
+                        <div className="space-y-3">
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <h4 className="font-medium">{req.text}</h4>
+                              <p className="text-sm text-muted-foreground">
+                                Total Quantity: {req.totalQuantity || 1}
+                              </p>
+                            </div>
+                            <Switch
+                              checked={availabilityData[selectedDate]?.[req._id]?.isAvailable !== false}
+                              onCheckedChange={(checked) => {
+                                setAvailabilityData(prev => ({
+                                  ...prev,
+                                  [selectedDate]: {
+                                    ...prev[selectedDate],
+                                    [req._id]: {
+                                      ...prev[selectedDate]?.[req._id],
+                                      isAvailable: checked,
+                                      quantity: checked ? (req.totalQuantity || 1) : 0
+                                    }
+                                  }
+                                }));
+                              }}
+                            />
+                          </div>
+                          {availabilityData[selectedDate]?.[req._id]?.isAvailable !== false && (
+                            <div className="space-y-2">
+                              <Label>Available Quantity</Label>
+                              <Input
+                                type="number"
+                                min={0}
+                                max={req.totalQuantity || 1}
+                                value={availabilityData[selectedDate]?.[req._id]?.quantity || req.totalQuantity || 1}
+                                onChange={(e) => {
+                                  const value = parseInt(e.target.value) || 0;
+                                  setAvailabilityData(prev => ({
+                                    ...prev,
+                                    [selectedDate]: {
+                                      ...prev[selectedDate],
+                                      [req._id]: {
+                                        ...prev[selectedDate]?.[req._id],
+                                        quantity: Math.min(value, req.totalQuantity || 1)
+                                      }
+                                    }
+                                  }));
+                                }}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </Card>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            {/* Service Requirements */}
+            {activeRequirements.filter(req => req.type === 'service' || req.type === 'yesno').length > 0 && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 pb-2 border-b">
+                  <Settings className="w-5 h-5 text-orange-600" />
+                  <h3 className="font-semibold">Service Requirements</h3>
+                </div>
+                <div className="grid gap-4">
+                  {activeRequirements
+                    .filter(req => req.type === 'service' || req.type === 'yesno')
+                    .map(req => (
+                      <Card key={req._id} className="p-4">
+                        <div className="space-y-3">
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <h4 className="font-medium">{req.text}</h4>
+                                {req.serviceType === 'yesno' && (
+                                  <Badge variant="secondary" className="text-xs">Yes/No</Badge>
+                                )}
+                              </div>
+                              {req.responsiblePerson && (
+                                <p className="text-sm text-muted-foreground">
+                                  By: {req.responsiblePerson}
+                                </p>
+                              )}
+                            </div>
+                            <Switch
+                              checked={availabilityData[selectedDate]?.[req._id]?.isAvailable !== false}
+                              onCheckedChange={(checked) => {
+                                setAvailabilityData(prev => ({
+                                  ...prev,
+                                  [selectedDate]: {
+                                    ...prev[selectedDate],
+                                    [req._id]: {
+                                      ...prev[selectedDate]?.[req._id],
+                                      isAvailable: checked
+                                    }
+                                  }
+                                }));
+                              }}
+                            />
+                          </div>
+                        </div>
+                      </Card>
+                    ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-end gap-2 pt-4 border-t">
+            <Button
+              variant="outline"
+              onClick={() => setIsAvailabilityModalOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={async () => {
+                try {
+                  const token = localStorage.getItem('authToken');
+                  const dateData = availabilityData[selectedDate] || {};
+                  
+                  // Build requirements array
+                  const requirements = activeRequirements.map(req => ({
+                    requirementId: req._id,
+                    requirementText: req.text,
+                    isAvailable: dateData[req._id]?.isAvailable !== false,
+                    notes: dateData[req._id]?.notes || '',
+                    quantity: dateData[req._id]?.quantity || (req.type === 'physical' ? req.totalQuantity : 1) || 1,
+                    maxCapacity: req.type === 'physical' ? req.totalQuantity : 1
+                  }));
+
+                  const response = await fetch(`${API_BASE_URL}/resource-availability/availability/bulk`, {
+                    method: 'POST',
+                    headers: {
+                      'Authorization': `Bearer ${token}`,
+                      'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                      departmentId: department?._id,
+                      departmentName: department?.name,
+                      date: selectedDate,
+                      requirements
+                    })
+                  });
+
+                  if (response.ok) {
+                    toast.success('Availability saved!', {
+                      description: `Settings saved for ${format(new Date(selectedDate), 'MMM dd, yyyy')}`
+                    });
+                    // Refresh availability data
+                    if (department?._id) {
+                      fetchResourceAvailabilities(department._id);
+                    }
+                    setIsAvailabilityModalOpen(false);
+                  } else {
+                    throw new Error('Failed to save availability');
+                  }
+                } catch (error) {
+                  toast.error('Failed to save availability', {
+                    description: error instanceof Error ? error.message : 'Please try again'
+                  });
+                }
+              }}
+              className="gap-2"
+            >
+              <Save className="w-4 h-4" />
+              Save Availability
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

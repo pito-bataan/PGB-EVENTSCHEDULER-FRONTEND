@@ -750,8 +750,25 @@ const Dashboard: React.FC = () => {
                   </div>
                   
                   <div className="flex-shrink-0">
-                    <Badge variant={event.status === 'approved' ? 'default' : 'secondary'}>
-                      {event.status === 'approved' ? 'Approved' : event.status === 'submitted' ? 'Pending' : event.status}
+                    <Badge 
+                      className={
+                        event.status === 'approved' || event.status === 'confirmed' 
+                          ? 'bg-green-100 text-green-800 border-green-200' 
+                          : event.status === 'submitted' || event.status === 'pending'
+                          ? 'bg-yellow-100 text-yellow-800 border-yellow-200'
+                          : event.status === 'declined' || event.status === 'rejected'
+                          ? 'bg-red-100 text-red-800 border-red-200'
+                          : 'bg-gray-100 text-gray-800 border-gray-200'
+                      }
+                      variant="outline"
+                    >
+                      {event.status === 'approved' ? 'Approved' : 
+                       event.status === 'confirmed' ? 'Confirmed' :
+                       event.status === 'submitted' ? 'Pending' : 
+                       event.status === 'pending' ? 'Pending' :
+                       event.status === 'declined' ? 'Declined' :
+                       event.status === 'rejected' ? 'Rejected' :
+                       event.status}
                     </Badge>
                   </div>
                 </div>

@@ -3,12 +3,27 @@ import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import EventCountBadge from '@/components/ui/event-count-badge';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { 
   ChevronLeft, 
   ChevronRight, 
   Plus,
   CheckCircle,
-  XCircle
+  XCircle,
+  MapPin,
+  Calendar,
+  Clock
 } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, isBefore, startOfDay, startOfWeek, endOfWeek } from 'date-fns';
 
@@ -16,7 +31,7 @@ export interface CalendarEvent {
   id: string;
   date: string;
   title: string;
-  type: 'available' | 'unavailable' | 'event' | 'custom' | 'booking';
+  type: 'available' | 'unavailable' | 'event' | 'custom' | 'booking' | 'completed' | 'submitted' | 'approved' | 'rejected';
   notes?: string;
   color?: string;
   className?: string;
@@ -56,6 +71,10 @@ const CustomCalendar: React.FC<CustomCalendarProps> = ({
   isSelectionMode = false
 }) => {
   const [currentDate, setCurrentDate] = useState(initialDate);
+  const [showAllEventsModal, setShowAllEventsModal] = useState(false);
+  const [selectedDateEvents, setSelectedDateEvents] = useState<CalendarEvent[]>([]);
+  const [showEventDetailModal, setShowEventDetailModal] = useState(false);
+  const [selectedEventDetail, setSelectedEventDetail] = useState<CalendarEvent | null>(null);
 
   // Get calendar days for current month with proper week padding
   const monthStart = startOfMonth(currentDate);
@@ -66,9 +85,14 @@ const CustomCalendar: React.FC<CustomCalendarProps> = ({
 
   // Get events for a specific date
   const getEventsForDate = (date: Date): CalendarEvent[] => {
-    return events.filter(event => 
-      isSameDay(new Date(event.date), date)
-    );
+    const dateStr = format(date, 'yyyy-MM-dd');
+    const filtered = events.filter(event => {
+      const eventDateStr = event.date; // Already in YYYY-MM-DD format
+      const match = eventDateStr === dateStr;
+      return match;
+    });
+    
+    return filtered;
   };
 
   // Check if a date is selected
@@ -106,6 +130,92 @@ const CustomCalendar: React.FC<CustomCalendarProps> = ({
     onMonthChange?.(newDate);
   };
 
+  // Handle showing all events modal
+  const handleShowAllEvents = (dateEvents: CalendarEvent[], e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedDateEvents(dateEvents);
+    setShowAllEventsModal(true);
+  };
+
+  // Handle showing event detail modal
+  const handleShowEventDetail = (event: CalendarEvent, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setSelectedEventDetail(event);
+    setShowEventDetailModal(true);
+  };
+
+  // Convert 24-hour time to 12-hour format with AM/PM
+  const formatTime12Hour = (time24: string) => {
+    if (time24 === 'N/A' || !time24) return 'N/A';
+    
+    const [hours, minutes] = time24.split(':');
+    const hour = parseInt(hours);
+    const ampm = hour >= 12 ? 'PM' : 'AM';
+    const hour12 = hour % 12 || 12;
+    
+    return `${hour12}:${minutes} ${ampm}`;
+  };
+
+  // Parse event notes to extract details
+  const parseEventNotes = (notes?: string) => {
+    if (!notes) return { 
+      location: 'N/A', 
+      status: 'N/A',
+      startDate: 'N/A',
+      endDate: 'N/A',
+      startTime: 'N/A',
+      endTime: 'N/A',
+      dateTimeSlots: []
+    };
+    
+    const locationMatch = notes.match(/Location: ([^|]+)/);
+    const statusMatch = notes.match(/Status: ([^|]+)/);
+    const startDateMatch = notes.match(/StartDate: ([^|]+)/);
+    const endDateMatch = notes.match(/EndDate: ([^|]+)/);
+    const startTimeMatch = notes.match(/StartTime: ([^|]+)/);
+    const endTimeMatch = notes.match(/EndTime: ([^|]+)/);
+    const dateSlotsMatch = notes.match(/DateTimeSlots: (\[[\s\S]*\])$/);
+    
+    let dateTimeSlots: any[] = [];
+    if (dateSlotsMatch) {
+      try {
+        const jsonStr = dateSlotsMatch[1];
+        console.log('Parsing dateTimeSlots:', jsonStr);
+        dateTimeSlots = JSON.parse(jsonStr);
+        console.log('Parsed dateTimeSlots:', dateTimeSlots);
+      } catch (e) {
+        console.error('Failed to parse dateTimeSlots:', e, 'Raw:', dateSlotsMatch[1]);
+      }
+    } else {
+      console.log('No dateTimeSlots match found in notes:', notes);
+    }
+    
+    return {
+      location: locationMatch ? locationMatch[1].trim() : 'N/A',
+      status: statusMatch ? statusMatch[1].trim() : 'N/A',
+      startDate: startDateMatch ? startDateMatch[1].trim() : 'N/A',
+      endDate: endDateMatch ? endDateMatch[1].trim() : 'N/A',
+      startTime: formatTime12Hour(startTimeMatch ? startTimeMatch[1].trim() : 'N/A'),
+      endTime: formatTime12Hour(endTimeMatch ? endTimeMatch[1].trim() : 'N/A'),
+      dateTimeSlots: dateTimeSlots
+    };
+  };
+
+  // Get status badge color based on status text
+  const getStatusBadgeColor = (status: string) => {
+    const statusLower = status.toLowerCase();
+    if (statusLower === 'completed') {
+      return 'bg-violet-100 text-violet-800 border-violet-200';
+    } else if (statusLower === 'submitted' || statusLower === 'pending') {
+      return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+    } else if (statusLower === 'approved') {
+      return 'bg-green-100 text-green-800 border-green-200';
+    } else if (statusLower === 'rejected' || statusLower === 'cancelled' || statusLower === 'declined') {
+      return 'bg-red-100 text-red-800 border-red-200';
+    }
+    return 'bg-gray-100 text-gray-800 border-gray-200';
+  };
+
   // Default event renderer
   const defaultRenderEvent = (event: CalendarEvent) => {
     const getEventStyle = (type: string, customColor?: string) => {
@@ -121,6 +231,14 @@ const CustomCalendar: React.FC<CustomCalendarProps> = ({
           return 'bg-blue-100 text-blue-800 border-blue-200';
         case 'booking':
           return 'bg-purple-100 text-purple-800 border-purple-200';
+        case 'completed':
+          return 'bg-violet-100 text-violet-800 border-violet-200';
+        case 'submitted':
+          return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+        case 'approved':
+          return 'bg-green-100 text-green-800 border-green-200';
+        case 'rejected':
+          return 'bg-red-100 text-red-800 border-red-200';
         default:
           return 'bg-gray-100 text-gray-800 border-gray-200';
       }
@@ -154,16 +272,92 @@ const CustomCalendar: React.FC<CustomCalendarProps> = ({
       });
     }
 
+    const eventDetails = parseEventNotes(event.notes);
+
     return (
-      <div
-        key={event.id}
-        className={`inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md border mb-1 ${event.color ? 'text-gray-800 border-transparent' : getEventStyle(event.type, event.color)} ${event.className || ''}`}
-        style={event.color ? { backgroundColor: event.color, background: event.color } : undefined}
-        title={event.title} // Show full title on hover
-      >
-        {getEventIcon(event.type)}
-        <span className="truncate">{truncateTitle(event.title)}</span>
-      </div>
+      <Popover key={event.id}>
+        <PopoverTrigger asChild>
+          <div
+            className={`inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md border mb-1 hover:opacity-80 transition-opacity ${event.color ? 'text-gray-800 border-transparent' : getEventStyle(event.type, event.color)} ${event.className || ''}`}
+            style={event.color ? { backgroundColor: event.color, background: event.color } : undefined}
+          >
+            {getEventIcon(event.type)}
+            <span className="truncate">{truncateTitle(event.title)}</span>
+          </div>
+        </PopoverTrigger>
+        <PopoverContent className="w-80" side="top" align="start">
+          <div className="space-y-3">
+            <div>
+              <h4 className="font-semibold text-sm mb-2">{event.title}</h4>
+            </div>
+            <div className="space-y-2 text-sm">
+              <div className="flex items-start gap-2">
+                <MapPin className="w-4 h-4 text-gray-500 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="text-xs text-gray-500">Location</p>
+                  <p className="font-medium">{eventDetails.location}</p>
+                </div>
+              </div>
+              
+              {/* Show date/time - different format for single vs multiple dates */}
+              <div className="flex items-start gap-2">
+                <Calendar className="w-4 h-4 text-gray-500 mt-0.5 flex-shrink-0" />
+                <div className="flex-1">
+                  {eventDetails.dateTimeSlots && eventDetails.dateTimeSlots.length > 0 ? (
+                    // Multiple date/time slots
+                    <>
+                      <p className="text-xs text-gray-500 mb-1">Date/Time Slots</p>
+                      <div className="space-y-1">
+                        {/* Main date slot */}
+                        <div className="text-xs bg-blue-50 p-2 rounded border border-blue-200">
+                          <p className="font-medium">
+                            {eventDetails.startDate !== 'N/A' 
+                              ? `${format(new Date(eventDetails.startDate), 'MMM d, yyyy')} ${eventDetails.startTime} - ${eventDetails.endTime}`
+                              : 'N/A'
+                            }
+                          </p>
+                        </div>
+                        
+                        {/* Additional date/time slots */}
+                        {eventDetails.dateTimeSlots.map((slot: any, idx: number) => (
+                          <div key={idx} className="text-xs bg-gray-50 p-2 rounded border">
+                            <p className="font-medium">
+                              {format(new Date(slot.startDate), 'MMM d, yyyy')} {formatTime12Hour(slot.startTime)} - {formatTime12Hour(slot.endTime)}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    // Single date/time
+                    <>
+                      <p className="text-xs text-gray-500 mb-1">Date & Time</p>
+                      <p className="font-medium text-xs">
+                        {eventDetails.startDate !== 'N/A' 
+                          ? `${format(new Date(eventDetails.startDate), 'MMM d, yyyy')} at ${eventDetails.startTime} to ${eventDetails.endTime}`
+                          : 'N/A'
+                        }
+                      </p>
+                    </>
+                  )}
+                </div>
+              </div>
+              
+              {eventDetails.status && (
+                <div className="flex items-start gap-2">
+                  <CheckCircle className="w-4 h-4 text-gray-500 mt-0.5 flex-shrink-0" />
+                  <div className="flex-1">
+                    <p className="text-xs text-gray-500 mb-1">Status</p>
+                    <Badge className={`${getStatusBadgeColor(eventDetails.status)} border text-xs`}>
+                      {eventDetails.status}
+                    </Badge>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </PopoverContent>
+      </Popover>
     );
   };
 
@@ -213,7 +407,10 @@ const CustomCalendar: React.FC<CustomCalendarProps> = ({
               renderEvent ? renderEvent(event) : defaultRenderEvent(event)
             )}
             {dateEvents.length > 2 && (
-              <div className="text-xs text-gray-500">
+              <div 
+                className="text-xs text-blue-600 hover:text-blue-800 cursor-pointer font-medium hover:underline"
+                onClick={(e) => handleShowAllEvents(dateEvents, e)}
+              >
                 +{dateEvents.length - 2} more
               </div>
             )}
@@ -332,6 +529,142 @@ const CustomCalendar: React.FC<CustomCalendarProps> = ({
           </div>
         </motion.div>
       )}
+
+      {/* All Events Modal */}
+      <Dialog open={showAllEventsModal} onOpenChange={setShowAllEventsModal}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>All Events</DialogTitle>
+            <DialogDescription>
+              {selectedDateEvents.length > 0 && 
+                `${selectedDateEvents.length} event${selectedDateEvents.length > 1 ? 's' : ''} on ${format(new Date(selectedDateEvents[0].date), 'MMMM d, yyyy')}`
+              }
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 mt-4">
+            {selectedDateEvents.map((event) => {
+              const eventDetails = parseEventNotes(event.notes);
+              const getEventStyle = (type: string) => {
+                switch (type) {
+                  case 'completed': return 'bg-violet-100 text-violet-800 border-violet-200';
+                  case 'submitted': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+                  case 'approved': return 'bg-green-100 text-green-800 border-green-200';
+                  case 'rejected': return 'bg-red-100 text-red-800 border-red-200';
+                  default: return 'bg-gray-100 text-gray-800 border-gray-200';
+                }
+              };
+
+              return (
+                <div
+                  key={event.id}
+                  className="p-4 border rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
+                  onClick={() => {
+                    setShowAllEventsModal(false);
+                    handleShowEventDetail(event);
+                  }}
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-sm mb-2">{event.title}</h4>
+                      <div className="space-y-1 text-xs text-gray-600">
+                        <div className="flex items-center gap-2">
+                          <MapPin className="w-3 h-3" />
+                          <span>{eventDetails.location}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <Badge className={`${getEventStyle(event.type)} border text-xs`}>
+                      {eventDetails.status}
+                    </Badge>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Event Detail Modal */}
+      <Dialog open={showEventDetailModal} onOpenChange={setShowEventDetailModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Event Details</DialogTitle>
+          </DialogHeader>
+          {selectedEventDetail && (() => {
+            const details = parseEventNotes(selectedEventDetail.notes);
+            return (
+              <div className="space-y-4 mt-4">
+                <div>
+                  <h3 className="font-semibold text-lg mb-4">{selectedEventDetail.title}</h3>
+                </div>
+                <div className="space-y-3">
+                  <div className="flex items-start gap-3">
+                    <MapPin className="w-5 h-5 text-gray-500 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-xs text-gray-500 mb-1">Location</p>
+                      <p className="font-medium">{details.location}</p>
+                    </div>
+                  </div>
+                  
+                  {/* Show date/time - different format for single vs multiple dates */}
+                  <div className="flex items-start gap-3">
+                    <Calendar className="w-5 h-5 text-gray-500 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1">
+                      {details.dateTimeSlots && details.dateTimeSlots.length > 0 ? (
+                        // Multiple date/time slots
+                        <>
+                          <p className="text-xs text-gray-500 mb-2">Date/Time Slots</p>
+                          <div className="space-y-2">
+                            {/* Main date slot */}
+                            <div className="bg-blue-50 p-3 rounded border border-blue-200">
+                              <p className="font-medium text-sm">
+                                {details.startDate !== 'N/A' 
+                                  ? `${format(new Date(details.startDate), 'MMMM d, yyyy')} ${details.startTime} - ${details.endTime}`
+                                  : 'N/A'
+                                }
+                              </p>
+                            </div>
+                            
+                            {/* Additional date/time slots */}
+                            {details.dateTimeSlots.map((slot: any, idx: number) => (
+                              <div key={idx} className="bg-gray-50 p-3 rounded border">
+                                <p className="font-medium text-sm">
+                                  {format(new Date(slot.startDate), 'MMMM d, yyyy')} {formatTime12Hour(slot.startTime)} - {formatTime12Hour(slot.endTime)}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      ) : (
+                        // Single date/time
+                        <>
+                          <p className="text-xs text-gray-500 mb-2">Date & Time</p>
+                          <p className="font-medium">
+                            {details.startDate !== 'N/A' 
+                              ? `${format(new Date(details.startDate), 'MMMM d, yyyy')} at ${details.startTime} to ${details.endTime}`
+                              : 'N/A'
+                            }
+                          </p>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-start gap-3">
+                    <CheckCircle className="w-5 h-5 text-gray-500 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-xs text-gray-500 mb-1">Status</p>
+                      <Badge className={`${getStatusBadgeColor(details.status)} border text-xs`}>
+                        {details.status}
+                      </Badge>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

@@ -46,6 +46,12 @@ interface CalendarEvent {
   endDate: string;
   startTime: string;
   endTime: string;
+  dateTimeSlots?: Array<{
+    startDate: string;
+    startTime: string;
+    endDate: string;
+    endTime: string;
+  }>;
   numberOfParticipants: number;
   numberOfVIP?: number;
   numberOfVVIP?: number;
@@ -376,7 +382,7 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
                               ) : (
                                 <>
                                   <Camera className="w-4 h-4" />
-                                  Screenshot
+                                  Export Image
                                 </>
                               )}
                             </Button>
@@ -387,7 +393,7 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
                             <div className="space-y-4 pr-6">
                               <div className="space-y-3">
                                 <div className="flex items-start gap-3">
-                                  <User className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                                  <User className="w-5 h-5 text-gray-700 flex-shrink-0 mt-0.5" />
                                   <div>
                                     <p className="text-xs font-medium text-muted-foreground mb-1">Requestor</p>
                                     <p className="text-sm font-semibold">{event.requestor}</p>
@@ -396,7 +402,7 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
 
                                 {event.requestorDepartment && (
                                   <div className="flex items-start gap-3">
-                                    <Building2 className="w-5 h-5 text-indigo-600 flex-shrink-0 mt-0.5" />
+                                    <Building2 className="w-5 h-5 text-gray-700 flex-shrink-0 mt-0.5" />
                                     <div>
                                       <p className="text-xs font-medium text-muted-foreground mb-1">Requestor Department</p>
                                       <p className="text-sm font-semibold">{event.requestorDepartment}</p>
@@ -405,7 +411,7 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
                                 )}
 
                                 <div className="flex items-start gap-3">
-                                  <MapPin className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                                  <MapPin className="w-5 h-5 text-gray-700 flex-shrink-0 mt-0.5" />
                                   <div>
                                     <p className="text-xs font-medium text-muted-foreground mb-1">Location</p>
                                     <p className="text-sm font-semibold">{event.location}</p>
@@ -414,7 +420,7 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
 
                                 {event.contactNumber && (
                                   <div className="flex items-start gap-3">
-                                    <Phone className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+                                    <Phone className="w-5 h-5 text-gray-700 flex-shrink-0 mt-0.5" />
                                     <div>
                                       <p className="text-xs font-medium text-muted-foreground mb-1">Contact Number</p>
                                       <p className="text-sm font-semibold">{event.contactNumber}</p>
@@ -424,7 +430,7 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
 
                                 {event.contactEmail && (
                                   <div className="flex items-start gap-3">
-                                    <Mail className="w-5 h-5 text-purple-600 flex-shrink-0 mt-0.5" />
+                                    <Mail className="w-5 h-5 text-gray-700 flex-shrink-0 mt-0.5" />
                                     <div>
                                       <p className="text-xs font-medium text-muted-foreground mb-1">Contact Email</p>
                                       <p className="text-sm font-semibold">{event.contactEmail}</p>
@@ -437,28 +443,70 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
                             {/* Right Column - Event Details */}
                             <div className="space-y-4 pl-6">
                               <div className="space-y-3">
-                                <div className="flex items-start gap-3">
-                                  <Clock className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-                                  <div className="flex-1">
-                                    <p className="text-xs font-medium text-muted-foreground mb-1">Start</p>
-                                    <p className="text-sm font-semibold">
-                                      {format(new Date(event.startDate), 'MMM d, yyyy')} at {formatTime(event.startTime)}
-                                    </p>
+                                {/* Show multiple date/time slots if available */}
+                                {event.dateTimeSlots && event.dateTimeSlots.length > 0 ? (
+                                  <>
+                                    <div className="flex items-start gap-3">
+                                      <Clock className="w-5 h-5 text-gray-700 flex-shrink-0 mt-0.5" />
+                                      <div className="flex-1 grid grid-cols-2 gap-4">
+                                        <div>
+                                          <p className="text-xs font-medium text-muted-foreground mb-1">Start</p>
+                                          <p className="text-sm font-semibold">
+                                            {format(new Date(event.startDate), 'MMM d, yyyy')} at {formatTime(event.startTime)}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <p className="text-xs font-medium text-muted-foreground mb-1">End</p>
+                                          <p className="text-sm font-semibold">
+                                            {format(new Date(event.endDate), 'MMM d, yyyy')} at {formatTime(event.endTime)}
+                                          </p>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* Additional date/time slots */}
+                                    {event.dateTimeSlots.map((slot, idx) => (
+                                      <div key={idx} className="flex items-start gap-3">
+                                        <Clock className="w-5 h-5 text-gray-700 flex-shrink-0 mt-0.5" />
+                                        <div className="flex-1 grid grid-cols-2 gap-4">
+                                          <div>
+                                            <p className="text-xs font-medium text-muted-foreground mb-1">Start</p>
+                                            <p className="text-sm font-semibold">
+                                              {format(new Date(slot.startDate), 'MMM d, yyyy')} at {formatTime(slot.startTime)}
+                                            </p>
+                                          </div>
+                                          <div>
+                                            <p className="text-xs font-medium text-muted-foreground mb-1">End</p>
+                                            <p className="text-sm font-semibold">
+                                              {format(new Date(slot.endDate), 'MMM d, yyyy')} at {formatTime(slot.endTime)}
+                                            </p>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </>
+                                ) : (
+                                  <div className="flex items-start gap-3">
+                                    <Clock className="w-5 h-5 text-gray-700 flex-shrink-0 mt-0.5" />
+                                    <div className="flex-1 grid grid-cols-2 gap-4">
+                                      <div>
+                                        <p className="text-xs font-medium text-muted-foreground mb-1">Start</p>
+                                        <p className="text-sm font-semibold">
+                                          {format(new Date(event.startDate), 'MMM d, yyyy')} at {formatTime(event.startTime)}
+                                        </p>
+                                      </div>
+                                      <div>
+                                        <p className="text-xs font-medium text-muted-foreground mb-1">End</p>
+                                        <p className="text-sm font-semibold">
+                                          {format(new Date(event.endDate), 'MMM d, yyyy')} at {formatTime(event.endTime)}
+                                        </p>
+                                      </div>
+                                    </div>
                                   </div>
-                                </div>
+                                )}
 
                                 <div className="flex items-start gap-3">
-                                  <Clock className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5" />
-                                  <div className="flex-1">
-                                    <p className="text-xs font-medium text-muted-foreground mb-1">End</p>
-                                    <p className="text-sm font-semibold">
-                                      {format(new Date(event.endDate), 'MMM d, yyyy')} at {formatTime(event.endTime)}
-                                    </p>
-                                  </div>
-                                </div>
-
-                                <div className="flex items-start gap-3">
-                                  <Users className="w-5 h-5 text-purple-600 flex-shrink-0 mt-0.5" />
+                                  <Users className="w-5 h-5 text-gray-700 flex-shrink-0 mt-0.5" />
                                   <div className="flex-1">
                                     <p className="text-xs font-medium text-muted-foreground mb-1">Participants</p>
                                     <div className="space-y-1">
@@ -481,7 +529,7 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
 
                                 {event.taggedDepartments && event.taggedDepartments.length > 0 && (
                                   <div className="flex items-start gap-3">
-                                    <Building2 className="w-5 h-5 text-cyan-600 flex-shrink-0 mt-0.5" />
+                                    <Building2 className="w-5 h-5 text-gray-700 flex-shrink-0 mt-0.5" />
                                     <div className="flex-1">
                                       <p className="text-xs font-medium text-muted-foreground mb-2">Tagged Departments</p>
                                       <div className="flex flex-wrap gap-2">

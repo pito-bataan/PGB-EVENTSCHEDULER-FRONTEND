@@ -36,9 +36,17 @@ interface Event {
   endDate: string;
   startTime: string;
   endTime: string;
+  dateTimeSlots?: Array<{
+    startDate: string;
+    startTime: string;
+    endDate: string;
+    endTime: string;
+  }>;
   taggedDepartments: string[];
   requestor: string;
   location: string;
+  locations?: string[];
+  multipleLocations?: boolean;
   status: string; // Event status: submitted, approved, rejected, etc.
   numberOfParticipants: number;
   numberOfVIP: number;

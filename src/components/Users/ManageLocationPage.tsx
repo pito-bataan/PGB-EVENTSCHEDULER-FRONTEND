@@ -48,12 +48,6 @@ import {
   Shield,
   MapPinIcon
 } from 'lucide-react';
-import { Swiper, SwiperSlide } from 'swiper/react';
-import { Autoplay, Pagination } from 'swiper/modules';
-
-// Import Swiper styles
-import 'swiper/swiper-bundle.css';
-import '../../styles/swiper-custom.css';
 
 const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api`;
 
@@ -125,9 +119,6 @@ const ManageLocationPage: React.FC = () => {
   const [isAutoPopulated, setIsAutoPopulated] = useState(false);
   const [showCustomLocationInput, setShowCustomLocationInput] = useState(false);
   const [customLocationName, setCustomLocationName] = useState('');
-  const [showDateFilter, setShowDateFilter] = useState(false);
-  const [selectedFilterDates, setSelectedFilterDates] = useState<string[]>([]);
-  const [filteredLocationData, setFilteredLocationData] = useState<LocationAvailability[]>([]);
   const [locationsForDate, setLocationsForDate] = useState<Array<{
     locationName: string;
     capacity: string;
@@ -174,36 +165,7 @@ const ManageLocationPage: React.FC = () => {
   // Empty deps array = only runs once on mount, respects Zustand cache
   useEffect(() => {
     initializeUser();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Filter location data based on selected dates
-  useEffect(() => {
-    if (selectedFilterDates.length === 0) {
-      // No filter applied, show all data
-      setFilteredLocationData(locationAvailabilities);
-    } else {
-      // Filter by selected dates
-      const filtered = locationAvailabilities.filter(location => 
-        selectedFilterDates.includes(location.date)
-      );
-      setFilteredLocationData(filtered);
-    }
-  }, [locationAvailabilities, selectedFilterDates]);
-
-  // Get unique dates from location data for filter options
-  const getAvailableDates = () => {
-    const dates = [...new Set(locationAvailabilities.map(loc => loc.date))];
-    return dates.sort();
-  };
-
-
-  // Clear all date filters
-  const clearDateFilters = () => {
-    setSelectedFilterDates([]);
-  };
-
-  // This function is now handled by the Zustand store
 
   // Format time to 12-hour AM/PM format
   const formatTime12Hour = (time: string): string => {
@@ -1331,161 +1293,6 @@ const ManageLocationPage: React.FC = () => {
             </Badge>
           </div>
         </div>
-      </motion.div>
-
-      {/* Location Summary - Horizontal at top */}
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1 }}
-        className="mb-6"
-      >
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <Building2 className="w-5 h-5" />
-                Available Locations
-              </CardTitle>
-              <div className="flex items-center gap-2">
-                {selectedFilterDates.length > 0 && (
-                  <Badge variant="outline" className="text-xs">
-                    {selectedFilterDates.length} date{selectedFilterDates.length !== 1 ? 's' : ''} filtered
-                  </Badge>
-                )}
-                <Popover open={showDateFilter} onOpenChange={setShowDateFilter}>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="gap-2"
-                    >
-                      <Filter className="w-4 h-4" />
-                      Filter by Date
-                      <ChevronDown className={`w-4 h-4 transition-transform ${showDateFilter ? 'rotate-180' : ''}`} />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-72 p-2" align="end">
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <h4 className="text-xs font-medium text-gray-700">Filter dates</h4>
-                        {selectedFilterDates.length > 0 && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={clearDateFilters}
-                            className="text-xs text-gray-500 hover:text-gray-700 h-5 px-1"
-                          >
-                            Clear ({selectedFilterDates.length})
-                          </Button>
-                        )}
-                      </div>
-                      <Calendar
-                        mode="multiple"
-                        selected={selectedFilterDates.map(dateStr => new Date(dateStr))}
-                        onSelect={(dates) => {
-                          if (dates) {
-                            const dateStrings = Array.from(dates).map(date => format(date, 'yyyy-MM-dd'));
-                            setSelectedFilterDates(dateStrings);
-                          } else {
-                            setSelectedFilterDates([]);
-                          }
-                        }}
-                        disabled={(date) => {
-                          const dateString = format(date, 'yyyy-MM-dd');
-                          const availableDates = getAvailableDates();
-                          return !availableDates.includes(dateString);
-                        }}
-                        className="rounded-md border text-xs scale-90"
-                      />
-                      {getAvailableDates().length === 0 && (
-                        <p className="text-xs text-gray-500 text-center">No dates available</p>
-                      )}
-                    </div>
-                  </PopoverContent>
-                </Popover>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {filteredLocationData.length === 0 ? (
-              <div className="text-center py-6">
-                <MapPin className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                <p className="text-sm text-gray-600 mb-2">No locations configured yet</p>
-                <p className="text-xs text-gray-500">Click on calendar dates to add location availability</p>
-              </div>
-            ) : (
-              <div className="relative">
-                <Swiper
-                  key={filteredLocationData.length}
-                  modules={[Autoplay, Pagination]}
-                  spaceBetween={16}
-                  slidesPerView={1}
-                  loop={true}
-                  speed={800}
-                  effect="slide"
-                  autoplay={{
-                    delay: 3000,
-                    disableOnInteraction: false,
-                    pauseOnMouseEnter: true,
-                    waitForTransition: false,
-                    stopOnLastSlide: false
-                  }}
-                  navigation={false}
-                  pagination={false}
-                  breakpoints={{
-                    640: {
-                      slidesPerView: 2,
-                    },
-                    768: {
-                      slidesPerView: 3,
-                    },
-                    1024: {
-                      slidesPerView: 4,
-                    },
-                  }}
-                  className="location-swiper"
-                >
-                  {filteredLocationData.map((location) => (
-                    <SwiperSlide key={location._id}>
-                      <div className="p-4 border rounded-lg hover:bg-gray-50 transition-colors h-full">
-                        <div className="flex items-center justify-between mb-3">
-                          <h4 className="font-medium text-sm text-gray-900 truncate">
-                            {location.locationName}
-                          </h4>
-                          <Badge 
-                            variant={location.status === 'available' ? "default" : "destructive"}
-                            className="text-xs"
-                          >
-                            {location.status}
-                          </Badge>
-                        </div>
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2 text-xs text-gray-600">
-                            <CalendarIcon className="w-3 h-3" />
-                            {location.date}
-                          </div>
-                          <div className="flex items-center gap-2 text-xs text-gray-600">
-                            <Building2 className="w-3 h-3" />
-                            Capacity: {location.capacity}
-                          </div>
-                          {location.description && (
-                            <div className="text-xs text-gray-500 line-clamp-2">
-                              {location.description}
-                            </div>
-                          )}
-                          <div className="text-xs text-gray-400">
-                            {location.departmentName}
-                          </div>
-                        </div>
-                      </div>
-                    </SwiperSlide>
-                  ))}
-                </Swiper>
-              </div>
-            )}
-          </CardContent>
-        </Card>
       </motion.div>
 
       {/* Bulk Location Management - Minimalist ShadCN Design */}

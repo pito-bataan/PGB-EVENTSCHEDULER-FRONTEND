@@ -201,27 +201,63 @@ const AllEventsPage: React.FC = () => {
       pdf.text(selectedEvent.requestorDepartment || 'N/A', margin + 115, yPos);
       yPos += 7;
 
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('Start Date:', margin, yPos);
-      pdf.setFont('helvetica', 'normal');
-      pdf.text(format(new Date(selectedEvent.startDate), 'MMMM dd, yyyy'), margin + 25, yPos);
+      // Check if event has multiple date/time slots (multi-day event)
+      const hasSlots = selectedEvent.dateTimeSlots && Array.isArray(selectedEvent.dateTimeSlots) && selectedEvent.dateTimeSlots.length > 0;
       
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('Start Time:', margin + 90, yPos);
-      pdf.setFont('helvetica', 'normal');
-      pdf.text(formatTime(selectedEvent.startTime), margin + 115, yPos);
-      yPos += 7;
+      if (hasSlots) {
+        // Multi-Day Event Schedule
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('Multi-Day Event Schedule:', margin, yPos);
+        yPos += 7;
+        
+        // Day 1 - Main date slot
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('Day 1:', margin + 5, yPos);
+        pdf.setFont('helvetica', 'normal');
+        pdf.text(
+          `${format(new Date(selectedEvent.startDate), 'MMM dd, yyyy')} at ${formatTime(selectedEvent.startTime)} - ${formatTime(selectedEvent.endTime)}`,
+          margin + 20,
+          yPos
+        );
+        yPos += 6;
+        
+        // Additional Days
+        selectedEvent.dateTimeSlots?.forEach((slot: any, idx: number) => {
+          pdf.setFont('helvetica', 'bold');
+          pdf.text(`Day ${idx + 2}:`, margin + 5, yPos);
+          pdf.setFont('helvetica', 'normal');
+          pdf.text(
+            `${format(new Date(slot.startDate), 'MMM dd, yyyy')} at ${formatTime(slot.startTime)} - ${formatTime(slot.endTime)}`,
+            margin + 20,
+            yPos
+          );
+          yPos += 6;
+        });
+        yPos += 1;
+      } else {
+        // Single date/time
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('Start Date:', margin, yPos);
+        pdf.setFont('helvetica', 'normal');
+        pdf.text(format(new Date(selectedEvent.startDate), 'MMMM dd, yyyy'), margin + 25, yPos);
+        
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('Start Time:', margin + 90, yPos);
+        pdf.setFont('helvetica', 'normal');
+        pdf.text(formatTime(selectedEvent.startTime), margin + 115, yPos);
+        yPos += 7;
 
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('End Date:', margin, yPos);
-      pdf.setFont('helvetica', 'normal');
-      pdf.text(format(new Date(selectedEvent.endDate), 'MMMM dd, yyyy'), margin + 25, yPos);
-      
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('End Time:', margin + 90, yPos);
-      pdf.setFont('helvetica', 'normal');
-      pdf.text(formatTime(selectedEvent.endTime), margin + 115, yPos);
-      yPos += 7;
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('End Date:', margin, yPos);
+        pdf.setFont('helvetica', 'normal');
+        pdf.text(format(new Date(selectedEvent.endDate), 'MMMM dd, yyyy'), margin + 25, yPos);
+        
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('End Time:', margin + 90, yPos);
+        pdf.setFont('helvetica', 'normal');
+        pdf.text(formatTime(selectedEvent.endTime), margin + 115, yPos);
+        yPos += 7;
+      }
 
       pdf.setFont('helvetica', 'bold');
       pdf.text(selectedEvent.locations && selectedEvent.locations.length > 1 ? 'Locations:' : 'Location:', margin, yPos);
@@ -562,32 +598,32 @@ const AllEventsPage: React.FC = () => {
             <CardContent className="p-0">
               <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
                 <div className="px-4 pt-4 pb-2">
-                  <TabsList className="w-full grid grid-cols-5">
-                    <TabsTrigger value="all" className="text-xs gap-1.5">
+                  <TabsList className="w-full inline-flex h-auto flex-wrap gap-1 p-1">
+                    <TabsTrigger value="all" className="text-xs gap-1.5 flex-shrink-0">
                       All
                       <Badge variant="secondary" className="ml-1 px-1.5 py-0 h-4 text-[10px] font-semibold">
                         {statusCounts.all}
                       </Badge>
                     </TabsTrigger>
-                    <TabsTrigger value="approved" className="text-xs gap-1.5">
+                    <TabsTrigger value="approved" className="text-xs gap-1.5 flex-shrink-0">
                       Approved
                       <Badge variant="secondary" className="ml-1 px-1.5 py-0 h-4 text-[10px] font-semibold bg-green-100 text-green-700">
                         {statusCounts.approved}
                       </Badge>
                     </TabsTrigger>
-                    <TabsTrigger value="submitted" className="text-xs gap-1.5">
+                    <TabsTrigger value="submitted" className="text-xs gap-1.5 flex-shrink-0">
                       Submitted
                       <Badge variant="secondary" className="ml-1 px-1.5 py-0 h-4 text-[10px] font-semibold bg-blue-100 text-blue-700">
                         {statusCounts.submitted}
                       </Badge>
                     </TabsTrigger>
-                    <TabsTrigger value="cancelled" className="text-xs gap-1.5">
+                    <TabsTrigger value="cancelled" className="text-xs gap-1.5 flex-shrink-0">
                       Cancelled
                       <Badge variant="secondary" className="ml-1 px-1.5 py-0 h-4 text-[10px] font-semibold bg-red-100 text-red-700">
                         {statusCounts.cancelled}
                       </Badge>
                     </TabsTrigger>
-                    <TabsTrigger value="completed" className="text-xs gap-1.5">
+                    <TabsTrigger value="completed" className="text-xs gap-1.5 flex-shrink-0">
                       Completed
                       <Badge variant="secondary" className="ml-1 px-1.5 py-0 h-4 text-[10px] font-semibold bg-purple-100 text-purple-700">
                         {statusCounts.completed}
@@ -740,14 +776,45 @@ const AllEventsPage: React.FC = () => {
                               <span className="font-medium text-foreground">{selectedEvent.location}</span>
                             )}
                           </div>
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <Calendar className="w-3.5 h-3.5" />
-                            <span>{format(new Date(selectedEvent.startDate), 'PPP')}</span>
-                          </div>
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <Clock className="w-3.5 h-3.5" />
-                            <span>{formatTime(selectedEvent.startTime)} - {formatTime(selectedEvent.endTime)}</span>
-                          </div>
+                          {/* Multi-day or single-day schedule */}
+                          {selectedEvent.dateTimeSlots && selectedEvent.dateTimeSlots.length > 0 ? (
+                            <div className="space-y-2">
+                              <p className="text-xs font-semibold text-foreground uppercase tracking-wide">Multi-Day Schedule:</p>
+                              {/* Day 1 */}
+                              <div className="bg-blue-50 border border-blue-200 rounded p-2">
+                                <p className="text-xs font-medium text-blue-900 mb-1">Day 1</p>
+                                <div className="flex items-center gap-2 text-xs text-blue-800">
+                                  <Calendar className="w-3 h-3" />
+                                  <span className="font-medium">{format(new Date(selectedEvent.startDate), 'MMM d, yyyy')}</span>
+                                  <Clock className="w-3 h-3 ml-1" />
+                                  <span>{formatTime(selectedEvent.startTime)} - {formatTime(selectedEvent.endTime)}</span>
+                                </div>
+                              </div>
+                              {/* Additional Days */}
+                              {selectedEvent.dateTimeSlots.map((slot: any, idx: number) => (
+                                <div key={idx} className="bg-blue-50 border border-blue-200 rounded p-2">
+                                  <p className="text-xs font-medium text-blue-900 mb-1">Day {idx + 2}</p>
+                                  <div className="flex items-center gap-2 text-xs text-blue-800">
+                                    <Calendar className="w-3 h-3" />
+                                    <span className="font-medium">{format(new Date(slot.startDate), 'MMM d, yyyy')}</span>
+                                    <Clock className="w-3 h-3 ml-1" />
+                                    <span>{formatTime(slot.startTime)} - {formatTime(slot.endTime)}</span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <>
+                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <Calendar className="w-3.5 h-3.5" />
+                                <span>{format(new Date(selectedEvent.startDate), 'PPP')}</span>
+                              </div>
+                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <Clock className="w-3.5 h-3.5" />
+                                <span>{formatTime(selectedEvent.startTime)} - {formatTime(selectedEvent.endTime)}</span>
+                              </div>
+                            </>
+                          )}
                         </div>
                       </div>
 
