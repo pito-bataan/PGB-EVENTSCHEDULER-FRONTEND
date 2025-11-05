@@ -14,12 +14,12 @@ ENV VITE_API_URL=$VITE_API_URL
 ENV VITE_SOCKET_URL=$VITE_SOCKET_URL
 ENV VITE_NODE_ENV=$VITE_NODE_ENV
 ENV NODE_OPTIONS=--max-old-space-size=4096
-ENV NODE_ENV=production
 
 # Copy package files first (for better layer caching)
 COPY package*.json ./
 
 # Install ALL dependencies (including devDependencies needed for build)
+# Don't set NODE_ENV=production yet, as it prevents devDependencies installation
 RUN npm ci --legacy-peer-deps --no-audit --loglevel=error && \
     npm cache clean --force
 
