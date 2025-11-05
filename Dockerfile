@@ -1,5 +1,5 @@
 # Multi-stage build for production optimization
-FROM node:18-alpine AS builder
+FROM node:20-alpine AS builder
 
 # Set working directory
 WORKDIR /app
@@ -19,8 +19,8 @@ ENV NODE_ENV=production
 # Copy package files first (for better layer caching)
 COPY package*.json ./
 
-# Install dependencies with production flag and clean cache
-RUN npm ci --legacy-peer-deps --prefer-offline --no-audit --loglevel=error && \
+# Install ALL dependencies (including devDependencies needed for build)
+RUN npm ci --legacy-peer-deps --no-audit --loglevel=error && \
     npm cache clean --force
 
 # Copy source code
