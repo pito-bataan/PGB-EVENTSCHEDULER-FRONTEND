@@ -13,20 +13,21 @@ ARG VITE_NODE_ENV=production
 ENV VITE_API_URL=$VITE_API_URL
 ENV VITE_SOCKET_URL=$VITE_SOCKET_URL
 ENV VITE_NODE_ENV=$VITE_NODE_ENV
-ENV NODE_OPTIONS=--max-old-space-size=2048
+ENV NODE_OPTIONS=--max-old-space-size=4096
+ENV NODE_ENV=production
 
 # Copy package files first (for better layer caching)
 COPY package*.json ./
 
 # Install dependencies with production flag and clean cache
-RUN npm ci --legacy-peer-deps --prefer-offline --no-audit && \
+RUN npm ci --legacy-peer-deps --prefer-offline --no-audit --loglevel=error && \
     npm cache clean --force
 
 # Copy source code
 COPY . .
 
-# Build the application
-RUN npm run build
+# Build the application with verbose logging
+RUN npm run build -- --logLevel=warn
 
 # Production stage with Nginx
 FROM nginx:alpine
