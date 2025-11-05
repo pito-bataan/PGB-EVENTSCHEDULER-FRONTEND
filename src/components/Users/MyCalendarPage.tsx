@@ -56,32 +56,24 @@ const MyCalendarPage: React.FC = () => {
     
     // Show ALL events regardless of status (pending, submitted, approved, etc.)
     if (hasBookingsForDepartment) {
-      // Create calendar events for each day the event spans
+      // Only show event on its START DATE, not on every day it spans
       const currentStartDate = new Date(eventStartDate);
-      const currentEndDate = new Date(eventEndDate);
       
       // Reset time to avoid timezone issues
       currentStartDate.setHours(0, 0, 0, 0);
-      currentEndDate.setHours(0, 0, 0, 0);
       
-      const currentDate = new Date(currentStartDate);
-      while (currentDate <= currentEndDate) {
-        const dateString = currentDate.getFullYear() + '-' + 
-                          String(currentDate.getMonth() + 1).padStart(2, '0') + '-' + 
-                          String(currentDate.getDate()).padStart(2, '0');
-        
-        if (!eventsByDate[dateString]) {
-          eventsByDate[dateString] = [];
-        }
-        
-        // Only add if not already in the array for this date
-        const alreadyExists = eventsByDate[dateString].some(e => e._id === event._id);
-        if (!alreadyExists) {
-          eventsByDate[dateString].push(event);
-        }
-        
-        // Move to next day
-        currentDate.setDate(currentDate.getDate() + 1);
+      const dateString = currentStartDate.getFullYear() + '-' + 
+                        String(currentStartDate.getMonth() + 1).padStart(2, '0') + '-' + 
+                        String(currentStartDate.getDate()).padStart(2, '0');
+      
+      if (!eventsByDate[dateString]) {
+        eventsByDate[dateString] = [];
+      }
+      
+      // Only add if not already in the array for this date
+      const alreadyExists = eventsByDate[dateString].some(e => e._id === event._id);
+      if (!alreadyExists) {
+        eventsByDate[dateString].push(event);
       }
     }
   });
