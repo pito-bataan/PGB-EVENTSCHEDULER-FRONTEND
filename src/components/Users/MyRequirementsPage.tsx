@@ -10,6 +10,14 @@ import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { 
   AlertDialog, 
   AlertDialogAction, 
@@ -34,7 +42,9 @@ import {
   Sparkles,
   Zap,
   Calendar,
-  CalendarDays
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import CustomCalendar from '@/components/ui/custom-calendar';
 import { format } from 'date-fns';
@@ -83,6 +93,11 @@ const MyRequirementsPage: React.FC = () => {
   const [availabilityData, setAvailabilityData] = useState<{[key: string]: any}>({});
   const [calendarCurrentMonth, setCalendarCurrentMonth] = useState(new Date());
   const [resourceAvailabilities, setResourceAvailabilities] = useState<any[]>([]);
+
+  // Requirements Table State
+  const [requirementTab, setRequirementTab] = useState<'physical' | 'services'>('physical');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   // Get current user
   useEffect(() => {
@@ -840,59 +855,95 @@ const MyRequirementsPage: React.FC = () => {
             </TabsList>
 
             <TabsContent value="active" className="space-y-6">
-              {/* Physical Items */}
-              {physicalItems.length > 0 && (
+              {/* Requirements Tabs */}
               <div>
-                <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                  <Package className="w-5 h-5 text-purple-600" />
-                  Physical Requirements ({physicalItems.length})
-                </h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {physicalItems.map((requirement, index) => (
-                    <motion.div
-                      key={requirement._id}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: index * 0.05 }}
-                    >
-                      <Card className="hover:shadow-md transition-shadow">
-                        <CardContent className="p-4">
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1 min-w-0 pr-3">
-                              <h3 className="font-medium text-foreground truncate">{requirement.text}</h3>
-                              <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
-                                <Package className="w-3 h-3 flex-shrink-0" />
-                                <span>Qty: {requirement.totalQuantity}</span>
-                              </div>
-                            </div>
-                            <div className="flex flex-col gap-1">
+                {/* Tab Buttons */}
+                <div className="flex gap-2 mb-4">
+                  <Button
+                    onClick={() => {
+                      setRequirementTab('physical');
+                      setCurrentPage(1);
+                    }}
+                    className={`flex items-center gap-2 ${
+                      requirementTab === 'physical'
+                        ? 'bg-purple-600 hover:bg-purple-700 text-white'
+                        : 'bg-purple-100 hover:bg-purple-200 text-purple-900'
+                    }`}
+                  >
+                    <Package className="w-4 h-4" />
+                    Physical Requirements ({physicalItems.length})
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      setRequirementTab('services');
+                      setCurrentPage(1);
+                    }}
+                    className={`flex items-center gap-2 ${
+                      requirementTab === 'services'
+                        ? 'bg-orange-600 hover:bg-orange-700 text-white'
+                        : 'bg-orange-100 hover:bg-orange-200 text-orange-900'
+                    }`}
+                  >
+                    <Settings className="w-4 h-4" />
+                    Services Requirements ({services.length})
+                  </Button>
+                </div>
+
+                {/* Physical Requirements Table */}
+                {requirementTab === 'physical' && physicalItems.length > 0 && (
+              <div>
+                <div className="border rounded-lg overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-purple-50 hover:bg-purple-50">
+                        <TableHead className="font-semibold text-purple-900">Requirement Name</TableHead>
+                        <TableHead className="font-semibold text-purple-900 text-center">Quantity</TableHead>
+                        <TableHead className="font-semibold text-purple-900 text-center">Status</TableHead>
+                        <TableHead className="font-semibold text-purple-900 text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {physicalItems
+                        .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+                        .map((requirement) => (
+                        <TableRow key={requirement._id} className="hover:bg-purple-50/30">
+                          <TableCell className="font-medium">{requirement.text}</TableCell>
+                          <TableCell className="text-center">
+                            <Badge variant="secondary" className="bg-purple-100 text-purple-700">
+                              {requirement.totalQuantity}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Badge variant={requirement.isActive ? "default" : "secondary"} className={requirement.isActive ? "bg-green-500" : "bg-gray-400"}>
+                              {requirement.isActive ? 'Active' : 'Inactive'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-1">
                               <Button
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => handleEditRequirement(requirement)}
-                                className="h-8 px-2 text-xs gap-1 justify-start"
+                                className="h-8 px-2"
                               >
-                                <Edit3 className="w-3 h-3" />
-                                Edit
+                                <Edit3 className="w-4 h-4" />
                               </Button>
                               <Button
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => toggleRequirementStatus(requirement._id)}
-                                className={`h-8 px-2 text-xs gap-1 justify-start ${requirement.isActive ? 'text-red-600 hover:text-red-700' : 'text-green-600 hover:text-green-700'}`}
+                                className={`h-8 px-2 ${requirement.isActive ? 'text-red-600 hover:text-red-700' : 'text-green-600 hover:text-green-700'}`}
                               >
-                                {requirement.isActive ? <XCircle className="w-3 h-3" /> : <CheckCircle className="w-3 h-3" />}
-                                {requirement.isActive ? 'Deactivate' : 'Activate'}
+                                {requirement.isActive ? <XCircle className="w-4 h-4" /> : <CheckCircle className="w-4 h-4" />}
                               </Button>
                               <AlertDialog>
                                 <AlertDialogTrigger asChild>
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    className="text-red-600 hover:text-red-700 h-8 px-2 text-xs gap-1 justify-start"
+                                    className="text-red-600 hover:text-red-700 h-8 px-2"
                                   >
-                                    <Trash2 className="w-3 h-3" />
-                                    Delete
+                                    <Trash2 className="w-4 h-4" />
                                   </Button>
                                 </AlertDialogTrigger>
                                 <AlertDialogContent>
@@ -914,81 +965,116 @@ const MyRequirementsPage: React.FC = () => {
                                 </AlertDialogContent>
                               </AlertDialog>
                             </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    </motion.div>
-                  ))}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
                 </div>
+
+                {/* Pagination for Physical Requirements */}
+                {physicalItems.length > itemsPerPage && (
+                  <div className="flex items-center justify-between mt-4">
+                    <p className="text-sm text-muted-foreground">
+                      Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, physicalItems.length)} of {physicalItems.length} requirements
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                        disabled={currentPage === 1}
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                        Previous
+                      </Button>
+                      <div className="flex items-center gap-1">
+                        {Array.from({ length: Math.ceil(physicalItems.length / itemsPerPage) }, (_, i) => i + 1).map(page => (
+                          <Button
+                            key={page}
+                            variant={currentPage === page ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => setCurrentPage(page)}
+                            className={currentPage === page ? "bg-purple-600 hover:bg-purple-700" : ""}
+                          >
+                            {page}
+                          </Button>
+                        ))}
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage(prev => Math.min(Math.ceil(physicalItems.length / itemsPerPage), prev + 1))}
+                        disabled={currentPage === Math.ceil(physicalItems.length / itemsPerPage)}
+                      >
+                        Next
+                        <ChevronRight className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
-            {/* Services */}
-            {services.length > 0 && (
+            {/* Services Requirements Table */}
+            {requirementTab === 'services' && services.length > 0 && (
               <div>
-                <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                  <Settings className="w-5 h-5 text-orange-600" />
-                  Services Requirements ({services.length})
-                </h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {services.map((requirement, index) => (
-                    <motion.div
-                      key={requirement._id}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: index * 0.05 }}
-                    >
-                      <Card className="hover:shadow-md transition-shadow">
-                        <CardContent className="p-4">
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1 min-w-0 pr-3">
-                              <h3 className="font-medium text-foreground truncate">{requirement.text}</h3>
-                              <div className="flex items-center gap-2 mt-1 text-sm flex-wrap">
-                                <Badge variant="outline" className="text-xs" onClick={() => console.log('🔍 Requirement data:', requirement)}>
-                                  {(requirement.serviceType === 'yesno' || requirement.type === 'yesno') ? 'Yes/No' : 'Notes'}
-                                </Badge>
-                                <span className={`px-2 py-1 rounded text-xs ${
-                                  requirement.isAvailable 
-                                    ? 'bg-green-100 text-green-800' 
-                                    : 'bg-red-100 text-red-800'
-                                }`}>
-                                  {requirement.isAvailable ? 'Available' : 'Unavailable'}
-                                </span>
-                              </div>
-                              {requirement.responsiblePerson && (
-                                <div className="text-xs text-muted-foreground mt-1 truncate">
-                                  By: {requirement.responsiblePerson}
-                                </div>
-                              )}
-                            </div>
-                            <div className="flex flex-col gap-1">
+                <div className="border rounded-lg overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-orange-50 hover:bg-orange-50">
+                        <TableHead className="font-semibold text-orange-900">Service Name</TableHead>
+                        <TableHead className="font-semibold text-orange-900 text-center">Type</TableHead>
+                        <TableHead className="font-semibold text-orange-900 text-center">Responsible Person</TableHead>
+                        <TableHead className="font-semibold text-orange-900 text-center">Status</TableHead>
+                        <TableHead className="font-semibold text-orange-900 text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {services
+                        .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+                        .map((requirement) => (
+                        <TableRow key={requirement._id} className="hover:bg-orange-50/30">
+                          <TableCell className="font-medium">{requirement.text}</TableCell>
+                          <TableCell className="text-center">
+                            <Badge variant="outline" className="text-xs">
+                              {(requirement.serviceType === 'yesno' || requirement.type === 'yesno') ? 'Yes/No' : 'Notes'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-center text-sm text-muted-foreground">
+                            {requirement.responsiblePerson || '-'}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Badge variant={requirement.isActive ? "default" : "secondary"} className={requirement.isActive ? "bg-green-500" : "bg-gray-400"}>
+                              {requirement.isActive ? 'Active' : 'Inactive'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-1">
                               <Button
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => handleEditRequirement(requirement)}
-                                className="h-8 px-2 text-xs gap-1 justify-start"
+                                className="h-8 px-2"
                               >
-                                <Edit3 className="w-3 h-3" />
-                                Edit
+                                <Edit3 className="w-4 h-4" />
                               </Button>
                               <Button
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => toggleRequirementStatus(requirement._id)}
-                                className={`h-8 px-2 text-xs gap-1 justify-start ${requirement.isActive ? 'text-red-600 hover:text-red-700' : 'text-green-600 hover:text-green-700'}`}
+                                className={`h-8 px-2 ${requirement.isActive ? 'text-red-600 hover:text-red-700' : 'text-green-600 hover:text-green-700'}`}
                               >
-                                {requirement.isActive ? <XCircle className="w-3 h-3" /> : <CheckCircle className="w-3 h-3" />}
-                                {requirement.isActive ? 'Deactivate' : 'Activate'}
+                                {requirement.isActive ? <XCircle className="w-4 h-4" /> : <CheckCircle className="w-4 h-4" />}
                               </Button>
                               <AlertDialog>
                                 <AlertDialogTrigger asChild>
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    className="text-red-600 hover:text-red-700 h-8 px-2 text-xs gap-1 justify-start"
+                                    className="text-red-600 hover:text-red-700 h-8 px-2"
                                   >
-                                    <Trash2 className="w-3 h-3" />
-                                    Delete
+                                    <Trash2 className="w-4 h-4" />
                                   </Button>
                                 </AlertDialogTrigger>
                                 <AlertDialogContent>
@@ -1010,14 +1096,59 @@ const MyRequirementsPage: React.FC = () => {
                                 </AlertDialogContent>
                               </AlertDialog>
                             </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    </motion.div>
-                  ))}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
                 </div>
+
+                {/* Pagination for Services Requirements */}
+                {services.length > itemsPerPage && (
+                  <div className="flex items-center justify-between mt-4">
+                    <p className="text-sm text-muted-foreground">
+                      Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, services.length)} of {services.length} requirements
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                        disabled={currentPage === 1}
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                        Previous
+                      </Button>
+                      <div className="flex items-center gap-1">
+                        {Array.from({ length: Math.ceil(services.length / itemsPerPage) }, (_, i) => i + 1).map(page => (
+                          <Button
+                            key={page}
+                            variant={currentPage === page ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => setCurrentPage(page)}
+                            className={currentPage === page ? "bg-orange-600 hover:bg-orange-700" : ""}
+                          >
+                            {page}
+                          </Button>
+                        ))}
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage(prev => Math.min(Math.ceil(services.length / itemsPerPage), prev + 1))}
+                        disabled={currentPage === Math.ceil(services.length / itemsPerPage)}
+                      >
+                        Next
+                        <ChevronRight className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
+
+              {/* Close the main requirements div */}
+              </div>
 
             {/* Empty State */}
             {activeRequirements.length === 0 && (

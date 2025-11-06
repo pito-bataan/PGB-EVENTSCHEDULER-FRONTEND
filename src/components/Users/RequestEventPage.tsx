@@ -67,6 +67,7 @@ interface DepartmentRequirement {
   notes: string;
   quantity?: number;  // For physical requirements
   type?: 'physical' | 'service' | 'yesno';
+  serviceType?: 'notes' | 'yesno'; // Service type: notes or yesno
   totalQuantity?: number;
   isAvailable?: boolean;
   responsiblePerson?: string;
@@ -119,6 +120,7 @@ interface Department {
     _id: string;
     text: string;
     type: 'physical' | 'service';
+    serviceType?: 'notes' | 'yesno'; // Service type for services
     totalQuantity?: number;
     isActive: boolean;
     isAvailable?: boolean;
@@ -706,6 +708,7 @@ const RequestEventPage: React.FC = () => {
               selected: false,
               notes: '',
               type: req.type,
+              serviceType: req.serviceType, // Include serviceType for YESNO services
               totalQuantity: availability.quantity, // Use actual availability quantity
               isAvailable: availability.isAvailable,
               responsiblePerson: req.responsiblePerson,
@@ -2914,14 +2917,14 @@ const RequestEventPage: React.FC = () => {
                             <div className="flex items-center gap-1">
                               {requirement.type === 'physical' ? (
                                 <><Package className="w-3 h-3" /> Physical</>
-                              ) : requirement.type === 'yesno' ? (
+                              ) : requirement.serviceType === 'yesno' ? (
                                 <><Settings className="w-3 h-3" /> Yes/No</>
                               ) : (
                                 <><Settings className="w-3 h-3" /> Service</>
                               )}
                             </div>
                           </Badge>
-                          {requirement.type === 'yesno' && requirement.yesNoAnswer && (
+                          {requirement.serviceType === 'yesno' && requirement.yesNoAnswer && (
                             <Badge 
                               variant="secondary" 
                               className={`text-xs ${requirement.yesNoAnswer === 'yes' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}
@@ -2952,21 +2955,24 @@ const RequestEventPage: React.FC = () => {
                           </div>
                         )}
                         
-                        <div className="grid grid-cols-2 gap-3 text-xs text-gray-600">
-                          <div className="flex items-center gap-1">
-                            <span className="font-medium">Available Quantity:</span>
-                            {conflictingEvents.length > 0 && formData.startDate && formData.startTime && 
-                             hasRequirementConflict(requirement, selectedDepartment) ? (
-                              <span className="text-blue-600 font-medium">
-                                {getAvailableQuantity(requirement, selectedDepartment)}
-                                <span className="text-gray-500 ml-1">(of {requirement.totalQuantity || 0})</span>
-                              </span>
-                            ) : (
-                              <span className={requirement.totalQuantity ? 'text-gray-900' : 'text-gray-400'}>
-                                {requirement.totalQuantity || 'N/A'}
-                              </span>
-                            )}
-                          </div>
+                        <div className={`grid ${requirement.serviceType === 'yesno' ? 'grid-cols-1' : 'grid-cols-2'} gap-3 text-xs text-gray-600`}>
+                          {/* Only show Available Quantity for non-YESNO requirements */}
+                          {requirement.serviceType !== 'yesno' && (
+                            <div className="flex items-center gap-1">
+                              <span className="font-medium">Available Quantity:</span>
+                              {conflictingEvents.length > 0 && formData.startDate && formData.startTime && 
+                               hasRequirementConflict(requirement, selectedDepartment) ? (
+                                <span className="text-blue-600 font-medium">
+                                  {getAvailableQuantity(requirement, selectedDepartment)}
+                                  <span className="text-gray-500 ml-1">(of {requirement.totalQuantity || 0})</span>
+                                </span>
+                              ) : (
+                                <span className={requirement.totalQuantity ? 'text-gray-900' : 'text-gray-400'}>
+                                  {requirement.totalQuantity || 'N/A'}
+                                </span>
+                              )}
+                            </div>
+                          )}
                           <div className="flex items-center gap-1">
                             <span className="font-medium">Status:</span>
                             {requirement.isCustom ? (
@@ -3068,7 +3074,7 @@ const RequestEventPage: React.FC = () => {
                                   </p>
                                 )}
                               </div>
-                            ) : requirement.type === 'yesno' ? (
+                            ) : requirement.serviceType === 'yesno' ? (
                               <div className="space-y-2">
                                 <Label className="text-xs font-medium text-gray-900">Select Answer</Label>
                                 <div className="flex gap-2">
@@ -5070,7 +5076,7 @@ const RequestEventPage: React.FC = () => {
                                     <div className="flex-shrink-0">
                                       {req.type === 'physical' ? (
                                         <Package className="w-4 h-4 text-gray-400" />
-                                      ) : req.type === 'yesno' ? (
+                                      ) : req.serviceType === 'yesno' ? (
                                         <CheckSquare className="w-4 h-4 text-gray-400" />
                                       ) : (
                                         <Settings className="w-4 h-4 text-gray-400" />
@@ -5084,7 +5090,7 @@ const RequestEventPage: React.FC = () => {
                                         Qty: {req.quantity}
                                       </Badge>
                                     )}
-                                    {req.type === 'yesno' && req.yesNoAnswer && (
+                                    {req.serviceType === 'yesno' && req.yesNoAnswer && (
                                       <Badge 
                                         variant="secondary" 
                                         className={`text-xs flex items-center gap-1 ${

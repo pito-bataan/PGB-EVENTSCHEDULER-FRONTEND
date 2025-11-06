@@ -69,6 +69,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from '@/components/ui/pagination';
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
 import {
   Calendar,
   Clock,
@@ -281,10 +282,11 @@ const AllEventsPage: React.FC = () => {
     cancelled: filteredEvents.filter(e => e.status === 'cancelled').length,
   };
   
-  // Filter events by active tab
-  const tabFilteredEvents = activeTab === 'all' 
+  // Filter events by active tab and sort by oldest date first
+  const tabFilteredEvents = (activeTab === 'all' 
     ? filteredEvents 
-    : filteredEvents.filter(e => e.status === activeTab);
+    : filteredEvents.filter(e => e.status === activeTab))
+    .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
   
   // Pagination calculations
   const totalPages = Math.ceil(tabFilteredEvents.length / itemsPerPage);
@@ -1026,9 +1028,41 @@ const AllEventsPage: React.FC = () => {
                           </TableCell>
                           <TableCell>
                             <div className="text-sm">
-                              <div className="flex items-center gap-1 text-gray-600">
+                              <div className="flex items-center gap-1.5 text-gray-600">
                                 <Calendar className="w-3 h-3" />
                                 <span>{format(new Date(event.startDate), 'MMM dd, yyyy')}</span>
+                                {/* Multi-Day Badge with Hover */}
+                                {event.dateTimeSlots && event.dateTimeSlots.length > 0 && (
+                                  <HoverCard openDelay={200}>
+                                    <HoverCardTrigger asChild>
+                                      <Badge 
+                                        variant="secondary" 
+                                        className="text-[9px] bg-blue-100 text-blue-700 border-blue-200 cursor-pointer hover:bg-blue-200 whitespace-nowrap px-1.5 py-0"
+                                      >
+                                        Multi-Day
+                                      </Badge>
+                                    </HoverCardTrigger>
+                                    <HoverCardContent className="w-72" side="right" align="start" sideOffset={5}>
+                                      <div className="space-y-2">
+                                        <h4 className="text-[12px] font-semibold text-slate-900">
+                                          Multi-Day Event Schedule
+                                        </h4>
+                                        <div className="space-y-1.5">
+                                          {/* Day 1 */}
+                                          <div className="text-[11px] text-slate-700">
+                                            <span className="font-medium">Day 1:</span> {format(new Date(event.startDate), 'MMM d, yyyy')} • {formatTime(event.startTime)} - {formatTime(event.endTime)}
+                                          </div>
+                                          {/* Additional Days */}
+                                          {event.dateTimeSlots.map((slot: any, idx: number) => (
+                                            <div key={idx} className="text-[11px] text-slate-700">
+                                              <span className="font-medium">Day {idx + 2}:</span> {format(new Date(slot.startDate), 'MMM d, yyyy')} • {formatTime(slot.startTime)} - {formatTime(slot.endTime)}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    </HoverCardContent>
+                                  </HoverCard>
+                                )}
                               </div>
                               <div className="flex items-center gap-1 text-gray-500 mt-1">
                                 <Clock className="w-3 h-3" />
@@ -1131,9 +1165,9 @@ const AllEventsPage: React.FC = () => {
 
                                     {/* Date & Time & Status */}
                                     {selectedEvent.dateTimeSlots && selectedEvent.dateTimeSlots.length > 0 ? (
-                                      <div className="space-y-4">
+                                      <div className="space-y-3">
                                         <div className="flex items-center justify-between">
-                                          <label className="text-sm font-semibold text-gray-900 uppercase tracking-wide">
+                                          <label className="text-sm font-medium text-gray-700">
                                             Multi-Day Event Schedule
                                           </label>
                                           <Badge className={getStatusInfo(selectedEvent.status).className}>
@@ -1143,26 +1177,24 @@ const AllEventsPage: React.FC = () => {
                                         </div>
                                         
                                         {/* Day 1 */}
-                                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                                          <p className="text-xs font-medium text-blue-900 mb-1.5">Day 1</p>
-                                          <div className="flex items-center gap-2 text-sm text-blue-800">
-                                            <Calendar className="w-3.5 h-3.5" />
-                                            <span className="font-medium">{format(new Date(selectedEvent.startDate), 'MMM d, yyyy')}</span>
-                                            <Clock className="w-3.5 h-3.5 ml-2" />
-                                            <span>{formatTime(selectedEvent.startTime)} - {formatTime(selectedEvent.endTime)}</span>
-                                          </div>
+                                        <div className="flex items-center gap-3 text-sm">
+                                          <span className="font-medium text-gray-700 min-w-[40px]">Day 1:</span>
+                                          <Calendar className="w-3.5 h-3.5 text-gray-400" />
+                                          <span className="text-gray-900">{format(new Date(selectedEvent.startDate), 'MMM d, yyyy')}</span>
+                                          <span className="text-gray-400">•</span>
+                                          <Clock className="w-3.5 h-3.5 text-gray-400" />
+                                          <span className="text-gray-900">{formatTime(selectedEvent.startTime)} - {formatTime(selectedEvent.endTime)}</span>
                                         </div>
                                         
                                         {/* Additional Days */}
                                         {selectedEvent.dateTimeSlots.map((slot: any, idx: number) => (
-                                          <div key={idx} className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                                            <p className="text-xs font-medium text-blue-900 mb-1.5">Day {idx + 2}</p>
-                                            <div className="flex items-center gap-2 text-sm text-blue-800">
-                                              <Calendar className="w-3.5 h-3.5" />
-                                              <span className="font-medium">{format(new Date(slot.startDate), 'MMM d, yyyy')}</span>
-                                              <Clock className="w-3.5 h-3.5 ml-2" />
-                                              <span>{formatTime(slot.startTime)} - {formatTime(slot.endTime)}</span>
-                                            </div>
+                                          <div key={idx} className="flex items-center gap-3 text-sm">
+                                            <span className="font-medium text-gray-700 min-w-[40px]">Day {idx + 2}:</span>
+                                            <Calendar className="w-3.5 h-3.5 text-gray-400" />
+                                            <span className="text-gray-900">{format(new Date(slot.startDate), 'MMM d, yyyy')}</span>
+                                            <span className="text-gray-400">•</span>
+                                            <Clock className="w-3.5 h-3.5 text-gray-400" />
+                                            <span className="text-gray-900">{formatTime(slot.startTime)} - {formatTime(slot.endTime)}</span>
                                           </div>
                                         ))}
                                       </div>
@@ -1469,78 +1501,81 @@ const AllEventsPage: React.FC = () => {
           )}
 
           {/* Summary and Pagination */}
-          <div className="flex items-center justify-between text-sm text-gray-600 pt-4 border-t">
-            <div className="flex items-center gap-6">
-              <div>
+          <div className="pt-4 border-t space-y-4">
+            {/* Summary Stats - Full Width */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-6 text-sm text-gray-600">
+              <div className="font-medium">
                 Showing {startIndex + 1}-{Math.min(endIndex, filteredEvents.length)} of {filteredEvents.length} events
               </div>
-              <div className="flex items-center gap-4">
+              <div className="flex flex-wrap items-center gap-3 sm:gap-4">
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                  <span>Submitted: {(events || []).filter(e => e.status === 'submitted').length}</span>
+                  <span className="text-xs sm:text-sm">Submitted: {(events || []).filter(e => e.status === 'submitted').length}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                  <span>Approved: {(events || []).filter(e => e.status === 'approved').length}</span>
+                  <span className="text-xs sm:text-sm">Approved: {(events || []).filter(e => e.status === 'approved').length}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                  <span>Rejected: {(events || []).filter(e => e.status === 'rejected').length}</span>
+                  <span className="text-xs sm:text-sm">Rejected: {(events || []).filter(e => e.status === 'rejected').length}</span>
                 </div>
               </div>
             </div>
             
-            {/* Pagination */}
+            {/* Pagination - Right Aligned */}
             {totalPages > 1 && (
-              <Pagination>
-                <PaginationContent>
-                  <PaginationItem>
-                    <PaginationPrevious 
-                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                      className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-                    />
-                  </PaginationItem>
-                  
-                  {[...Array(totalPages)].map((_, index) => {
-                    const pageNumber = index + 1;
-                    // Show first page, last page, current page, and pages around current
-                    if (
-                      pageNumber === 1 ||
-                      pageNumber === totalPages ||
-                      (pageNumber >= currentPage - 1 && pageNumber <= currentPage + 1)
-                    ) {
-                      return (
-                        <PaginationItem key={pageNumber}>
-                          <PaginationLink
-                            onClick={() => setCurrentPage(pageNumber)}
-                            isActive={currentPage === pageNumber}
-                            className="cursor-pointer"
-                          >
-                            {pageNumber}
-                          </PaginationLink>
-                        </PaginationItem>
-                      );
-                    } else if (
-                      pageNumber === currentPage - 2 ||
-                      pageNumber === currentPage + 2
-                    ) {
-                      return (
-                        <PaginationItem key={pageNumber}>
-                          <PaginationEllipsis />
-                        </PaginationItem>
-                      );
-                    }
-                    return null;
-                  })}
-                  
-                  <PaginationItem>
-                    <PaginationNext 
-                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                      className={currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-                    />
-                  </PaginationItem>
-                </PaginationContent>
-              </Pagination>
+              <div className="flex justify-end">
+                <Pagination>
+                  <PaginationContent>
+                    <PaginationItem>
+                      <PaginationPrevious 
+                        onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                        className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                      />
+                    </PaginationItem>
+                    
+                    {[...Array(totalPages)].map((_, index) => {
+                      const pageNumber = index + 1;
+                      // Show first page, last page, current page, and pages around current
+                      if (
+                        pageNumber === 1 ||
+                        pageNumber === totalPages ||
+                        (pageNumber >= currentPage - 1 && pageNumber <= currentPage + 1)
+                      ) {
+                        return (
+                          <PaginationItem key={pageNumber}>
+                            <PaginationLink
+                              onClick={() => setCurrentPage(pageNumber)}
+                              isActive={currentPage === pageNumber}
+                              className="cursor-pointer"
+                            >
+                              {pageNumber}
+                            </PaginationLink>
+                          </PaginationItem>
+                        );
+                      } else if (
+                        pageNumber === currentPage - 2 ||
+                        pageNumber === currentPage + 2
+                      ) {
+                        return (
+                          <PaginationItem key={pageNumber}>
+                            <PaginationEllipsis />
+                          </PaginationItem>
+                        );
+                      }
+                      return null;
+                    })}
+                    
+                    <PaginationItem>
+                      <PaginationNext 
+                        onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                        className={currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                      />
+                    </PaginationItem>
+                  </PaginationContent>
+                </Pagination>
+              </div>
             )}
           </div>
         </CardContent>

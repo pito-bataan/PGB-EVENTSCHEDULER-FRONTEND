@@ -56,10 +56,8 @@ const MyCalendarPage: React.FC = () => {
     
     // Show ALL events regardless of status (pending, submitted, approved, etc.)
     if (hasBookingsForDepartment) {
-      // Only show event on its START DATE, not on every day it spans
+      // Add Day 1 (main start date)
       const currentStartDate = new Date(eventStartDate);
-      
-      // Reset time to avoid timezone issues
       currentStartDate.setHours(0, 0, 0, 0);
       
       const dateString = currentStartDate.getFullYear() + '-' + 
@@ -74,6 +72,28 @@ const MyCalendarPage: React.FC = () => {
       const alreadyExists = eventsByDate[dateString].some(e => e._id === event._id);
       if (!alreadyExists) {
         eventsByDate[dateString].push(event);
+      }
+      
+      // Add additional days from dateTimeSlots for multi-day events
+      if (event.dateTimeSlots && event.dateTimeSlots.length > 0) {
+        event.dateTimeSlots.forEach((slot: any) => {
+          const slotDate = new Date(slot.startDate);
+          slotDate.setHours(0, 0, 0, 0);
+          
+          const slotDateString = slotDate.getFullYear() + '-' + 
+                                String(slotDate.getMonth() + 1).padStart(2, '0') + '-' + 
+                                String(slotDate.getDate()).padStart(2, '0');
+          
+          if (!eventsByDate[slotDateString]) {
+            eventsByDate[slotDateString] = [];
+          }
+          
+          // Only add if not already in the array for this date
+          const slotAlreadyExists = eventsByDate[slotDateString].some(e => e._id === event._id);
+          if (!slotAlreadyExists) {
+            eventsByDate[slotDateString].push(event);
+          }
+        });
       }
     }
   });

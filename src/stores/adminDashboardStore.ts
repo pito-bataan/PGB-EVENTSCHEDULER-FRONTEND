@@ -102,7 +102,7 @@ export const useAdminDashboardStore = create<AdminDashboardState>()(
               .sort((a: UpcomingEvent, b: UpcomingEvent) => 
                 new Date(a.startDate).getTime() - new Date(b.startDate).getTime()
               )
-              .slice(0, 8); // Get only 8 events
+              .slice(0, 5); // Get only 5 events
             
             set({
               upcomingEvents: upcoming,

@@ -446,17 +446,18 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
                                 {/* Show multiple date/time slots if available */}
                                 {event.dateTimeSlots && event.dateTimeSlots.length > 0 ? (
                                   <>
+                                    {/* Day 1 */}
                                     <div className="flex items-start gap-3">
                                       <Clock className="w-5 h-5 text-gray-700 flex-shrink-0 mt-0.5" />
                                       <div className="flex-1 grid grid-cols-2 gap-4">
                                         <div>
-                                          <p className="text-xs font-medium text-muted-foreground mb-1">Start</p>
+                                          <p className="text-xs font-medium text-muted-foreground mb-1">Day 1 - Start</p>
                                           <p className="text-sm font-semibold">
                                             {format(new Date(event.startDate), 'MMM d, yyyy')} at {formatTime(event.startTime)}
                                           </p>
                                         </div>
                                         <div>
-                                          <p className="text-xs font-medium text-muted-foreground mb-1">End</p>
+                                          <p className="text-xs font-medium text-muted-foreground mb-1">Day 1 - End</p>
                                           <p className="text-sm font-semibold">
                                             {format(new Date(event.endDate), 'MMM d, yyyy')} at {formatTime(event.endTime)}
                                           </p>
@@ -464,19 +465,19 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
                                       </div>
                                     </div>
 
-                                    {/* Additional date/time slots */}
+                                    {/* Additional days from dateTimeSlots */}
                                     {event.dateTimeSlots.map((slot, idx) => (
                                       <div key={idx} className="flex items-start gap-3">
                                         <Clock className="w-5 h-5 text-gray-700 flex-shrink-0 mt-0.5" />
                                         <div className="flex-1 grid grid-cols-2 gap-4">
                                           <div>
-                                            <p className="text-xs font-medium text-muted-foreground mb-1">Start</p>
+                                            <p className="text-xs font-medium text-muted-foreground mb-1">Day {idx + 2} - Start</p>
                                             <p className="text-sm font-semibold">
                                               {format(new Date(slot.startDate), 'MMM d, yyyy')} at {formatTime(slot.startTime)}
                                             </p>
                                           </div>
                                           <div>
-                                            <p className="text-xs font-medium text-muted-foreground mb-1">End</p>
+                                            <p className="text-xs font-medium text-muted-foreground mb-1">Day {idx + 2} - End</p>
                                             <p className="text-sm font-semibold">
                                               {format(new Date(slot.endDate), 'MMM d, yyyy')} at {formatTime(slot.endTime)}
                                             </p>
