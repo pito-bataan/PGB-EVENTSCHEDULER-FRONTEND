@@ -17,7 +17,7 @@ export interface Event {
   withoutGov?: boolean;
   multipleLocations?: boolean;
   description?: string;
-  eventType?: 'simple' | 'complex';
+  eventType?: 'simple' | 'complex' | 'simple-meeting';
   startDate: string;
   startTime: string;
   endDate: string;
@@ -81,6 +81,7 @@ interface AllEventsState {
   statusFilter: string;
   departmentFilter: string;
   dateFilter: string;
+  eventTypeFilter: string;
   
   // Loading & Cache
   loading: boolean;
@@ -95,6 +96,7 @@ interface AllEventsState {
   setStatusFilter: (status: string) => void;
   setDepartmentFilter: (department: string) => void;
   setDateFilter: (date: string) => void;
+  setEventTypeFilter: (eventType: string) => void;
   clearFilters: () => void;
   clearCache: () => void;
   
@@ -115,6 +117,7 @@ export const useAllEventsStore = create<AllEventsState>()(
       statusFilter: 'all',
       departmentFilter: 'all',
       dateFilter: 'all',
+      eventTypeFilter: 'all',
       loading: false,
       lastFetched: null,
       CACHE_DURATION: 5 * 60 * 1000, // 5 minutes cache
@@ -195,13 +198,18 @@ export const useAllEventsStore = create<AllEventsState>()(
         set({ dateFilter: date });
       },
       
+      setEventTypeFilter: (eventType: string) => {
+        set({ eventTypeFilter: eventType });
+      },
+      
       clearFilters: () => {
         set({
           searchQuery: '',
           locationFilter: 'all',
           statusFilter: 'all',
           departmentFilter: 'all',
-          dateFilter: 'all'
+          dateFilter: 'all',
+          eventTypeFilter: 'all'
         });
       },
       
@@ -245,6 +253,11 @@ export const useAllEventsStore = create<AllEventsState>()(
             (event.taggedDepartments && event.taggedDepartments.includes(state.departmentFilter)) ||
             (event.requestorDepartment && event.requestorDepartment === state.departmentFilter)
           );
+        }
+        
+        // Event Type filter
+        if (state.eventTypeFilter !== 'all') {
+          filtered = filtered.filter(event => event.eventType === state.eventTypeFilter);
         }
         
         // Date filter

@@ -108,7 +108,7 @@ interface FormData {
   endTime: string;
   contactNumber: string;
   contactEmail: string;
-  eventType: 'simple' | 'complex';
+  eventType: 'simple' | 'complex' | 'simple-meeting';
   dateTimeSlots: DateTimeSlot[]; // Additional date slots for multi-day events
 }
 
@@ -175,6 +175,10 @@ const RequestEventPage: React.FC = () => {
   });
   const [conflictingEvents, setConflictingEvents] = useState<any[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [noDepartmentsNeeded, setNoDepartmentsNeeded] = useState(false);
+  const [showLocationRequirementsModal, setShowLocationRequirementsModal] = useState(false);
+  const [locationRequirements, setLocationRequirements] = useState<Array<{ name: string; quantity: number }>>([]);
+  const [showEventTypeAlert, setShowEventTypeAlert] = useState(false);
   
   // Dynamic data from database
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -201,7 +205,7 @@ const RequestEventPage: React.FC = () => {
     endTime: '',
     contactNumber: '',
     contactEmail: '',
-    eventType: 'simple',
+    eventType: '' as any,
     dateTimeSlots: [] // Initialize empty array for additional date slots
   });
 
@@ -214,8 +218,12 @@ const RequestEventPage: React.FC = () => {
     { id: 6, title: 'Ready to Submit', icon: Send, description: 'Review and submit' }
   ];
 
-  // Check if attachments step is completed - NOW REQUIRED!
-  const isAttachmentsCompleted = formData.attachments.length > 0;
+  // Check if attachments step is completed
+  // For Simple Meeting: attachments only required if withGov is true
+  // For other event types: attachments always required
+  const isAttachmentsCompleted = formData.eventType === 'simple-meeting' 
+    ? (formData.withoutGov ? formData.attachments.length > 0 : true) // If withGov ON, require attachments; if OFF, no requirement
+    : formData.attachments.length > 0; // Other event types always require attachments
 
   const [locations, setLocations] = useState<string[]>(['Add Custom Location']);
   const [availableDates, setAvailableDates] = useState<Date[]>([]);
@@ -312,10 +320,23 @@ const RequestEventPage: React.FC = () => {
 
   // Check if a date should be disabled (not available for the selected location)
   const isDateDisabled = (date: Date) => {
-    // First, check if date meets minimum lead time requirement (including weekends)
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     
+    // Simple Meeting: NO lead time restriction, but still checks location availability
+    if (formData.eventType === 'simple-meeting') {
+      // Skip lead time check, but still check if PGSO added this location on this date
+      if (availableDates.length === 0) {
+        return false; // If no available dates loaded yet, don't disable any dates
+      }
+      
+      // Check if the date is in the available dates list (PGSO must have added it)
+      return !availableDates.some(availableDate => 
+        availableDate.toDateString() === date.toDateString()
+      );
+    }
+    
+    // For Simple and Complex: check lead time requirement first
     const daysRequired = formData.eventType === 'simple' ? 7 : 30;
     const days = calculateWorkingDays(today, date);
     
@@ -439,11 +460,65 @@ const RequestEventPage: React.FC = () => {
     return () => clearTimeout(timeoutId);
   }, [formData.startDate, formData.endDate, formData.location, showScheduleModal]);
 
+  // Check if event type is selected before allowing interactions
+  const checkEventTypeSelected = () => {
+    if (!formData.eventType) {
+      setShowEventTypeAlert(true);
+      return false;
+    }
+    return true;
+  };
+
   const handleInputChange = (field: keyof FormData, value: string | boolean | File[] | string[] | DepartmentRequirements | Date | undefined | DateTimeSlot[]) => {
+    // Block changes if event type not selected (except for eventType field itself)
+    if (field !== 'eventType' && !checkEventTypeSelected()) {
+      return;
+    }
+    
     setFormData(prev => ({
       ...prev,
       [field]: value
     }));
+  };
+
+  // Fetch location requirements (prioritize exact single location match)
+  const fetchLocationRequirements = async (locationName: string) => {
+    try {
+      const token = localStorage.getItem('authToken');
+      if (!token) return null;
+
+      // Check if this location has default requirements
+      const response = await fetch(`${API_BASE_URL}/location-requirements`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (response.ok) {
+        const allRequirements = await response.json();
+        
+        // First, try to find EXACT match (single location only)
+        const exactMatch = allRequirements.find((req: any) => {
+          // For new format: locationNames array with only 1 item that matches
+          if (req.locationNames && Array.isArray(req.locationNames)) {
+            return req.locationNames.length === 1 && req.locationNames[0] === locationName;
+          }
+          // For old format: locationName field
+          return req.locationName === locationName;
+        });
+        
+        if (exactMatch) {
+          return exactMatch.requirements || null;
+        }
+        
+        // If no exact match, don't return grouped requirements for single selection
+        return null;
+      }
+      return null;
+    } catch (error) {
+      console.error('Error fetching location requirements:', error);
+      return null;
+    }
   };
 
   const handleLocationChange = async (value: string) => {
@@ -461,9 +536,18 @@ const RequestEventPage: React.FC = () => {
       // Fetch available dates for the selected location
       await fetchAvailableDatesForLocation(value);
       
-      // Open schedule modal when a location is selected
-      setSelectedLocation(value);
-      setShowScheduleModal(true);
+      // Check if this single location has requirements
+      const requirements = await fetchLocationRequirements(value);
+      if (requirements && requirements.length > 0) {
+        // Show requirements modal for single location
+        setLocationRequirements(requirements);
+        setSelectedLocation(value);
+        setShowLocationRequirementsModal(true);
+      } else {
+        // No requirements, open schedule modal directly
+        setSelectedLocation(value);
+        setShowScheduleModal(true);
+      }
     }
   };
 
@@ -477,7 +561,39 @@ const RequestEventPage: React.FC = () => {
       const updatedLocations = [...formData.locations, roomName];
       handleInputChange('locations', updatedLocations);
       handleInputChange('multipleLocations', true);
-      toast.success(`${roomName} added to your booking`);
+      
+      // Check if these multiple locations are grouped together with shared requirements
+      try {
+        const token = localStorage.getItem('authToken');
+        if (token) {
+          const response = await fetch(`${API_BASE_URL}/location-requirements`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          
+          if (response.ok) {
+            const allRequirements = await response.json();
+            // Find a requirement group that contains ALL the selected locations
+            const groupedRequirement = allRequirements.find((req: any) => {
+              if (!req.locationNames || !Array.isArray(req.locationNames)) return false;
+              // Check if all updatedLocations are in this group
+              return updatedLocations.every(loc => req.locationNames.includes(loc));
+            });
+            
+            if (groupedRequirement && groupedRequirement.requirements.length > 0) {
+              // Show grouped requirements modal
+              setLocationRequirements(groupedRequirement.requirements);
+              setSelectedLocation(updatedLocations.join(' + '));
+              setShowLocationRequirementsModal(true);
+              toast.success(`${roomName} added - viewing shared requirements`);
+            } else {
+              toast.success(`${roomName} added to your booking`);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error checking grouped requirements:', error);
+        toast.success(`${roomName} added to your booking`);
+      }
       
       // Note: All conference rooms share the same availability since they're in the same building
       console.log(`Added ${roomName} - using same availability as other conference rooms`);
@@ -1192,7 +1308,8 @@ const RequestEventPage: React.FC = () => {
 
   // Check if form is ready to submit (all validation passes)
   const isFormReadyToSubmit = () => {
-    return (
+    // Basic required fields for all event types
+    const basicFieldsValid = (
       formData.eventTitle &&
       formData.requestor &&
       formData.location &&
@@ -1204,10 +1321,28 @@ const RequestEventPage: React.FC = () => {
       formData.contactNumber &&
       formData.contactEmail &&
       formData.contactNumber.length === 11 &&
-      formData.contactEmail.includes('@') &&
+      formData.contactEmail.includes('@')
+    );
+    
+    // For Simple Meeting: allow submission without departments if noDepartmentsNeeded is checked
+    if (formData.eventType === 'simple-meeting') {
+      if (noDepartmentsNeeded) {
+        return basicFieldsValid; // No department requirements needed
+      } else {
+        // If departments are tagged, they must have requirements
+        return basicFieldsValid && 
+               formData.taggedDepartments.length > 0 && 
+               hasRequirementsForDepartments() && 
+               !hasQuantityOverRequests();
+      }
+    }
+    
+    // For Simple and Complex: departments are required
+    return (
+      basicFieldsValid &&
       formData.taggedDepartments.length > 0 &&
       hasRequirementsForDepartments() &&
-      !hasQuantityOverRequests()  // Prevent submission if quantities exceed available
+      !hasQuantityOverRequests()
     );
   };
 
@@ -1225,8 +1360,8 @@ const RequestEventPage: React.FC = () => {
       completedCount++;
     }
     
-    // Step 3: Tag Departments
-    if (formData.taggedDepartments.length > 0) {
+    // Step 3: Tag Departments (can be skipped for Simple Meeting if noDepartmentsNeeded is checked)
+    if (formData.taggedDepartments.length > 0 || (formData.eventType === 'simple-meeting' && noDepartmentsNeeded)) {
       completedCount++;
     }
     
@@ -1935,8 +2070,19 @@ const RequestEventPage: React.FC = () => {
                     <div className="flex border rounded-lg overflow-hidden">
                       <button
                         type="button"
-                        onClick={() => setFormData(prev => ({ ...prev, eventType: 'simple' }))}
+                        onClick={() => setFormData(prev => ({ ...prev, eventType: 'simple-meeting' }))}
                         className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                          formData.eventType === 'simple-meeting'
+                            ? 'bg-green-600 text-white'
+                            : 'bg-white text-gray-700 hover:bg-gray-50'
+                        }`}
+                      >
+                        Simple Meeting
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFormData(prev => ({ ...prev, eventType: 'simple' }))}
+                        className={`px-3 py-1.5 text-xs font-medium transition-colors border-l ${
                           formData.eventType === 'simple'
                             ? 'bg-blue-600 text-white'
                             : 'bg-white text-gray-700 hover:bg-gray-50'
@@ -2147,12 +2293,21 @@ const RequestEventPage: React.FC = () => {
               <CardHeader className="pb-4">
                 <CardTitle className="text-lg flex items-center gap-2">
                   <Paperclip className="w-5 h-5 text-blue-600" />
-                  Attachments <span className="text-red-500">*</span>
+                  Attachments {formData.eventType === 'simple-meeting' && formData.withoutGov && <span className="text-red-500">*</span>}
+                  {formData.eventType !== 'simple-meeting' && <span className="text-red-500">*</span>}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="mb-2">
-                  <p className="text-sm text-gray-600">📎 <strong>Attachments are required</strong> - Please upload at least one file</p>
+                  {formData.eventType === 'simple-meeting' ? (
+                    formData.withoutGov ? (
+                      <p className="text-sm text-gray-600">📎 <strong>Attachments are required</strong> - w/ Governor is enabled</p>
+                    ) : (
+                      <p className="text-sm text-gray-500">📎 Attachments are optional for Simple Meeting without Governor</p>
+                    )
+                  ) : (
+                    <p className="text-sm text-gray-600">📎 <strong>Attachments are required</strong> - Please upload at least one file</p>
+                  )}
                 </div>
 
                 {
@@ -2249,6 +2404,35 @@ const RequestEventPage: React.FC = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
+                {/* Simple Meeting - No Departments Option */}
+                {formData.eventType === 'simple-meeting' && (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                    <div className="flex items-start gap-3">
+                      <Checkbox
+                        id="noDepartmentsNeeded"
+                        checked={noDepartmentsNeeded}
+                        onCheckedChange={(checked) => {
+                          setNoDepartmentsNeeded(checked as boolean);
+                          if (checked) {
+                            // Clear any tagged departments if checking "no departments needed"
+                            handleInputChange('taggedDepartments', []);
+                            handleInputChange('departmentRequirements', {});
+                          }
+                        }}
+                        className="mt-0.5"
+                      />
+                      <div className="flex-1">
+                        <Label htmlFor="noDepartmentsNeeded" className="text-sm font-medium text-green-900 cursor-pointer">
+                          No departments needed for this simple meeting
+                        </Label>
+                        <p className="text-xs text-green-700 mt-1">
+                          Check this if your simple meeting doesn't require any department support or resources.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Search Input */}
                 <div>
                   <Label htmlFor="departmentSearch" className="text-sm font-medium">Search Departments</Label>
@@ -2258,13 +2442,16 @@ const RequestEventPage: React.FC = () => {
                     value={departmentSearch}
                     onChange={(e) => setDepartmentSearch(e.target.value)}
                     className="mt-1"
+                    disabled={noDepartmentsNeeded}
                   />
                 </div>
 
                 {/* Departments List */}
                 <div className="space-y-3">
                   <Label className="text-sm font-medium">Select Departments to Tag</Label>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-64 overflow-y-auto p-2 border rounded-lg">
+                  <div className={`grid grid-cols-1 md:grid-cols-2 gap-3 max-h-64 overflow-y-auto p-2 border rounded-lg ${
+                    noDepartmentsNeeded ? 'opacity-50 pointer-events-none' : ''
+                  }`}>
                     {loading ? (
                       <div className="col-span-2 flex items-center justify-center py-8">
                         <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
@@ -2691,7 +2878,12 @@ const RequestEventPage: React.FC = () => {
           </Button>
           <Button 
             onClick={() => setCurrentStep(5)} 
-            disabled={!formData.taggedDepartments.length || !hasRequirementsForDepartments()}
+            disabled={
+              // For Simple Meeting: allow if noDepartmentsNeeded OR has departments with requirements
+              formData.eventType === 'simple-meeting' 
+                ? !(noDepartmentsNeeded || (formData.taggedDepartments.length > 0 && hasRequirementsForDepartments()))
+                : (!formData.taggedDepartments.length || !hasRequirementsForDepartments())
+            }
             className="gap-2"
           >
             Continue to Schedule
@@ -2732,7 +2924,7 @@ const RequestEventPage: React.FC = () => {
       {currentStep !== 3 && currentStep !== 5 && (
         <>
           {/* Missing Fields Alert - Only show if fields are missing */}
-          {(!formData.eventTitle || !formData.requestor || !formData.location || !formData.participants || !formData.description || formData.attachments.length === 0 || !formData.startDate || !formData.startTime || !formData.endDate || !formData.endTime) && (
+          {(!formData.eventTitle || !formData.requestor || !formData.location || !formData.participants || !formData.description || !isAttachmentsCompleted || !formData.startDate || !formData.startTime || !formData.endDate || !formData.endTime) && (
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -2775,10 +2967,10 @@ const RequestEventPage: React.FC = () => {
                       <span>Description</span>
                     </div>
                   )}
-                  {formData.attachments.length === 0 && (
+                  {!isAttachmentsCompleted && (
                     <div className="flex items-center gap-2 text-orange-700">
                       <div className="w-1.5 h-1.5 bg-orange-500 rounded-full" />
-                      <span>Attachments</span>
+                      <span>Attachments{formData.eventType === 'simple-meeting' && formData.withoutGov ? ' (required for w/ Gov)' : ''}</span>
                     </div>
                   )}
                   {!formData.startDate && (
@@ -2821,7 +3013,7 @@ const RequestEventPage: React.FC = () => {
             </Button>
             <Button 
               onClick={() => setCurrentStep(3)} 
-              disabled={!formData.eventTitle || !formData.requestor || !formData.location || !formData.participants || !formData.description || formData.attachments.length === 0 || !formData.startDate || !formData.startTime || !formData.endDate || !formData.endTime}
+              disabled={!formData.eventTitle || !formData.requestor || !formData.location || !formData.participants || !formData.description || !isAttachmentsCompleted || !formData.startDate || !formData.startTime || !formData.endDate || !formData.endTime}
               className="gap-2"
             >
               Continue to Tag Departments
@@ -3589,23 +3781,34 @@ const RequestEventPage: React.FC = () => {
               )}
 
               {availableDates.length > 0 && (
-                <p className="text-xs text-blue-600 mt-2 flex items-center gap-1">
-                  <CalendarIcon className="w-3 h-3" />
-                  Only dates when {formData.location || selectedLocation} is available can be selected ({availableDates.length} available date{availableDates.length !== 1 ? 's' : ''})
+                <p className="text-xs text-blue-600 mt-2">
+                  Only dates when {formData.location || selectedLocation} is available can be selected ({availableDates.length} available dates)
                 </p>
               )}
               {formData.startDate && conflictingEvents.length > 0 && (
-                <p className="text-xs text-orange-600 mt-2 flex items-center gap-1">
-                  <AlertTriangle className="w-3 h-3" />
-                  {conflictingEvents.length} existing booking{conflictingEvents.length !== 1 ? 's' : ''} found for {formData.location || selectedLocation} on {format(formData.startDate, "PPP")} - venue and requirement conflicts are shown
-                </p>
-              )}
-              {formData.startDate && conflictingEvents.length > 0 && (
-                <div className="text-xs text-blue-600 mt-2 flex items-center gap-1">
-                  <AlertTriangle className="w-3 h-3" />
-                  <span>
-                    <strong>VENUE</strong> = Venue booked, <strong>REQ</strong> = Requirements already booked by existing events
-                  </span>
+                <div className="mt-2 space-y-1">
+                  {(() => {
+                    // Filter events that actually booked THIS venue/location
+                    const currentLocation = formData.location || selectedLocation;
+                    const venueBookers = conflictingEvents
+                      .filter(e => {
+                        // Check if event has the same location (could be in location or locations array)
+                        if (e.location === currentLocation) return true;
+                        if (e.locations && Array.isArray(e.locations) && e.locations.includes(currentLocation)) return true;
+                        return false;
+                      })
+                      .map(e => e.requestorDepartment)
+                      .filter((v, i, a) => a.indexOf(v) === i);
+                    
+                    return venueBookers.length > 0 && (
+                      <p className="text-xs text-orange-600">
+                        <strong>VENUE:</strong> {venueBookers.join(', ')} also booked this venue - please check the available start time and end time
+                      </p>
+                    );
+                  })()}
+                  <p className="text-xs text-blue-600">
+                    <strong>REQ:</strong> Requirements already booked by existing events
+                  </p>
                 </div>
               )}
             </div>
@@ -4077,9 +4280,19 @@ const RequestEventPage: React.FC = () => {
           <DialogHeader>
             <DialogTitle>Government Files</DialogTitle>
             <DialogDescription>
-              Upload required files for events without government officials
+              Upload at least one government file (Event Briefer or Program) to enable w/ Governor
             </DialogDescription>
           </DialogHeader>
+          
+          {/* Required Files Notice */}
+          {!govFiles.brieferTemplate && !govFiles.programme && (
+            <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-orange-600 mt-0.5" />
+              <p className="text-xs text-orange-800">
+                <strong>At least one file required:</strong> Please upload Event Briefer or Program to proceed.
+              </p>
+            </div>
+          )}
           
           <div className="space-y-4 py-4">
             {/* Event Briefer Section */}
@@ -4258,7 +4471,17 @@ const RequestEventPage: React.FC = () => {
               Cancel
             </Button>
             <Button 
-              onClick={() => setShowGovModal(false)}
+              onClick={() => {
+                // Check if at least one file is uploaded
+                if (!govFiles.brieferTemplate && !govFiles.programme) {
+                  toast.error('Please upload at least one government file');
+                  handleInputChange('withoutGov', false);
+                  setShowGovModal(false);
+                  return;
+                }
+                setShowGovModal(false);
+              }}
+              disabled={!govFiles.brieferTemplate && !govFiles.programme}
               className="bg-blue-600 hover:bg-blue-700"
             >
               Done
@@ -4985,6 +5208,17 @@ const RequestEventPage: React.FC = () => {
                       <p className="text-base font-medium text-gray-900">{formData.requestor}</p>
                     </div>
                     <div className="space-y-1.5">
+                      <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Event Type</Label>
+                      <Badge className={`${
+                        formData.eventType === 'simple-meeting' ? 'bg-green-600 text-white' :
+                        formData.eventType === 'simple' ? 'bg-blue-600 text-white' :
+                        'bg-purple-600 text-white'
+                      }`}>
+                        {formData.eventType === 'simple-meeting' ? 'Simple Meeting' :
+                         formData.eventType === 'simple' ? 'Simple Event' : 'Complex Event'}
+                      </Badge>
+                    </div>
+                    <div className="space-y-1.5">
                       <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
                         Location{formData.locations.length > 1 ? 's' : ''}
                       </Label>
@@ -5286,6 +5520,120 @@ const RequestEventPage: React.FC = () => {
               )}
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Location Requirements Modal */}
+      <Dialog open={showLocationRequirementsModal} onOpenChange={setShowLocationRequirementsModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Building2 className="w-5 h-5 text-blue-600" />
+              Available Materials & Equipment
+            </DialogTitle>
+            <DialogDescription className="space-y-1">
+              <span className="block text-sm text-gray-600">The following items are available at:</span>
+              {(() => {
+                // Sort locations numerically if they are conference rooms
+                const locations = selectedLocation.split(' + ');
+                const sortedLocations = locations.sort((a, b) => {
+                  const matchA = a.match(/Conference Room (\d+)/);
+                  const matchB = b.match(/Conference Room (\d+)/);
+                  if (matchA && matchB) {
+                    return parseInt(matchA[1]) - parseInt(matchB[1]);
+                  }
+                  return a.localeCompare(b);
+                });
+                
+                return sortedLocations.map((loc, idx) => (
+                  <div key={idx} className="flex items-center gap-1.5 text-sm">
+                    <div className="w-1.5 h-1.5 rounded-full bg-blue-600"></div>
+                    <strong className="text-gray-800">{loc}</strong>
+                  </div>
+                ));
+              })()}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-4">
+            {locationRequirements.length > 0 ? (
+              <div className="space-y-2">
+                {locationRequirements.map((req, idx) => (
+                  <div key={idx} className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border border-blue-200">
+                    <div className="flex items-center gap-2">
+                      <CheckSquare className="w-4 h-4 text-blue-600" />
+                      <span className="text-sm font-medium text-gray-700">{req.name}</span>
+                    </div>
+                    <Badge variant="outline" className="bg-white text-blue-700 border-blue-300">
+                      ×{req.quantity}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500 text-center py-4">No default requirements for this location</p>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              onClick={() => {
+                setShowLocationRequirementsModal(false);
+                // Open schedule modal after closing requirements modal
+                setShowScheduleModal(true);
+              }}
+              className="w-full bg-blue-600 hover:bg-blue-700"
+            >
+              Continue to Schedule
+              <ChevronRight className="w-4 h-4 ml-1" />
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Event Type Alert Modal */}
+      <Dialog open={showEventTypeAlert} onOpenChange={setShowEventTypeAlert}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-orange-600">
+              <AlertTriangle className="w-5 h-5" />
+              Event Type Required
+            </DialogTitle>
+            <DialogDescription>
+              Please select an <strong>Event Type</strong> first before filling out the form.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-4">
+            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+              <p className="text-sm text-gray-700">
+                Choose one of the following event types to continue:
+              </p>
+              <div className="mt-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-green-600"></div>
+                  <span className="text-sm font-medium">Simple Meeting</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-blue-600"></div>
+                  <span className="text-sm font-medium">Simple Event</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-purple-600"></div>
+                  <span className="text-sm font-medium">Complex Event</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              onClick={() => setShowEventTypeAlert(false)}
+              className="w-full bg-orange-600 hover:bg-orange-700"
+            >
+              Got it!
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

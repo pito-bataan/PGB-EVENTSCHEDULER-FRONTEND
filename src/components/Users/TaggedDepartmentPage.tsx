@@ -32,6 +32,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
 import {
   Select,
   SelectContent,
@@ -612,12 +613,35 @@ const TaggedDepartmentPage: React.FC = () => {
                           <div className="flex items-start gap-2">
                             <MapPin className="w-3.5 h-3.5 text-blue-600 flex-shrink-0 mt-0.5" />
                             {event.locations && event.locations.length > 1 ? (
-                              <div className="flex flex-col gap-0.5 flex-1 min-w-0">
-                                {event.locations.map((loc: string, idx: number) => (
-                                  <span key={idx} className="text-xs text-muted-foreground leading-tight">
-                                    {loc}
-                                  </span>
-                                ))}
+                              <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                                <span className="text-xs text-muted-foreground leading-tight truncate">
+                                  {event.locations[0]}
+                                </span>
+                                <HoverCard openDelay={200}>
+                                  <HoverCardTrigger asChild>
+                                    <Badge 
+                                      variant="secondary" 
+                                      className="text-[9px] bg-purple-100 text-purple-700 border-purple-200 cursor-pointer hover:bg-purple-200 whitespace-nowrap px-1.5 py-0"
+                                    >
+                                      +{event.locations.length - 1} more
+                                    </Badge>
+                                  </HoverCardTrigger>
+                                  <HoverCardContent className="w-64" side="right" align="start" sideOffset={5}>
+                                    <div className="space-y-2">
+                                      <h4 className="text-[11px] font-semibold text-slate-900">
+                                        All Locations ({event.locations.length})
+                                      </h4>
+                                      <div className="space-y-1">
+                                        {event.locations.map((loc: string, idx: number) => (
+                                          <div key={idx} className="flex items-start gap-1.5 text-[10px] text-slate-700">
+                                            <MapPin className="w-2.5 h-2.5 flex-shrink-0 mt-0.5 text-purple-600" />
+                                            <span className="leading-tight">{loc}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  </HoverCardContent>
+                                </HoverCard>
                               </div>
                             ) : (
                               <span className="text-xs text-muted-foreground leading-tight">{event.location}</span>
@@ -729,12 +753,35 @@ const TaggedDepartmentPage: React.FC = () => {
                                       <div className="flex items-start gap-2 text-xs text-muted-foreground">
                                         <MapPin className="w-3 h-3 flex-shrink-0 mt-0.5" />
                                         {event.locations && event.locations.length > 1 ? (
-                                          <div className="flex flex-col gap-0.5 flex-1 min-w-0">
-                                            {event.locations.map((loc: string, idx: number) => (
-                                              <span key={idx} className="leading-tight">
-                                                {loc}
-                                              </span>
-                                            ))}
+                                          <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                                            <span className="leading-tight truncate">
+                                              {event.locations[0]}
+                                            </span>
+                                            <HoverCard openDelay={200}>
+                                              <HoverCardTrigger asChild>
+                                                <Badge 
+                                                  variant="secondary" 
+                                                  className="text-[9px] bg-purple-100 text-purple-700 border-purple-200 cursor-pointer hover:bg-purple-200 whitespace-nowrap px-1.5 py-0"
+                                                >
+                                                  +{event.locations.length - 1} more
+                                                </Badge>
+                                              </HoverCardTrigger>
+                                              <HoverCardContent className="w-64" side="right" align="start" sideOffset={5}>
+                                                <div className="space-y-2">
+                                                  <h4 className="text-[11px] font-semibold text-slate-900">
+                                                    All Locations ({event.locations.length})
+                                                  </h4>
+                                                  <div className="space-y-1">
+                                                    {event.locations.map((loc: string, idx: number) => (
+                                                      <div key={idx} className="flex items-start gap-1.5 text-[10px] text-slate-700">
+                                                        <MapPin className="w-2.5 h-2.5 flex-shrink-0 mt-0.5 text-purple-600" />
+                                                        <span className="leading-tight">{loc}</span>
+                                                      </div>
+                                                    ))}
+                                                  </div>
+                                                </div>
+                                              </HoverCardContent>
+                                            </HoverCard>
                                           </div>
                                         ) : (
                                           <span className="leading-tight">{event.location}</span>

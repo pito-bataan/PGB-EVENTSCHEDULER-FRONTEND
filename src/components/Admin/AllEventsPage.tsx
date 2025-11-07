@@ -112,11 +112,13 @@ const AllEventsPage: React.FC = () => {
     searchQuery,
     statusFilter,
     departmentFilter,
+    eventTypeFilter,
     selectedEvent: storeSelectedEvent,
     fetchAllEvents,
     setSearchQuery,
     setStatusFilter,
     setDepartmentFilter,
+    setEventTypeFilter,
     setSelectedEvent: setStoreSelectedEvent,
     getFilteredEvents
   } = useAllEventsStore();
@@ -297,7 +299,7 @@ const AllEventsPage: React.FC = () => {
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, statusFilter, departmentFilter, activeTab]);
+  }, [searchQuery, statusFilter, departmentFilter, eventTypeFilter, activeTab]);
 
   // Get status info
   const getStatusInfo = (status: string) => {
@@ -545,6 +547,14 @@ const AllEventsPage: React.FC = () => {
         pdf.text('Department:', margin + 90, yPosition);
         pdf.setFont('helvetica', 'normal');
         pdf.text(event.taggedDepartments?.length > 0 ? event.taggedDepartments.join(', ') : 'N/A', margin + 115, yPosition);
+        yPosition += 7;
+
+        // Event Type
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('Event Type:', margin, yPosition);
+        pdf.setFont('helvetica', 'normal');
+        const eventTypeText = event.eventType === 'simple-meeting' ? 'Meeting' : event.eventType === 'complex' ? 'Complex' : 'Simple';
+        pdf.text(eventTypeText, margin + 25, yPosition);
         yPosition += 7;
 
         // Check if event has multiple date/time slots (multi-day event)
@@ -858,51 +868,9 @@ const AllEventsPage: React.FC = () => {
         </CardHeader>
 
         <CardContent className="space-y-6">
-          {/* Status Tabs */}
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="w-full grid grid-cols-6 h-auto">
-              <TabsTrigger value="all" className="text-xs gap-1.5 py-2">
-                All
-                <Badge variant="secondary" className="ml-1 px-1.5 py-0 h-4 text-[10px] font-semibold">
-                  {statusCounts.all}
-                </Badge>
-              </TabsTrigger>
-              <TabsTrigger value="submitted" className="text-xs gap-1.5 py-2">
-                Submitted
-                <Badge variant="secondary" className="ml-1 px-1.5 py-0 h-4 text-[10px] font-semibold bg-blue-100 text-blue-700">
-                  {statusCounts.submitted}
-                </Badge>
-              </TabsTrigger>
-              <TabsTrigger value="approved" className="text-xs gap-1.5 py-2">
-                Approved
-                <Badge variant="secondary" className="ml-1 px-1.5 py-0 h-4 text-[10px] font-semibold bg-green-100 text-green-700">
-                  {statusCounts.approved}
-                </Badge>
-              </TabsTrigger>
-              <TabsTrigger value="rejected" className="text-xs gap-1.5 py-2">
-                Rejected
-                <Badge variant="secondary" className="ml-1 px-1.5 py-0 h-4 text-[10px] font-semibold bg-red-100 text-red-700">
-                  {statusCounts.rejected}
-                </Badge>
-              </TabsTrigger>
-              <TabsTrigger value="cancelled" className="text-xs gap-1.5 py-2">
-                Cancelled
-                <Badge variant="secondary" className="ml-1 px-1.5 py-0 h-4 text-[10px] font-semibold bg-orange-100 text-orange-700">
-                  {statusCounts.cancelled}
-                </Badge>
-              </TabsTrigger>
-              <TabsTrigger value="completed" className="text-xs gap-1.5 py-2">
-                Completed
-                <Badge variant="secondary" className="ml-1 px-1.5 py-0 h-4 text-[10px] font-semibold bg-purple-100 text-purple-700">
-                  {statusCounts.completed}
-                </Badge>
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-
           {/* Filters */}
           <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1">
+            <div className="md:w-96">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                 <Input
@@ -913,9 +881,35 @@ const AllEventsPage: React.FC = () => {
                 />
               </div>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-3">
+              <Select value={activeTab} onValueChange={setActiveTab}>
+                <SelectTrigger className="w-48">
+                  <Filter className="w-4 h-4 mr-2" />
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all" className="bg-gray-50 text-gray-700 font-medium">All ({statusCounts.all})</SelectItem>
+                  <SelectItem value="submitted" className="bg-blue-50 text-blue-700 font-medium">Submitted ({statusCounts.submitted})</SelectItem>
+                  <SelectItem value="approved" className="bg-green-50 text-green-700 font-medium">Approved ({statusCounts.approved})</SelectItem>
+                  <SelectItem value="rejected" className="bg-red-50 text-red-700 font-medium">Rejected ({statusCounts.rejected})</SelectItem>
+                  <SelectItem value="cancelled" className="bg-orange-50 text-orange-700 font-medium">Cancelled ({statusCounts.cancelled})</SelectItem>
+                  <SelectItem value="completed" className="bg-purple-50 text-purple-700 font-medium">Completed ({statusCounts.completed})</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={eventTypeFilter} onValueChange={setEventTypeFilter}>
+                <SelectTrigger className="w-48">
+                  <Filter className="w-4 h-4 mr-2" />
+                  <SelectValue placeholder="Type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all" className="bg-gray-50 text-gray-700 font-medium">All Types</SelectItem>
+                  <SelectItem value="simple-meeting" className="bg-green-50 text-green-700 font-medium">Meeting</SelectItem>
+                  <SelectItem value="simple" className="bg-blue-50 text-blue-700 font-medium">Simple</SelectItem>
+                  <SelectItem value="complex" className="bg-purple-50 text-purple-700 font-medium">Complex</SelectItem>
+                </SelectContent>
+              </Select>
               <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
-                <SelectTrigger className="w-40">
+                <SelectTrigger className="w-48">
                   <Building2 className="w-4 h-4 mr-2" />
                   <SelectValue placeholder="Department" />
                 </SelectTrigger>
@@ -996,12 +990,14 @@ const AllEventsPage: React.FC = () => {
                             <Badge 
                               variant="outline"
                               className={`text-xs ${
-                                event.eventType === 'complex' 
+                                event.eventType === 'simple-meeting'
+                                  ? 'bg-green-50 text-green-700 border-green-200'
+                                  : event.eventType === 'complex' 
                                   ? 'bg-purple-50 text-purple-700 border-purple-200' 
                                   : 'bg-blue-50 text-blue-700 border-blue-200'
                               }`}
                             >
-                              {event.eventType === 'complex' ? 'Complex' : 'Simple'}
+                              {event.eventType === 'simple-meeting' ? 'Meeting' : event.eventType === 'complex' ? 'Complex' : 'Simple'}
                             </Badge>
                           </TableCell>
                           <TableCell className="font-medium">

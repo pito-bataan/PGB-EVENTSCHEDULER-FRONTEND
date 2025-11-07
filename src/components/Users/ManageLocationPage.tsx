@@ -46,7 +46,8 @@ import {
   RefreshCw,
   Settings,
   Shield,
-  MapPinIcon
+  MapPinIcon,
+  Package
 } from 'lucide-react';
 
 const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api`;
@@ -114,7 +115,8 @@ const ManageLocationPage: React.FC = () => {
     locationName: '',
     capacity: '',
     description: '',
-    status: 'available' as 'available' | 'unavailable'
+    status: 'available' as 'available' | 'unavailable',
+    requirements: [] as Array<{ name: string; quantity: number }>
   });
   const [isAutoPopulated, setIsAutoPopulated] = useState(false);
   const [showCustomLocationInput, setShowCustomLocationInput] = useState(false);
@@ -124,6 +126,7 @@ const ManageLocationPage: React.FC = () => {
     capacity: string;
     description: string;
     status: 'available' | 'unavailable';
+    requirements?: Array<{ name: string; quantity: number }>;
   }>>([]);
   const [deletingIndex, setDeletingIndex] = useState<number | null>(null);
   const [showPdfPreview, setShowPdfPreview] = useState(false);
@@ -134,6 +137,20 @@ const ManageLocationPage: React.FC = () => {
   const [selectedDatesForDeletion, setSelectedDatesForDeletion] = useState<string[]>([]);
   const [isSelectingDatesMode, setIsSelectingDatesMode] = useState(false);
   const [calendarCurrentMonth, setCalendarCurrentMonth] = useState(new Date());
+  const [requirementName, setRequirementName] = useState('');
+  const [requirementQuantity, setRequirementQuantity] = useState('');
+  
+  // Global Requirements Management State
+  const [showGlobalRequirementsModal, setShowGlobalRequirementsModal] = useState(false);
+  const [selectedLocationForRequirements, setSelectedLocationForRequirements] = useState('');
+  const [selectedLocationsForRequirements, setSelectedLocationsForRequirements] = useState<string[]>([]);
+  const [globalRequirements, setGlobalRequirements] = useState<Array<{ name: string; quantity: number }>>([]);
+  const [globalReqName, setGlobalReqName] = useState('');
+  const [globalReqQuantity, setGlobalReqQuantity] = useState('');
+  const [requirementsTab, setRequirementsTab] = useState<'add' | 'view'>('add');
+  const [allLocationRequirements, setAllLocationRequirements] = useState<Array<{ locationNames?: string[]; locationName?: string; requirements: Array<{ name: string; quantity: number }> }>>([]);
+  const [editingLocation, setEditingLocation] = useState<string | null>(null);
+  const [editingRequirements, setEditingRequirements] = useState<Array<{ name: string; quantity: number }>>([]);
   
   // Default location names
   const defaultLocationNames = [
@@ -166,6 +183,14 @@ const ManageLocationPage: React.FC = () => {
   useEffect(() => {
     initializeUser();
   }, []);
+
+  // Load all location requirements when modal opens
+  useEffect(() => {
+    if (showGlobalRequirementsModal) {
+      console.log('🔄 Modal opened via useEffect, loading all location requirements...');
+      loadAllLocationRequirements();
+    }
+  }, [showGlobalRequirementsModal]);
 
   // Format time to 12-hour AM/PM format
   const formatTime12Hour = (time: string): string => {
@@ -689,6 +714,140 @@ const ManageLocationPage: React.FC = () => {
 
   // loadLocationData is now handled by the Zustand store
 
+  // Load global requirements for a specific location
+  const loadLocationRequirements = async (locationName: string) => {
+    try {
+      const token = localStorage.getItem('authToken');
+      if (!token) return;
+
+      const response = await fetch(`${API_BASE_URL}/location-requirements/${encodeURIComponent(locationName)}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setGlobalRequirements(data.requirements || []);
+      }
+    } catch (error) {
+      console.error('Error loading location requirements:', error);
+    }
+  };
+
+  // Load all location requirements
+  const loadAllLocationRequirements = async () => {
+    try {
+      const token = localStorage.getItem('authToken');
+      if (!token) {
+        console.log('❌ No auth token found');
+        return;
+      }
+
+      console.log('🔄 Fetching all location requirements...');
+      const response = await fetch(`${API_BASE_URL}/location-requirements`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      console.log('📡 Response status:', response.status);
+      if (response.ok) {
+        const data = await response.json();
+        console.log('✅ Loaded location requirements:', data);
+        console.log('📊 Number of locations:', data.length);
+        setAllLocationRequirements(data);
+      } else {
+        console.log('❌ Response not OK:', response.statusText);
+      }
+    } catch (error) {
+      console.error('❌ Error loading all location requirements:', error);
+    }
+  };
+
+  // Save global requirements for multiple locations as ONE entry
+  const saveLocationRequirements = async () => {
+    try {
+      if (selectedLocationsForRequirements.length === 0) {
+        toast.error('Please select at least one location');
+        return;
+      }
+
+      const token = localStorage.getItem('authToken');
+      if (!token) {
+        toast.error('Please login to save requirements');
+        return;
+      }
+
+      // Save as ONE entry with multiple locationNames
+      const response = await fetch(`${API_BASE_URL}/location-requirements`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          locationNames: selectedLocationsForRequirements,
+          requirements: globalRequirements
+        })
+      });
+
+      if (response.ok) {
+        toast.success(`Requirements saved for ${selectedLocationsForRequirements.length} location(s) together`);
+      } else {
+        const error = await response.json();
+        toast.error(error.message || 'Failed to save requirements');
+      }
+
+      // Reload all location requirements to update the view tab
+      await loadAllLocationRequirements();
+      setSelectedLocationsForRequirements([]);
+      setGlobalRequirements([]);
+      setGlobalReqName('');
+      setGlobalReqQuantity('');
+    } catch (error) {
+      console.error('Error saving location requirements:', error);
+      toast.error('Failed to save requirements');
+    }
+  };
+
+  // Save inline edited requirements
+  const saveInlineEdit = async (locationName: string, requirements: Array<{ name: string; quantity: number }>) => {
+    try {
+      const token = localStorage.getItem('authToken');
+      if (!token) {
+        toast.error('Please login to save requirements');
+        return;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/location-requirements`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          locationName,
+          requirements
+        })
+      });
+
+      if (response.ok) {
+        toast.success(`Requirements updated for ${locationName}`);
+        // Reload all location requirements to update the view
+        await loadAllLocationRequirements();
+        setEditingLocation(null);
+        setEditingRequirements([]);
+      } else {
+        const error = await response.json();
+        toast.error(error.message || 'Failed to save requirements');
+      }
+    } catch (error) {
+      console.error('Error saving requirements:', error);
+      toast.error('Failed to save requirements');
+    }
+  };
+
   const handleDateClick = async (date: Date) => {
     setSelectedDate(date);
     setShowLocationModal(true);
@@ -703,7 +862,8 @@ const ManageLocationPage: React.FC = () => {
       locationName: loc.locationName,
       capacity: loc.capacity.toString(),
       description: loc.description,
-      status: loc.status
+      status: loc.status,
+      requirements: (loc as any).requirements || []
     })));
     
     // Reset form data
@@ -711,7 +871,8 @@ const ManageLocationPage: React.FC = () => {
       locationName: '',
       capacity: '',
       description: '',
-      status: 'available'
+      status: 'available',
+      requirements: []
     });
     setShowCustomLocationInput(false);
     setCustomLocationName('');
@@ -728,7 +889,8 @@ const ManageLocationPage: React.FC = () => {
         locationName: '',
         capacity: '',
         description: '',
-        status: 'available'
+        status: 'available',
+        requirements: []
       });
       setIsAutoPopulated(false);
       return;
@@ -752,7 +914,8 @@ const ManageLocationPage: React.FC = () => {
         locationName: selectedLocationName,
         capacity: existingLocationData.capacity.toString(),
         description: existingLocationData.description,
-        status: 'available' as 'available' | 'unavailable'
+        status: 'available' as 'available' | 'unavailable',
+        requirements: (existingLocationData as any).requirements || []
       };
       
       // Automatically add to list since it's auto-populated
@@ -763,7 +926,8 @@ const ManageLocationPage: React.FC = () => {
         locationName: '',
         capacity: '',
         description: '',
-        status: 'available'
+        status: 'available',
+        requirements: []
       });
       setIsAutoPopulated(false);
       
@@ -787,7 +951,8 @@ const ManageLocationPage: React.FC = () => {
           locationName: selectedLocationName,
           capacity: defaultCapacity,
           description: '',
-          status: 'available' as 'available' | 'unavailable'
+          status: 'available' as 'available' | 'unavailable',
+          requirements: []
         };
         
         setLocationsForDate(prev => [...prev, autoPopulatedLocation]);
@@ -797,7 +962,8 @@ const ManageLocationPage: React.FC = () => {
           locationName: '',
           capacity: '',
           description: '',
-          status: 'available'
+          status: 'available',
+          requirements: []
         });
         
         toast.success(`${selectedLocationName} auto-added to list with default capacity`);
@@ -807,7 +973,8 @@ const ManageLocationPage: React.FC = () => {
           locationName: selectedLocationName,
           capacity: defaultCapacity,
           description: '',
-          status: 'available'
+          status: 'available',
+          requirements: []
         });
       }
       
@@ -837,7 +1004,8 @@ const ManageLocationPage: React.FC = () => {
       locationName: customLocationName.trim(),
       capacity: '',
       description: '',
-      status: 'available'
+      status: 'available',
+      requirements: []
     });
     
     // Hide custom input and clear it
@@ -868,6 +1036,7 @@ const ManageLocationPage: React.FC = () => {
       capacity: string;
       description: string;
       status: 'available' | 'unavailable';
+      requirements?: Array<{ name: string; quantity: number }>;
     }> = [];
     
     for (const locationName of availableLocations) {
@@ -883,7 +1052,8 @@ const ManageLocationPage: React.FC = () => {
           locationName: locationName,
           capacity: existingLocationData.capacity.toString(),
           description: existingLocationData.description,
-          status: 'available' as 'available' | 'unavailable'
+          status: 'available' as 'available' | 'unavailable',
+          requirements: (existingLocationData as any).requirements || []
         });
       } else {
         // Set default capacity based on location type
@@ -901,7 +1071,8 @@ const ManageLocationPage: React.FC = () => {
           locationName: locationName,
           capacity: defaultCapacity,
           description: '',
-          status: 'available' as 'available' | 'unavailable'
+          status: 'available' as 'available' | 'unavailable',
+          requirements: []
         });
       }
     }
@@ -914,7 +1085,8 @@ const ManageLocationPage: React.FC = () => {
       locationName: '',
       capacity: '',
       description: '',
-      status: 'available'
+      status: 'available',
+      requirements: []
     });
     setShowCustomLocationInput(false);
     setCustomLocationName('');
@@ -962,7 +1134,8 @@ const ManageLocationPage: React.FC = () => {
       locationName: '',
       capacity: '',
       description: '',
-      status: 'available'
+      status: 'available',
+      requirements: []
     });
   };
 
@@ -1092,7 +1265,8 @@ const ManageLocationPage: React.FC = () => {
         locationName: '',
         capacity: '',
         description: '',
-        status: 'available'
+        status: 'available',
+        requirements: []
       });
       setShowCustomLocationInput(false);
       setCustomLocationName('');
@@ -1132,7 +1306,8 @@ const ManageLocationPage: React.FC = () => {
           locationName: location.locationName.trim(),
           capacity: capacityNum,
           description: location.description.trim(),
-          status: location.status
+          status: location.status,
+          requirements: location.requirements || []
         };
 
         return await saveLocationAvailability(locationData);
@@ -1143,26 +1318,6 @@ const ManageLocationPage: React.FC = () => {
       
       if (failedSaves.length === 0) {
         console.log('All locations saved successfully, closing modal...');
-        toast.success(`${allNewLocations.length} location(s) saved successfully!`);
-        
-        // Reload data to get the latest from server and update all UI components
-        await loadLocationData(true);
-        
-        // Close modal and reset
-        console.log('Closing modal and resetting state...');
-        setShowLocationModal(false);
-        setSelectedDate(null);
-        setLocationsForDate([]);
-        setFormData({
-          locationName: '',
-          capacity: '',
-          description: '',
-          status: 'available'
-        });
-        setShowCustomLocationInput(false);
-        setCustomLocationName('');
-        console.log('Modal should be closed now');
-      } else {
         toast.error(`${failedSaves.length} out of ${allNewLocations.length} locations failed to save`);
       }
     } catch (error) {
@@ -1278,6 +1433,14 @@ const ManageLocationPage: React.FC = () => {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            <Button
+              onClick={() => setShowGlobalRequirementsModal(true)}
+              variant="outline"
+              className="gap-2 border-purple-300 text-purple-700 hover:bg-purple-50"
+            >
+              <Package className="w-4 h-4" />
+              Manage Default Requirements
+            </Button>
             <Button
               onClick={generateLocationBookingsPdf}
               variant="outline"
@@ -1556,10 +1719,27 @@ const ManageLocationPage: React.FC = () => {
                           <Badge variant={location.status === 'available' ? "default" : "destructive"} className="text-xs">
                             {location.status}
                           </Badge>
+                          {location.requirements && location.requirements.length > 0 && (
+                            <Badge variant="outline" className="text-xs bg-purple-50 text-purple-700 border-purple-300">
+                              <Package className="w-3 h-3 mr-1" />
+                              {location.requirements.length} Requirements
+                            </Badge>
+                          )}
                         </div>
                         <div className="text-xs text-gray-600">
                           Capacity: {location.capacity} | {location.description || 'No description'}
                         </div>
+                        {location.requirements && location.requirements.length > 0 && (
+                          <div className="mt-2 space-y-1">
+                            {location.requirements.map((req, reqIndex) => (
+                              <div key={reqIndex} className="flex items-center gap-1 text-xs text-purple-700">
+                                <Package className="w-3 h-3" />
+                                <span>{req.name}</span>
+                                <span className="text-purple-500">× {req.quantity}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                       <div className="flex items-center gap-2">
                         {/* Bookings Button with Popover */}
@@ -1965,6 +2145,84 @@ const ManageLocationPage: React.FC = () => {
                 </Select>
               </div>
 
+              {/* Location Requirements Section */}
+              <div className="space-y-3 pt-4 border-t">
+                <div className="flex items-center gap-2">
+                  <Package className="w-4 h-4 text-purple-600" />
+                  <Label className="text-sm font-medium">Location Requirements (Optional)</Label>
+                </div>
+                <p className="text-xs text-gray-500">Add default materials/equipment for this location (e.g., Chairs, Tables, Projector)</p>
+                
+                {/* Current Requirements List */}
+                {formData.requirements.length > 0 && (
+                  <div className="space-y-2">
+                    {formData.requirements.map((req, index) => (
+                      <div key={index} className="flex items-center gap-2 p-2 bg-purple-50 border border-purple-200 rounded-lg">
+                        <Package className="w-3 h-3 text-purple-600" />
+                        <span className="text-sm flex-1">{req.name}</span>
+                        <Badge variant="outline" className="text-xs bg-white">Qty: {req.quantity}</Badge>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setFormData({
+                              ...formData,
+                              requirements: formData.requirements.filter((_, i) => i !== index)
+                            });
+                          }}
+                          className="h-6 w-6 p-0"
+                        >
+                          <X className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
+                {/* Add Requirement Form */}
+                <div className="grid grid-cols-[1fr_auto_auto] gap-2">
+                  <Input
+                    placeholder="Requirement name (e.g., Chairs)"
+                    value={requirementName}
+                    onChange={(e) => setRequirementName(e.target.value)}
+                    className="text-sm"
+                  />
+                  <Input
+                    type="number"
+                    min="1"
+                    placeholder="Qty"
+                    value={requirementQuantity}
+                    onChange={(e) => setRequirementQuantity(e.target.value)}
+                    className="w-20 text-sm"
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      if (requirementName.trim() && requirementQuantity && parseInt(requirementQuantity) > 0) {
+                        setFormData({
+                          ...formData,
+                          requirements: [...formData.requirements, {
+                            name: requirementName.trim(),
+                            quantity: parseInt(requirementQuantity)
+                          }]
+                        });
+                        setRequirementName('');
+                        setRequirementQuantity('');
+                        toast.success('Requirement added');
+                      } else {
+                        toast.error('Please enter requirement name and quantity');
+                      }
+                    }}
+                    disabled={!requirementName.trim() || !requirementQuantity || parseInt(requirementQuantity) <= 0}
+                  >
+                    <Plus className="w-3 h-3" />
+                  </Button>
+                </div>
+              </div>
+
               <Button 
                 onClick={handleAddLocation} 
                 variant="outline" 
@@ -1986,7 +2244,8 @@ const ManageLocationPage: React.FC = () => {
                       locationName: '',
                       capacity: '',
                       description: '',
-                      status: 'available'
+                      status: 'available',
+                      requirements: []
                     });
                     setShowCustomLocationInput(false);
                     setCustomLocationName('');
@@ -2092,6 +2351,339 @@ const ManageLocationPage: React.FC = () => {
               Please wait while the operation completes...
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Global Requirements Management Modal */}
+      <Dialog open={showGlobalRequirementsModal} onOpenChange={setShowGlobalRequirementsModal}>
+        <DialogContent className="sm:max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Package className="w-5 h-5 text-purple-600" />
+              Manage Default Location Requirements
+            </DialogTitle>
+            <DialogDescription>
+              Set default materials and equipment for each location. These will be shown when users book events.
+            </DialogDescription>
+          </DialogHeader>
+          
+          {/* Tab Navigation */}
+          <div className="flex gap-2 border-b">
+            <button
+              onClick={() => setRequirementsTab('add')}
+              className={`px-4 py-2 text-sm font-medium transition-colors ${
+                requirementsTab === 'add'
+                  ? 'text-purple-600 border-b-2 border-purple-600'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Add/Edit Requirements
+            </button>
+            <button
+              onClick={() => setRequirementsTab('view')}
+              className={`px-4 py-2 text-sm font-medium transition-colors ${
+                requirementsTab === 'view'
+                  ? 'text-purple-600 border-b-2 border-purple-600'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              View All Locations ({allLocationRequirements.length})
+            </button>
+          </div>
+          
+          <div className="flex-1 overflow-y-auto py-4">
+            {/* Add/Edit Tab Content */}
+            {requirementsTab === 'add' && (
+              <div className="space-y-6">
+                {/* Location Selection - Multi-select */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label>Select Locations * (Can select multiple)</Label>
+                    {selectedLocationsForRequirements.length > 0 && (
+                      <Badge variant="outline" className="bg-purple-50 text-purple-700">
+                        {selectedLocationsForRequirements.length} selected
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="border rounded-lg p-3 max-h-[200px] overflow-y-auto bg-white">
+                    <div className="space-y-2">
+                      {defaultLocationNames.map((locationName) => (
+                        <label
+                          key={locationName}
+                          className="flex items-center gap-2 p-2 hover:bg-purple-50 rounded cursor-pointer transition-colors"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedLocationsForRequirements.includes(locationName)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedLocationsForRequirements([...selectedLocationsForRequirements, locationName]);
+                              } else {
+                                setSelectedLocationsForRequirements(selectedLocationsForRequirements.filter(loc => loc !== locationName));
+                              }
+                            }}
+                            className="w-4 h-4 text-purple-600 rounded"
+                          />
+                          <span className="text-sm text-gray-700">{locationName}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Requirements Management - Only show when locations are selected */}
+                {selectedLocationsForRequirements.length > 0 && (
+              <div className="space-y-4 p-4 border rounded-lg bg-purple-50/30">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-medium">
+                    Requirements for: {selectedLocationsForRequirements.join(', ')}
+                  </Label>
+                  <Badge variant="outline" className="bg-white">
+                    {globalRequirements.length} items
+                  </Badge>
+                </div>
+
+                {/* Current Requirements List */}
+                {globalRequirements.length > 0 && (
+                  <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                    {globalRequirements.map((req, index) => (
+                      <div key={index} className="flex items-center gap-2 p-3 bg-white border border-purple-200 rounded-lg">
+                        <Package className="w-4 h-4 text-purple-600" />
+                        <span className="text-sm flex-1 font-medium">{req.name}</span>
+                        <Badge variant="outline" className="text-xs">Qty: {req.quantity}</Badge>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setGlobalRequirements(globalRequirements.filter((_, i) => i !== index));
+                          }}
+                          className="h-7 w-7 p-0 hover:bg-red-50 hover:text-red-600"
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Add New Requirement */}
+                <div className="space-y-2">
+                  <Label className="text-xs text-gray-600">Add New Requirement</Label>
+                  <div className="grid grid-cols-[1fr_auto_auto] gap-2">
+                    <Input
+                      placeholder="e.g., Chairs, Tables, Projector"
+                      value={globalReqName}
+                      onChange={(e) => setGlobalReqName(e.target.value)}
+                      className="text-sm"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && globalReqName.trim() && globalReqQuantity && parseInt(globalReqQuantity) > 0) {
+                          setGlobalRequirements([...globalRequirements, {
+                            name: globalReqName.trim(),
+                            quantity: parseInt(globalReqQuantity)
+                          }]);
+                          setGlobalReqName('');
+                          setGlobalReqQuantity('');
+                          toast.success('Requirement added');
+                        }
+                      }}
+                    />
+                    <Input
+                      type="number"
+                      min="1"
+                      placeholder="Qty"
+                      value={globalReqQuantity}
+                      onChange={(e) => setGlobalReqQuantity(e.target.value)}
+                      className="w-24 text-sm"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && globalReqName.trim() && globalReqQuantity && parseInt(globalReqQuantity) > 0) {
+                          setGlobalRequirements([...globalRequirements, {
+                            name: globalReqName.trim(),
+                            quantity: parseInt(globalReqQuantity)
+                          }]);
+                          setGlobalReqName('');
+                          setGlobalReqQuantity('');
+                          toast.success('Requirement added');
+                        }
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => {
+                        if (globalReqName.trim() && globalReqQuantity && parseInt(globalReqQuantity) > 0) {
+                          setGlobalRequirements([...globalRequirements, {
+                            name: globalReqName.trim(),
+                            quantity: parseInt(globalReqQuantity)
+                          }]);
+                          setGlobalReqName('');
+                          setGlobalReqQuantity('');
+                          toast.success('Requirement added');
+                        } else {
+                          toast.error('Please enter requirement name and quantity');
+                        }
+                      }}
+                      disabled={!globalReqName.trim() || !globalReqQuantity || parseInt(globalReqQuantity) <= 0}
+                      className="bg-purple-600 hover:bg-purple-700"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </Button>
+                  </div>
+                  <p className="text-xs text-gray-500">Press Enter or click + to add</p>
+                </div>
+              </div>
+            )}
+              </div>
+            )}
+
+            {/* View All Tab Content */}
+            {requirementsTab === 'view' && (
+              <div className="space-y-4">
+                {allLocationRequirements.length === 0 ? (
+                  <div className="text-center py-12">
+                    <Package className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                    <p className="text-gray-500 text-sm">No locations with requirements yet</p>
+                    <p className="text-gray-400 text-xs mt-1">Switch to "Add/Edit Requirements" tab to add requirements</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {allLocationRequirements.map((location, idx) => {
+                      // Handle both old (locationName) and new (locationNames) format
+                      const locationNamesArray = location.locationNames || (location.locationName ? [location.locationName] : []);
+                      const locationKey = locationNamesArray.join(',');
+                      const isEditing = editingLocation === locationKey;
+                      const displayRequirements = isEditing ? editingRequirements : location.requirements;
+                      
+                      return (
+                        <div key={idx} className="border rounded-lg p-4 bg-white hover:shadow-md transition-shadow">
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex items-start gap-2">
+                              <MapPin className="w-5 h-5 text-purple-600 mt-0.5" />
+                              <div>
+                                <h3 className="font-semibold text-gray-900">
+                                  {locationNamesArray.join(' + ')}
+                                </h3>
+                                {locationNamesArray.length > 1 && (
+                                  <p className="text-xs text-gray-500 mt-0.5">
+                                    {locationNamesArray.length} locations grouped
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {!isEditing && (
+                                <Badge variant="outline" className="bg-purple-50 text-purple-700">
+                                  {location.requirements.length} items
+                                </Badge>
+                              )}
+                              {isEditing ? (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                      setEditingLocation(null);
+                                      setEditingRequirements([]);
+                                    }}
+                                    className="h-8 text-xs"
+                                  >
+                                    Cancel
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    onClick={() => saveInlineEdit(locationKey, editingRequirements)}
+                                    className="h-8 text-xs bg-purple-600 hover:bg-purple-700"
+                                  >
+                                    <Save className="w-3 h-3 mr-1" />
+                                    Save
+                                  </Button>
+                                </>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    setEditingLocation(locationKey);
+                                    setEditingRequirements([...location.requirements]);
+                                  }}
+                                  className="h-8 text-xs"
+                                >
+                                  Edit
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            {displayRequirements.map((req, idx) => (
+                              <div key={idx} className="flex items-center gap-2 p-2 bg-purple-50 rounded">
+                                <Package className="w-4 h-4 text-purple-600" />
+                                <span className="flex-1 text-sm text-gray-700">{req.name}</span>
+                                {isEditing ? (
+                                  <Input
+                                    type="number"
+                                    min="1"
+                                    value={req.quantity}
+                                    onChange={(e) => {
+                                      const newQty = parseInt(e.target.value) || 1;
+                                      const updated = [...editingRequirements];
+                                      updated[idx] = { ...updated[idx], quantity: newQty };
+                                      setEditingRequirements(updated);
+                                    }}
+                                    className="w-20 h-8 text-sm"
+                                  />
+                                ) : (
+                                  <span className="text-sm text-gray-500">×{req.quantity}</span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Action Buttons */}
+          {requirementsTab === 'add' ? (
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setShowGlobalRequirementsModal(false);
+                  setSelectedLocationsForRequirements([]);
+                  setGlobalRequirements([]);
+                  setGlobalReqName('');
+                  setGlobalReqQuantity('');
+                }}
+              >
+                Cancel
+              </Button>
+              <Button 
+                onClick={saveLocationRequirements}
+                disabled={selectedLocationsForRequirements.length === 0}
+                className="gap-2 bg-purple-600 hover:bg-purple-700"
+              >
+                <Save className="w-4 h-4" />
+                Save for {selectedLocationsForRequirements.length} Location{selectedLocationsForRequirements.length !== 1 ? 's' : ''}
+              </Button>
+            </div>
+          ) : (
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setShowGlobalRequirementsModal(false);
+                  setSelectedLocationForRequirements('');
+                  setGlobalRequirements([]);
+                }}
+              >
+                Close
+              </Button>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
