@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Select,
   SelectContent,
@@ -179,6 +180,8 @@ const RequestEventPage: React.FC = () => {
   const [showLocationRequirementsModal, setShowLocationRequirementsModal] = useState(false);
   const [locationRequirements, setLocationRequirements] = useState<Array<{ name: string; quantity: number }>>([]);
   const [showEventTypeAlert, setShowEventTypeAlert] = useState(false);
+  const [loadingLocationRequirements, setLoadingLocationRequirements] = useState(false);
+  const [loadingDepartmentRequirements, setLoadingDepartmentRequirements] = useState(false);
   
   // Dynamic data from database
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -533,18 +536,24 @@ const RequestEventPage: React.FC = () => {
       // Initialize locations array with the selected location
       handleInputChange('locations', [value]);
       
+      // Show loading state and modal IMMEDIATELY before any API calls
+      setLoadingLocationRequirements(true);
+      setShowLocationRequirementsModal(true);
+      
       // Fetch available dates for the selected location
       await fetchAvailableDatesForLocation(value);
       
       // Check if this single location has requirements
       const requirements = await fetchLocationRequirements(value);
+      setLoadingLocationRequirements(false);
+      
       if (requirements && requirements.length > 0) {
         // Show requirements modal for single location
         setLocationRequirements(requirements);
         setSelectedLocation(value);
-        setShowLocationRequirementsModal(true);
       } else {
-        // No requirements, open schedule modal directly
+        // No requirements, close modal and open schedule modal directly
+        setShowLocationRequirementsModal(false);
         setSelectedLocation(value);
         setShowScheduleModal(true);
       }
@@ -564,6 +573,9 @@ const RequestEventPage: React.FC = () => {
       
       // Check if these multiple locations are grouped together with shared requirements
       try {
+        setLoadingLocationRequirements(true);
+        setShowLocationRequirementsModal(true);
+        
         const token = localStorage.getItem('authToken');
         if (token) {
           const response = await fetch(`${API_BASE_URL}/location-requirements`, {
@@ -579,19 +591,26 @@ const RequestEventPage: React.FC = () => {
               return updatedLocations.every(loc => req.locationNames.includes(loc));
             });
             
+            setLoadingLocationRequirements(false);
+            
             if (groupedRequirement && groupedRequirement.requirements.length > 0) {
               // Show grouped requirements modal
               setLocationRequirements(groupedRequirement.requirements);
               setSelectedLocation(updatedLocations.join(' + '));
-              setShowLocationRequirementsModal(true);
               toast.success(`${roomName} added - viewing shared requirements`);
             } else {
+              setShowLocationRequirementsModal(false);
               toast.success(`${roomName} added to your booking`);
             }
+          } else {
+            setLoadingLocationRequirements(false);
+            setShowLocationRequirementsModal(false);
           }
         }
       } catch (error) {
         console.error('Error checking grouped requirements:', error);
+        setLoadingLocationRequirements(false);
+        setShowLocationRequirementsModal(false);
         toast.success(`${roomName} added to your booking`);
       }
       
@@ -786,6 +805,10 @@ const RequestEventPage: React.FC = () => {
     if (!formData.taggedDepartments.includes(departmentName)) {
       setSelectedDepartment(departmentName);
       
+      // Show loading state and modal IMMEDIATELY
+      setLoadingDepartmentRequirements(true);
+      setShowRequirementsModal(true);
+      
       // Fetch conflicting events if date and time are set
       if (formData.startDate && formData.startTime && formData.endTime) {
         await fetchConflictingEvents(formData.startDate, formData.startTime, formData.endTime, formData.location);
@@ -797,7 +820,7 @@ const RequestEventPage: React.FC = () => {
         availabilities = await fetchResourceAvailabilities(departmentName, formData.startDate);
       }
       
-      setShowRequirementsModal(true);
+      setLoadingDepartmentRequirements(false);
       
       // Find the department and use its requirements
       const department = departments.find(dept => dept.name === departmentName);
@@ -2088,18 +2111,18 @@ const RequestEventPage: React.FC = () => {
                             : 'bg-white text-gray-700 hover:bg-gray-50'
                         }`}
                       >
-                        Simple (7 days)
+                        Simple Event
                       </button>
                       <button
                         type="button"
                         onClick={() => setFormData(prev => ({ ...prev, eventType: 'complex' }))}
                         className={`px-3 py-1.5 text-xs font-medium transition-colors border-l ${
                           formData.eventType === 'complex'
-                            ? 'bg-blue-600 text-white'
+                            ? 'bg-purple-600 text-white'
                             : 'bg-white text-gray-700 hover:bg-gray-50'
                         }`}
                       >
-                        Complex (30 days)
+                        Complex Event
                       </button>
                     </div>
                   </div>
@@ -3078,7 +3101,27 @@ const RequestEventPage: React.FC = () => {
             <div className="space-y-3">
               <h4 className="text-sm font-medium text-foreground">Available Requirements</h4>
               <div className="space-y-3 max-h-96 overflow-y-auto">
-                {formData.departmentRequirements[selectedDepartment]?.map((requirement) => (
+                {loadingDepartmentRequirements ? (
+                  // Skeleton loading state
+                  <div className="space-y-3">
+                    {[1, 2, 3, 4].map((i) => (
+                      <div key={i} className="p-3 border rounded-lg bg-gray-50">
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex items-center gap-2 flex-1">
+                            <Skeleton className="w-4 h-4 rounded" />
+                            <Skeleton className="h-4 w-2/3" />
+                            <Skeleton className="h-5 w-16 rounded-full" />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <Skeleton className="h-3 w-full" />
+                          <Skeleton className="h-3 w-full" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  formData.departmentRequirements[selectedDepartment]?.map((requirement) => (
                   <div
                     key={requirement.id}
                     className={`p-3 border rounded-lg transition-all ${
@@ -3328,10 +3371,11 @@ const RequestEventPage: React.FC = () => {
                       </div>
                     </div>
                   </div>
-                ))}
+                ))
+                )}
                 
                 {/* Empty State Message */}
-                {(!formData.departmentRequirements[selectedDepartment] || formData.departmentRequirements[selectedDepartment].length === 0) && (
+                {!loadingDepartmentRequirements && (!formData.departmentRequirements[selectedDepartment] || formData.departmentRequirements[selectedDepartment].length === 0) && (
                   <div className="text-center py-8 px-4">
                     <div className="flex flex-col items-center gap-3">
                       <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center">
@@ -4266,7 +4310,33 @@ const RequestEventPage: React.FC = () => {
             </Button>
             <Button 
               onClick={handleScheduleSave}
-              className="bg-blue-600 hover:bg-blue-700 text-white"
+              disabled={(() => {
+                // Check if it's a multi-day event
+                if (formData.startDate && formData.endDate && formData.startDate.getTime() !== formData.endDate.getTime()) {
+                  // Calculate how many additional days there should be
+                  const days: Date[] = [];
+                  const currentDate = new Date(formData.startDate);
+                  const endDate = new Date(formData.endDate);
+                  currentDate.setDate(currentDate.getDate() + 1);
+                  
+                  while (currentDate <= endDate) {
+                    days.push(new Date(currentDate));
+                    currentDate.setDate(currentDate.getDate() + 1);
+                  }
+                  
+                  // Check if all additional days have both start and end times
+                  const allDaysConfigured = days.every(date => {
+                    const slot = formData.dateTimeSlots.find(s => 
+                      s.date.toDateString() === date.toDateString()
+                    );
+                    return slot && slot.startTime && slot.endTime;
+                  });
+                  
+                  return !allDaysConfigured;
+                }
+                return false;
+              })()}
+              className="bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Save Schedule
             </Button>
@@ -5556,7 +5626,19 @@ const RequestEventPage: React.FC = () => {
           </DialogHeader>
 
           <div className="space-y-3 py-4">
-            {locationRequirements.length > 0 ? (
+            {loadingLocationRequirements ? (
+              <div className="space-y-2">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
+                    <div className="flex items-center gap-2 flex-1">
+                      <Skeleton className="w-4 h-4 rounded" />
+                      <Skeleton className="h-4 w-3/4" />
+                    </div>
+                    <Skeleton className="h-6 w-12 rounded-full" />
+                  </div>
+                ))}
+              </div>
+            ) : locationRequirements.length > 0 ? (
               <div className="space-y-2">
                 {locationRequirements.map((req, idx) => (
                   <div key={idx} className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border border-blue-200">
@@ -5593,45 +5675,89 @@ const RequestEventPage: React.FC = () => {
 
       {/* Event Type Alert Modal */}
       <Dialog open={showEventTypeAlert} onOpenChange={setShowEventTypeAlert}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-orange-600">
-              <AlertTriangle className="w-5 h-5" />
-              Event Type Required
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              <AlertCircle className="w-5 h-5 text-blue-600" />
+              Select Event Type to Continue
             </DialogTitle>
-            <DialogDescription>
-              Please select an <strong>Event Type</strong> first before filling out the form.
+            <DialogDescription className="text-sm">
+              Please choose an event type to proceed with your booking
             </DialogDescription>
           </DialogHeader>
 
-          <div className="py-4">
-            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
-              <p className="text-sm text-gray-700">
-                Choose one of the following event types to continue:
-              </p>
-              <div className="mt-3 space-y-2">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-green-600"></div>
-                  <span className="text-sm font-medium">Simple Meeting</span>
+          <div className="space-y-3 py-2">
+            {/* Simple Meeting */}
+            <button
+              onClick={() => {
+                setFormData(prev => ({ ...prev, eventType: 'simple-meeting' }));
+                setShowEventTypeAlert(false);
+              }}
+              className="w-full text-left p-4 rounded-lg border-2 border-gray-200 hover:border-green-500 hover:bg-green-50 transition-all group"
+            >
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0 group-hover:bg-green-600 transition-colors">
+                  <CalendarIcon className="w-5 h-5 text-green-600 group-hover:text-white" />
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-blue-600"></div>
-                  <span className="text-sm font-medium">Simple Event</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-purple-600"></div>
-                  <span className="text-sm font-medium">Complex Event</span>
+                <div className="flex-1">
+                  <h3 className="font-semibold text-gray-900 mb-1">Simple Meeting</h3>
+                  <p className="text-sm text-gray-600 leading-relaxed">
+                    For quick meetings and sudden gatherings. Book any available date on the calendar with no advance notice required. Perfect for immediate scheduling needs.
+                  </p>
                 </div>
               </div>
-            </div>
+            </button>
+
+            {/* Simple Event */}
+            <button
+              onClick={() => {
+                setFormData(prev => ({ ...prev, eventType: 'simple' }));
+                setShowEventTypeAlert(false);
+              }}
+              className="w-full text-left p-4 rounded-lg border-2 border-gray-200 hover:border-blue-500 hover:bg-blue-50 transition-all group"
+            >
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 group-hover:bg-blue-600 transition-colors">
+                  <Clock className="w-5 h-5 text-blue-600 group-hover:text-white" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold text-gray-900 mb-1">Simple Event</h3>
+                  <p className="text-sm text-gray-600 leading-relaxed">
+                    For standard events and activities. Must be booked at least <strong>7 days in advance</strong>. Suitable for regular events with moderate planning requirements.
+                  </p>
+                </div>
+              </div>
+            </button>
+
+            {/* Complex Event */}
+            <button
+              onClick={() => {
+                setFormData(prev => ({ ...prev, eventType: 'complex' }));
+                setShowEventTypeAlert(false);
+              }}
+              className="w-full text-left p-4 rounded-lg border-2 border-gray-200 hover:border-purple-500 hover:bg-purple-50 transition-all group"
+            >
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0 group-hover:bg-purple-600 transition-colors">
+                  <Settings className="w-5 h-5 text-purple-600 group-hover:text-white" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold text-gray-900 mb-1">Complex Event</h3>
+                  <p className="text-sm text-gray-600 leading-relaxed">
+                    For large-scale events requiring extensive preparation. Must be booked at least <strong>30 days in advance</strong>. Ideal for major events with detailed coordination needs.
+                  </p>
+                </div>
+              </div>
+            </button>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="sm:justify-center">
             <Button
+              variant="outline"
               onClick={() => setShowEventTypeAlert(false)}
-              className="w-full bg-orange-600 hover:bg-orange-700"
+              className="text-gray-600"
             >
-              Got it!
+              Cancel
             </Button>
           </DialogFooter>
         </DialogContent>

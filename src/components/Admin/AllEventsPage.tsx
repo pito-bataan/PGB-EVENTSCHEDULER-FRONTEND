@@ -1161,39 +1161,51 @@ const AllEventsPage: React.FC = () => {
 
                                     {/* Date & Time & Status */}
                                     {selectedEvent.dateTimeSlots && selectedEvent.dateTimeSlots.length > 0 ? (
-                                      <div className="space-y-3">
-                                        <div className="flex items-center justify-between">
-                                          <label className="text-sm font-medium text-gray-700">
-                                            Multi-Day Event Schedule
-                                          </label>
-                                          <Badge className={getStatusInfo(selectedEvent.status).className}>
-                                            {getStatusInfo(selectedEvent.status).icon}
-                                            {getStatusInfo(selectedEvent.status).label}
-                                          </Badge>
-                                        </div>
-                                        
-                                        {/* Day 1 */}
-                                        <div className="flex items-center gap-3 text-sm">
-                                          <span className="font-medium text-gray-700 min-w-[40px]">Day 1:</span>
-                                          <Calendar className="w-3.5 h-3.5 text-gray-400" />
-                                          <span className="text-gray-900">{format(new Date(selectedEvent.startDate), 'MMM d, yyyy')}</span>
-                                          <span className="text-gray-400">•</span>
-                                          <Clock className="w-3.5 h-3.5 text-gray-400" />
-                                          <span className="text-gray-900">{formatTime(selectedEvent.startTime)} - {formatTime(selectedEvent.endTime)}</span>
-                                        </div>
-                                        
-                                        {/* Additional Days */}
-                                        {selectedEvent.dateTimeSlots.map((slot: any, idx: number) => (
-                                          <div key={idx} className="flex items-center gap-3 text-sm">
-                                            <span className="font-medium text-gray-700 min-w-[40px]">Day {idx + 2}:</span>
-                                            <Calendar className="w-3.5 h-3.5 text-gray-400" />
-                                            <span className="text-gray-900">{format(new Date(slot.startDate), 'MMM d, yyyy')}</span>
-                                            <span className="text-gray-400">•</span>
-                                            <Clock className="w-3.5 h-3.5 text-gray-400" />
-                                            <span className="text-gray-900">{formatTime(slot.startTime)} - {formatTime(slot.endTime)}</span>
+                                      <>
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                          <div className="md:col-span-2 space-y-3">
+                                            <label className="text-sm font-medium text-gray-700">
+                                              Multi-Day Event Schedule
+                                            </label>
+                                            
+                                            {/* Day 1 */}
+                                            <div className="flex items-center gap-2 text-sm">
+                                              <span className="font-medium text-gray-700">Day 1:</span>
+                                              <Calendar className="w-3.5 h-3.5 text-gray-400" />
+                                              <span className="text-gray-900">{format(new Date(selectedEvent.startDate), 'MMM d, yyyy')}</span>
+                                              <span className="text-gray-400">•</span>
+                                              <Clock className="w-3.5 h-3.5 text-gray-400" />
+                                              <span className="text-gray-900">{formatTime(selectedEvent.startTime)} - {formatTime(selectedEvent.endTime)}</span>
+                                            </div>
+                                            
+                                            {/* Additional Days */}
+                                            {selectedEvent.dateTimeSlots.map((slot: any, idx: number) => (
+                                              <div key={idx} className="flex items-center gap-2 text-sm">
+                                                <span className="font-medium text-gray-700">Day {idx + 2}:</span>
+                                                <Calendar className="w-3.5 h-3.5 text-gray-400" />
+                                                <span className="text-gray-900">{format(new Date(slot.startDate), 'MMM d, yyyy')}</span>
+                                                <span className="text-gray-400">•</span>
+                                                <Clock className="w-3.5 h-3.5 text-gray-400" />
+                                                <span className="text-gray-900">{formatTime(slot.startTime)} - {formatTime(slot.endTime)}</span>
+                                              </div>
+                                            ))}
                                           </div>
-                                        ))}
-                                      </div>
+                                          
+                                          {/* Status in third column */}
+                                          <div>
+                                            <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                                              <Tag className="w-4 h-4" />
+                                              Status
+                                            </label>
+                                            <div className="mt-1">
+                                              <Badge className={getStatusInfo(selectedEvent.status).className}>
+                                                {getStatusInfo(selectedEvent.status).icon}
+                                                {getStatusInfo(selectedEvent.status).label}
+                                              </Badge>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </>
                                     ) : (
                                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                         <div>
@@ -1229,7 +1241,7 @@ const AllEventsPage: React.FC = () => {
                                       </div>
                                     )}
 
-                                    {/* Participants & Creator Info */}
+                                    {/* Participants & VIP Info */}
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                       <div>
                                         <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
@@ -1238,15 +1250,13 @@ const AllEventsPage: React.FC = () => {
                                         </label>
                                         <p className="mt-1 text-sm text-gray-900">{selectedEvent.participants}</p>
                                       </div>
-                                      {selectedEvent.vip && selectedEvent.vip > 0 && (
-                                        <div>
-                                          <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                                            <Star className="w-4 h-4" />
-                                            VIP
-                                          </label>
-                                          <p className="mt-1 text-sm text-gray-900">{selectedEvent.vip}</p>
-                                        </div>
-                                      )}
+                                      <div>
+                                        <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                                          <Star className="w-4 h-4" />
+                                          VIP
+                                        </label>
+                                        <p className="mt-1 text-sm text-gray-900">{selectedEvent.vip || 0}</p>
+                                      </div>
                                       <div>
                                         <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
                                           <Star className="w-4 h-4" />

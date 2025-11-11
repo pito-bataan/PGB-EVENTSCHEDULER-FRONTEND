@@ -135,6 +135,9 @@ const AdminCalendarPage: React.FC = () => {
         displayEndDate = slot.endDate;
         displayEndTime = slot.endTime;
       }
+    } else if (!isSlot && event.dateTimeSlots && event.dateTimeSlots.length > 0) {
+      // For Day 1 of multi-day events, end date should be same as start date
+      displayEndDate = event.startDate;
     }
 
     // Determine badge color based on event status
