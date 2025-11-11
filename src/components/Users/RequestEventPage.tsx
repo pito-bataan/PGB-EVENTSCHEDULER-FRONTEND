@@ -314,9 +314,13 @@ const RequestEventPage: React.FC = () => {
         
         // Convert date strings to Date objects
         const dates = locationAvailabilities.map((item: any) => new Date(item.date));
+        
+        // If no availability records found (custom location), set empty array
+        // This will allow date selection based on event type rules only
         setAvailableDates(dates);
       }
     } catch (error) {
+      // On error, set empty array to allow date selection based on event type rules
       setAvailableDates([]);
     }
   };
@@ -326,37 +330,24 @@ const RequestEventPage: React.FC = () => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     
-    // Simple Meeting: NO lead time restriction, but still checks location availability
-    if (formData.eventType === 'simple-meeting') {
-      // Skip lead time check, but still check if PGSO added this location on this date
-      if (availableDates.length === 0) {
-        return false; // If no available dates loaded yet, don't disable any dates
-      }
-      
-      // Check if the date is in the available dates list (PGSO must have added it)
-      return !availableDates.some(availableDate => 
-        availableDate.toDateString() === date.toDateString()
-      );
-    }
-    
-    // For Simple and Complex: check lead time requirement first
-    const daysRequired = formData.eventType === 'simple' ? 7 : 30;
-    const days = calculateWorkingDays(today, date);
-    
-    // Disable if doesn't meet minimum lead time
-    if (days < daysRequired) {
+    // Disable past dates
+    if (date < today) {
       return true;
     }
     
-    // Then check location availability
-    if (availableDates.length === 0) {
-      return false; // If no available dates loaded yet, don't disable any dates
+    // Simple Meeting: NO restrictions - allow ALL future dates
+    if (formData.eventType === 'simple-meeting') {
+      return false;
     }
     
-    // Check if the date is in the available dates list
-    return !availableDates.some(availableDate => 
-      availableDate.toDateString() === date.toDateString()
-    );
+    // For Simple Event (7 days) and Complex Event (30 days)
+    // Allow any date that meets the lead time requirement
+    // Ignore location availability records - users can book any location
+    const daysRequired = formData.eventType === 'simple' ? 7 : 30;
+    const days = calculateWorkingDays(today, date);
+    
+    // Only check if date meets minimum lead time requirement
+    return days < daysRequired;
   };
 
   // Auto-check for venue conflicts when schedule changes in modal
