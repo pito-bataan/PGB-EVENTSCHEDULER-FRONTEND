@@ -82,6 +82,7 @@ interface AllEventsState {
   departmentFilter: string;
   dateFilter: string;
   eventTypeFilter: string;
+  sortBy: string;
   
   // Loading & Cache
   loading: boolean;
@@ -97,6 +98,7 @@ interface AllEventsState {
   setDepartmentFilter: (department: string) => void;
   setDateFilter: (date: string) => void;
   setEventTypeFilter: (eventType: string) => void;
+  setSortBy: (sortBy: string) => void;
   clearFilters: () => void;
   clearCache: () => void;
   
@@ -118,6 +120,7 @@ export const useAllEventsStore = create<AllEventsState>()(
       departmentFilter: 'all',
       dateFilter: 'all',
       eventTypeFilter: 'all',
+      sortBy: 'status-priority', // Default to status priority (submitted first)
       loading: false,
       lastFetched: null,
       CACHE_DURATION: 5 * 60 * 1000, // 5 minutes cache
@@ -202,6 +205,10 @@ export const useAllEventsStore = create<AllEventsState>()(
         set({ eventTypeFilter: eventType });
       },
       
+      setSortBy: (sortBy: string) => {
+        set({ sortBy: sortBy });
+      },
+      
       clearFilters: () => {
         set({
           searchQuery: '',
@@ -283,10 +290,51 @@ export const useAllEventsStore = create<AllEventsState>()(
           });
         }
         
-        // Sort by date (newest first)
-        return filtered.sort((a, b) => 
-          new Date(b.startDate).getTime() - new Date(a.startDate).getTime()
-        );
+        // Sort based on selected sorting option
+        return filtered.sort((a, b) => {
+          switch (state.sortBy) {
+            case 'status-priority':
+              // Priority order: submitted > approved > rejected > cancelled > completed
+              const statusPriority = {
+                'submitted': 5,
+                'approved': 4,
+                'rejected': 3,
+                'cancelled': 2,
+                'completed': 1
+              };
+              
+              const aPriority = statusPriority[a.status as keyof typeof statusPriority] || 0;
+              const bPriority = statusPriority[b.status as keyof typeof statusPriority] || 0;
+              
+              // If different status priorities, sort by priority
+              if (aPriority !== bPriority) {
+                return bPriority - aPriority;
+              }
+              
+              // If same status priority, sort by creation date (newest first)
+              return new Date(b.createdAt || b.startDate).getTime() - new Date(a.createdAt || a.startDate).getTime();
+              
+            case 'upcoming-events':
+              // Sort by start date (upcoming events first)
+              return new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
+              
+            case 'recent-created':
+              // Sort by creation date (most recent first)
+              return new Date(b.createdAt || b.startDate).getTime() - new Date(a.createdAt || a.startDate).getTime();
+              
+            case 'event-title':
+              // Sort alphabetically by event title
+              return a.eventTitle.localeCompare(b.eventTitle);
+              
+            case 'requestor-name':
+              // Sort alphabetically by requestor name
+              return a.requestor.localeCompare(b.requestor);
+              
+            default:
+              // Default to status priority
+              return new Date(b.createdAt || b.startDate).getTime() - new Date(a.createdAt || a.startDate).getTime();
+          }
+        });
       },
       
       getUniqueLocations: () => {

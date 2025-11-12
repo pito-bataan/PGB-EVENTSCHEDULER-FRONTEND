@@ -95,7 +95,12 @@ import {
   FileDown,
   Printer,
   CheckSquare,
-  Square
+  Square,
+  ArrowUpDown,
+  TrendingUp,
+  Clock4,
+  SortAsc,
+  UserCheck
 } from 'lucide-react';
 
 const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api`;
@@ -113,12 +118,14 @@ const AllEventsPage: React.FC = () => {
     statusFilter,
     departmentFilter,
     eventTypeFilter,
+    sortBy,
     selectedEvent: storeSelectedEvent,
     fetchAllEvents,
     setSearchQuery,
     setStatusFilter,
     setDepartmentFilter,
     setEventTypeFilter,
+    setSortBy,
     setSelectedEvent: setStoreSelectedEvent,
     getFilteredEvents
   } = useAllEventsStore();
@@ -284,11 +291,10 @@ const AllEventsPage: React.FC = () => {
     cancelled: filteredEvents.filter(e => e.status === 'cancelled').length,
   };
   
-  // Filter events by active tab and sort by oldest date first
-  const tabFilteredEvents = (activeTab === 'all' 
+  // Filter events by active tab (store already handles sorting)
+  const tabFilteredEvents = activeTab === 'all' 
     ? filteredEvents 
-    : filteredEvents.filter(e => e.status === activeTab))
-    .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+    : filteredEvents.filter(e => e.status === activeTab);
   
   // Pagination calculations
   const totalPages = Math.ceil(tabFilteredEvents.length / itemsPerPage);
@@ -868,6 +874,64 @@ const AllEventsPage: React.FC = () => {
         </CardHeader>
 
         <CardContent className="space-y-6">
+          {/* Status Filter Buttons */}
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant={activeTab === 'all' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setActiveTab('all')}
+              className="flex items-center gap-2"
+            >
+              <Square className="w-4 h-4" />
+              All ({statusCounts.all})
+            </Button>
+            <Button
+              variant={activeTab === 'submitted' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setActiveTab('submitted')}
+              className="flex items-center gap-2 bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200"
+            >
+              <Clock3 className="w-4 h-4" />
+              Submitted ({statusCounts.submitted})
+            </Button>
+            <Button
+              variant={activeTab === 'approved' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setActiveTab('approved')}
+              className="flex items-center gap-2 bg-green-50 text-green-700 hover:bg-green-100 border-green-200"
+            >
+              <CheckCircle className="w-4 h-4" />
+              Approved ({statusCounts.approved})
+            </Button>
+            <Button
+              variant={activeTab === 'rejected' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setActiveTab('rejected')}
+              className="flex items-center gap-2 bg-red-50 text-red-700 hover:bg-red-100 border-red-200"
+            >
+              <XCircle className="w-4 h-4" />
+              Rejected ({statusCounts.rejected})
+            </Button>
+            <Button
+              variant={activeTab === 'cancelled' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setActiveTab('cancelled')}
+              className="flex items-center gap-2 bg-orange-50 text-orange-700 hover:bg-orange-100 border-orange-200"
+            >
+              <AlertCircle className="w-4 h-4" />
+              Cancelled ({statusCounts.cancelled})
+            </Button>
+            <Button
+              variant={activeTab === 'completed' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setActiveTab('completed')}
+              className="flex items-center gap-2 bg-purple-50 text-purple-700 hover:bg-purple-100 border-purple-200"
+            >
+              <CheckSquare className="w-4 h-4" />
+              Completed ({statusCounts.completed})
+            </Button>
+          </div>
+
           {/* Filters */}
           <div className="flex flex-col md:flex-row gap-4">
             <div className="md:w-96">
@@ -882,18 +946,43 @@ const AllEventsPage: React.FC = () => {
               </div>
             </div>
             <div className="flex gap-3">
-              <Select value={activeTab} onValueChange={setActiveTab}>
-                <SelectTrigger className="w-48">
-                  <Filter className="w-4 h-4 mr-2" />
-                  <SelectValue placeholder="Status" />
+              {/* Sort By Dropdown */}
+              <Select value={sortBy} onValueChange={setSortBy}>
+                <SelectTrigger className="w-60">
+                  <ArrowUpDown className="w-4 h-4 mr-2" />
+                  <SelectValue placeholder="Sort By" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all" className="bg-gray-50 text-gray-700 font-medium">All ({statusCounts.all})</SelectItem>
-                  <SelectItem value="submitted" className="bg-blue-50 text-blue-700 font-medium">Submitted ({statusCounts.submitted})</SelectItem>
-                  <SelectItem value="approved" className="bg-green-50 text-green-700 font-medium">Approved ({statusCounts.approved})</SelectItem>
-                  <SelectItem value="rejected" className="bg-red-50 text-red-700 font-medium">Rejected ({statusCounts.rejected})</SelectItem>
-                  <SelectItem value="cancelled" className="bg-orange-50 text-orange-700 font-medium">Cancelled ({statusCounts.cancelled})</SelectItem>
-                  <SelectItem value="completed" className="bg-purple-50 text-purple-700 font-medium">Completed ({statusCounts.completed})</SelectItem>
+                  <SelectItem value="status-priority">
+                    <div className="flex items-center gap-2">
+                      <TrendingUp className="w-4 h-4" />
+                      Priority (Submitted First)
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="upcoming-events">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-4 h-4" />
+                      Upcoming Events
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="recent-created">
+                    <div className="flex items-center gap-2">
+                      <Clock4 className="w-4 h-4" />
+                      Most Recent Created
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="event-title">
+                    <div className="flex items-center gap-2">
+                      <SortAsc className="w-4 h-4" />
+                      Event Title A-Z
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="requestor-name">
+                    <div className="flex items-center gap-2">
+                      <UserCheck className="w-4 h-4" />
+                      Requestor Name A-Z
+                    </div>
+                  </SelectItem>
                 </SelectContent>
               </Select>
               <Select value={eventTypeFilter} onValueChange={setEventTypeFilter}>

@@ -230,6 +230,7 @@ const RequestEventPage: React.FC = () => {
     : formData.attachments.length > 0; // Other event types always require attachments
 
   const [locations, setLocations] = useState<string[]>(['Add Custom Location']);
+  const [locationData, setLocationData] = useState<{name: string, isCustom: boolean}[]>([]);
   const [availableDates, setAvailableDates] = useState<Date[]>([]);
 
 
@@ -275,17 +276,38 @@ const RequestEventPage: React.FC = () => {
         const response = await axios.get(`${API_BASE_URL}/location-availability`, { headers });
 
         if (response.data.success) {
-          // Extract unique location names and clean them
-          const uniqueLocations = [...new Set(response.data.data.map((item: any) => {
+          console.log('Location API Response:', response.data.data); // Debug log
+          
+          // Extract unique location objects with their properties
+          const locationMap = new Map();
+          response.data.data.forEach((item: any) => {
             // Remove "Bookings for " prefix if it exists
             let locationName = item.locationName;
             if (locationName.startsWith('Bookings for ')) {
               locationName = locationName.replace('Bookings for ', '');
             }
-            return locationName;
-          }))] as string[];
-          // Add "Add Custom Location" at the beginning
-          setLocations(['Add Custom Location', ...uniqueLocations]);
+            
+            // Store location with its properties
+            if (!locationMap.has(locationName)) {
+              // Check if location was added by PGSO account
+              // If setBy.username is "event.pgso", it's a PGB location
+              // If setBy.username is anything else, it's a custom location
+              const isCustomLocation = item.setBy?.username !== 'event.pgso';
+              
+              locationMap.set(locationName, {
+                name: locationName,
+                isCustom: isCustomLocation
+              });
+            }
+          });
+          
+          const uniqueLocations = Array.from(locationMap.values());
+          console.log('Processed locations:', uniqueLocations); // Debug log
+          setLocationData(uniqueLocations); // Store full location data
+          
+          // Extract just names for backward compatibility
+          const locationNames = uniqueLocations.map(loc => loc.name);
+          setLocations(['Add Custom Location', ...locationNames]);
         }
       } catch (error) {
         // Keep default "Add Custom Location" if fetch fails
@@ -2174,22 +2196,67 @@ const RequestEventPage: React.FC = () => {
                             </div>
                           </SelectTrigger>
                           <SelectContent className="max-h-80">
-                            {locations.map((location) => (
-                              <SelectItem 
-                                key={location} 
-                                value={location}
-                                className={location === 'Add Custom Location' ? 'text-blue-600 font-medium' : ''}
-                              >
-                                <div className="flex items-center gap-2">
-                                  {location === 'Add Custom Location' ? (
-                                    <Plus className="w-3 h-3" />
-                                  ) : (
-                                    <MapPin className="w-3 h-3 text-gray-400" />
+                            {/* PGB Locations Section */}
+                            {(() => {
+                              // Use actual location data with isCustom field
+                              const pgbLocs = locationData.filter(loc => !loc.isCustom);
+                              const customLocs = locationData.filter(loc => loc.isCustom);
+                              
+                              return (
+                                <>
+                                  {/* PGB Locations */}
+                                  {pgbLocs.length > 0 && (
+                                    <>
+                                      <div className="px-2 py-1.5 text-xs font-semibold text-gray-500 bg-gray-50">
+                                        PGB Locations
+                                      </div>
+                                      {pgbLocs.map((location) => (
+                                        <SelectItem 
+                                          key={location.name} 
+                                          value={location.name}
+                                        >
+                                          <div className="flex items-center gap-2">
+                                            <MapPin className="w-3 h-3 text-blue-500" />
+                                            {location.name}
+                                          </div>
+                                        </SelectItem>
+                                      ))}
+                                    </>
                                   )}
-                                  {location}
-                                </div>
-                              </SelectItem>
-                            ))}
+                                  
+                                  {/* Custom Locations */}
+                                  {customLocs.length > 0 && (
+                                    <>
+                                      <div className="px-2 py-1.5 text-xs font-semibold text-gray-500 bg-gray-50 mt-1">
+                                        Custom Locations
+                                      </div>
+                                      {customLocs.map((location) => (
+                                        <SelectItem 
+                                          key={location.name} 
+                                          value={location.name}
+                                        >
+                                          <div className="flex items-center gap-2">
+                                            <MapPin className="w-3 h-3 text-purple-500" />
+                                            {location.name}
+                                          </div>
+                                        </SelectItem>
+                                      ))}
+                                    </>
+                                  )}
+                                  
+                                  {/* Add Custom Location Button */}
+                                  <SelectItem 
+                                    value="Add Custom Location"
+                                    className="text-blue-600 font-medium mt-1 border-t"
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      <Plus className="w-3 h-3" />
+                                      Add Custom Location
+                                    </div>
+                                  </SelectItem>
+                                </>
+                              );
+                            })()}
                           </SelectContent>
                         </Select>
                         {formData.location && formData.location !== 'Add Custom Location' && (
