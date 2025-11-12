@@ -33,6 +33,7 @@ import {
   PaginationLink,
   PaginationNext,
   PaginationPrevious,
+  PaginationEllipsis,
 } from '@/components/ui/pagination';
 import {
   Activity,
@@ -491,17 +492,61 @@ const UsersLogsPage: React.FC = () => {
                         </Button>
                       </PaginationItem>
                       
-                      {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                        <PaginationItem key={page}>
+                      {/* First page */}
+                      <PaginationItem>
+                        <PaginationLink
+                          onClick={() => setCurrentPage(1)}
+                          isActive={currentPage === 1}
+                          className="cursor-pointer"
+                        >
+                          1
+                        </PaginationLink>
+                      </PaginationItem>
+
+                      {/* Show ellipsis if current page is far from start */}
+                      {currentPage > 3 && (
+                        <PaginationItem>
+                          <PaginationEllipsis />
+                        </PaginationItem>
+                      )}
+
+                      {/* Show pages around current page */}
+                      {Array.from({ length: totalPages }, (_, i) => i + 1)
+                        .filter(page => {
+                          // Show pages near current page (not first or last)
+                          return page > 1 && page < totalPages && Math.abs(page - currentPage) <= 1;
+                        })
+                        .map((page) => (
+                          <PaginationItem key={page}>
+                            <PaginationLink
+                              onClick={() => setCurrentPage(page)}
+                              isActive={currentPage === page}
+                              className="cursor-pointer"
+                            >
+                              {page}
+                            </PaginationLink>
+                          </PaginationItem>
+                        ))}
+
+                      {/* Show ellipsis if current page is far from end */}
+                      {currentPage < totalPages - 2 && (
+                        <PaginationItem>
+                          <PaginationEllipsis />
+                        </PaginationItem>
+                      )}
+
+                      {/* Last page */}
+                      {totalPages > 1 && (
+                        <PaginationItem>
                           <PaginationLink
-                            onClick={() => setCurrentPage(page)}
-                            isActive={currentPage === page}
+                            onClick={() => setCurrentPage(totalPages)}
+                            isActive={currentPage === totalPages}
                             className="cursor-pointer"
                           >
-                            {page}
+                            {totalPages}
                           </PaginationLink>
                         </PaginationItem>
-                      ))}
+                      )}
                       
                       <PaginationItem>
                         <Button

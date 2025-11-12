@@ -67,6 +67,7 @@ interface Event {
   participants: number;
   vip?: number;
   vvip?: number;
+  eventType?: 'simple-meeting' | 'simple' | 'complex'; // Event type for date restrictions
   startDate: string;
   startTime: string;
   endDate: string;
@@ -149,7 +150,13 @@ const MyEventsPage: React.FC = () => {
     startDate: '',
     startTime: '',
     endDate: '',
-    endTime: ''
+    endTime: '',
+    dateTimeSlots: [] as Array<{
+      id: string;
+      date: Date;
+      startTime: string;
+      endTime: string;
+    }>
   });
   const [availableDates, setAvailableDates] = useState<Date[]>([]);
   const [showCustomLocationInput, setShowCustomLocationInput] = useState(false);
@@ -240,8 +247,51 @@ const MyEventsPage: React.FC = () => {
     }
   };
 
+  // Calculate working days between two dates (excluding weekends)
+  const calculateWorkingDays = (startDate: Date, endDate: Date): number => {
+    let count = 0;
+    const current = new Date(startDate);
+    
+    while (current <= endDate) {
+      const dayOfWeek = current.getDay();
+      if (dayOfWeek !== 0 && dayOfWeek !== 6) { // Not Sunday (0) or Saturday (6)
+        count++;
+      }
+      current.setDate(current.getDate() + 1);
+    }
+    
+    return count;
+  };
+
   // Check if a date should be disabled (not available for the selected location)
   const isDateDisabled = (date: Date) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    // Disable past dates
+    if (date < today) {
+      return true;
+    }
+    
+    // Get event type from selectedEditEvent
+    const eventType = selectedEditEvent?.eventType;
+    
+    // Simple Meeting: NO restrictions - allow ALL future dates
+    if (eventType === 'simple-meeting') {
+      return false;
+    }
+    
+    // For Simple Event (7 days) and Complex Event (30 days)
+    // Allow any date that meets the lead time requirement
+    if (eventType === 'simple' || eventType === 'complex') {
+      const daysRequired = eventType === 'simple' ? 7 : 30;
+      const days = calculateWorkingDays(today, date);
+      
+      // Only check if date meets minimum lead time requirement
+      return days < daysRequired;
+    }
+    
+    // If no event type specified (old events), use old logic
     if (availableDates.length === 0) {
       return false; // If no available dates loaded yet, don't disable any dates
     }
@@ -271,11 +321,10 @@ const MyEventsPage: React.FC = () => {
     }
   }, [showEditModal, editFormData.location]);
 
-  // Auto-check for venue conflicts when edit modal schedule changes
+  // Auto-check for conflicts when date or location changes
   useEffect(() => {
     const checkConflicts = async () => {
       if (editFormData.startDate && editFormData.location && showEditModal) {
-        // Check conflicts for the entire day at this location to show booked time slots
         const response = await fetch(`${API_BASE_URL}/events`, {
           headers: {
             'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
@@ -287,20 +336,28 @@ const MyEventsPage: React.FC = () => {
           const eventsData = await response.json();
           const events = eventsData.data || [];
           
-          // Store ALL events on this date (for REQ label checking)
+          // Collect all dates we need to check (Day 1 + all additional days)
+          const datesToCheck = [new Date(editFormData.startDate)];
+          editFormData.dateTimeSlots.forEach(slot => {
+            datesToCheck.push(slot.date);
+          });
+          
+          // Store ALL events on ANY of the dates (for REQ label checking)
           const eventsOnDate = events.filter((event: any) => {
-            if (!event.startDate || !editFormData.startDate) return false;
+            if (!event.startDate) return false;
             if (selectedEditEvent && event._id === selectedEditEvent._id) return false;
             if (event.status !== 'submitted' && event.status !== 'approved') return false;
             
             const eventStartDate = new Date(event.startDate);
-            const selectedDate = new Date(editFormData.startDate);
             
-            return eventStartDate.toDateString() === selectedDate.toDateString();
+            // Check if event is on any of our dates
+            return datesToCheck.some(checkDate => 
+              eventStartDate.toDateString() === checkDate.toDateString()
+            );
           });
           setAllEventsOnDate(eventsOnDate);
           
-          // Filter events that are on the same date and location, excluding the current event being edited
+          // Filter events that are on the same location, excluding the current event being edited
           const conflicts = eventsOnDate.filter((event: any) => {
             if (!event.location) return false;
             // Only check conflicts for the SAME location
@@ -318,7 +375,7 @@ const MyEventsPage: React.FC = () => {
     // Debounce the conflict checking to avoid too many API calls
     const timeoutId = setTimeout(checkConflicts, 300);
     return () => clearTimeout(timeoutId);
-  }, [editFormData.startDate, editFormData.location, showEditModal, selectedEditEvent]);
+  }, [editFormData.startDate, editFormData.location, editFormData.dateTimeSlots, showEditModal, selectedEditEvent]);
 
   // Auto-check for requirement availability when rescheduling
   useEffect(() => {
@@ -747,13 +804,21 @@ const MyEventsPage: React.FC = () => {
   };
 
   // Check if a specific time slot is booked for the selected location and date
-  const isTimeSlotBooked = (timeSlot: string) => {
-    if (!editFormData.startDate || !editFormData.location || conflictingEvents.length === 0) {
+  const isTimeSlotBooked = (timeSlot: string, checkDate?: Date) => {
+    const dateToCheck = checkDate || (editFormData.startDate ? new Date(editFormData.startDate) : null);
+    
+    if (!dateToCheck || !editFormData.location || conflictingEvents.length === 0) {
       return false;
     }
 
     return conflictingEvents.some(event => {
       if (event.location !== editFormData.location) return false;
+      
+      // Check if event is on the same date
+      const eventDate = new Date(event.startDate);
+      if (eventDate.toDateString() !== dateToCheck.toDateString()) {
+        return false;
+      }
       
       const eventStartTime = event.startTime;
       const eventEndTime = event.endTime;
@@ -957,12 +1022,35 @@ const MyEventsPage: React.FC = () => {
   // Handle edit event
   const handleEditEvent = (event: Event) => {
     setSelectedEditEvent(event);
+    
+    // Convert dateTimeSlots from event to editFormData format
+    // Filter out slots that are outside the event's date range (clean up old data)
+    const startDateObj = new Date(event.startDate);
+    const endDateObj = new Date(event.endDate);
+    startDateObj.setHours(0, 0, 0, 0);
+    endDateObj.setHours(0, 0, 0, 0);
+    
+    const convertedSlots = (event.dateTimeSlots || [])
+      .filter(slot => {
+        const slotDate = new Date(slot.startDate);
+        slotDate.setHours(0, 0, 0, 0);
+        // Only include slots that are AFTER startDate and <= endDate
+        return slotDate > startDateObj && slotDate <= endDateObj;
+      })
+      .map((slot, index) => ({
+        id: `slot-${index}`,
+        date: new Date(slot.startDate),
+        startTime: slot.startTime,
+        endTime: slot.endTime
+      }));
+    
     setEditFormData({
       location: event.location,
       startDate: event.startDate,
       startTime: event.startTime,
       endDate: event.endDate,
-      endTime: event.endTime
+      endTime: event.endTime,
+      dateTimeSlots: convertedSlots
     });
     setShowCustomLocationInput(false);
     setCustomLocation('');
@@ -1493,22 +1581,52 @@ const MyEventsPage: React.FC = () => {
 
     try {
       const token = localStorage.getItem('authToken');
+
+    // Convert dateTimeSlots back to API format (only include slots with both start and end times)
+    // AND only include slots that are between startDate and endDate (exclude old/invalid dates)
+    const convertedSlots = editFormData.dateTimeSlots
+      .filter(slot => {
+        // Must have both times
+        if (!slot.startTime || !slot.endTime) return false;
+        
+        // Must be between startDate and endDate (not before startDate, not after endDate)
+        // Create fresh date objects for comparison to avoid mutation issues
+        const slotDate = new Date(slot.date);
+        const startDateObj = new Date(editFormData.startDate);
+        const endDateObj = new Date(editFormData.endDate);
+        
+        // Normalize to midnight for date-only comparison
+        slotDate.setHours(0, 0, 0, 0);
+        startDateObj.setHours(0, 0, 0, 0);
+        endDateObj.setHours(0, 0, 0, 0);
+        
+        // Slot must be AFTER startDate (Day 2+, not Day 1)
+        return slotDate > startDateObj && slotDate <= endDateObj;
+      })
+      .map(slot => ({
+        startDate: slot.date.toISOString().split('T')[0],
+        startTime: slot.startTime,
+        endDate: slot.date.toISOString().split('T')[0],
+        endTime: slot.endTime
+      }));
+
+    const updateData = {
+      location: editFormData.location,
+      startDate: editFormData.startDate,
+      startTime: editFormData.startTime,
+      endDate: editFormData.endDate,
+      endTime: editFormData.endTime,
+      dateTimeSlots: convertedSlots, // Include multi-day slots
+      previousLocation: selectedEditEvent.location, // Store previous location for reschedule log
+      previousStartDate: selectedEditEvent.startDate,
+      previousStartTime: selectedEditEvent.startTime,
+      previousEndDate: selectedEditEvent.endDate,
+      previousEndTime: selectedEditEvent.endTime
+    };
+
       const headers = {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
-      };
-
-      const updateData = {
-        location: editFormData.location,
-        startDate: editFormData.startDate,
-        startTime: editFormData.startTime,
-        endDate: editFormData.endDate,
-        endTime: editFormData.endTime,
-        previousLocation: selectedEditEvent.location, // Store previous location for reschedule log
-        previousStartDate: selectedEditEvent.startDate,
-        previousStartTime: selectedEditEvent.startTime,
-        previousEndDate: selectedEditEvent.endDate,
-        previousEndTime: selectedEditEvent.endTime
       };
 
       const response = await axios.put(
@@ -2727,8 +2845,8 @@ const MyEventsPage: React.FC = () => {
 
       {/* Edit Event Modal */}
       <Dialog open={showEditModal} onOpenChange={setShowEditModal}>
-        <DialogContent className="!max-w-[900px] w-[90vw] max-h-[90vh] overflow-hidden p-0">
-          <DialogHeader className="px-6 py-4 border-b">
+        <DialogContent className="!max-w-[900px] w-[90vw] max-h-[90vh] overflow-hidden p-0 flex flex-col">
+          <DialogHeader className="px-6 py-4 border-b flex-shrink-0">
             <DialogTitle className="text-xl font-semibold text-gray-900">
               Edit Event Schedule
             </DialogTitle>
@@ -2738,7 +2856,7 @@ const MyEventsPage: React.FC = () => {
           </DialogHeader>
           
           {selectedEditEvent && (
-            <div className="flex flex-col h-full">
+            <div className="flex flex-col flex-1 min-h-0">
               {/* Scrollable Content */}
               <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
                 {/* Event Title (Read-only) */}
@@ -2871,10 +2989,202 @@ const MyEventsPage: React.FC = () => {
               </div>
 
               {/* Date and Time Section */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Start Date & Time */}
+              {editFormData.startDate && editFormData.endDate && editFormData.startDate !== editFormData.endDate ? (
+                /* Multi-Day Event - Show Day 1 in Card */
                 <div className="space-y-4">
-                  <h4 className="text-sm font-medium text-gray-700">Start</h4>
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <div className="flex items-center gap-2 mb-4">
+                      <h4 className="text-sm font-medium text-gray-900">
+                        Day 1: {format(new Date(editFormData.startDate), "PPPP")}
+                      </h4>
+                      <Badge variant="default" className="text-xs bg-blue-600">
+                        Main Day
+                      </Badge>
+                    </div>
+                    <div className="space-y-3">
+                      {/* Start Date */}
+                      <div>
+                        <Label className="text-xs text-gray-600 mb-1.5 block">Start Date (Day 1)</Label>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              variant="outline"
+                              className="w-full justify-start text-left font-normal"
+                            >
+                              <CalendarIcon className="mr-2 h-4 w-4" />
+                              {editFormData.startDate ? format(new Date(editFormData.startDate), 'PPP') : 'Pick a date'}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0">
+                            <Calendar
+                              mode="single"
+                              selected={editFormData.startDate ? new Date(editFormData.startDate) : undefined}
+                              onSelect={(date) => {
+                                if (date) {
+                                  const year = date.getFullYear();
+                                  const month = String(date.getMonth() + 1).padStart(2, '0');
+                                  const day = String(date.getDate()).padStart(2, '0');
+                                  const newStartDate = `${year}-${month}-${day}`;
+                                  
+                                  // Calculate how many days the event spans
+                                  const oldStart = new Date(editFormData.startDate);
+                                  const oldEnd = new Date(editFormData.endDate);
+                                  const daysDifference = Math.ceil((oldEnd.getTime() - oldStart.getTime()) / (1000 * 60 * 60 * 24));
+                                  
+                                  // Calculate new end date maintaining the same span
+                                  const newEndDate = new Date(date);
+                                  newEndDate.setDate(newEndDate.getDate() + daysDifference);
+                                  const newEndDateString = `${newEndDate.getFullYear()}-${String(newEndDate.getMonth() + 1).padStart(2, '0')}-${String(newEndDate.getDate()).padStart(2, '0')}`;
+                                  
+                                  // Update all dateTimeSlots to shift by the same amount
+                                  const dayShift = Math.ceil((date.getTime() - oldStart.getTime()) / (1000 * 60 * 60 * 24));
+                                  const updatedSlots = editFormData.dateTimeSlots.map(slot => {
+                                    const newSlotDate = new Date(slot.date);
+                                    newSlotDate.setDate(newSlotDate.getDate() + dayShift);
+                                    return {
+                                      ...slot,
+                                      date: newSlotDate
+                                    };
+                                  });
+                                  
+                                  setEditFormData(prev => ({ 
+                                    ...prev, 
+                                    startDate: newStartDate,
+                                    endDate: newEndDateString,
+                                    dateTimeSlots: updatedSlots
+                                  }));
+                                }
+                              }}
+                              disabled={isDateDisabled}
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+                      
+                      {/* End Date - Read only, shows same as start date */}
+                      <div>
+                        <Label className="text-xs text-gray-600 mb-1.5 block">End Date (Day 1)</Label>
+                        <Button
+                          variant="outline"
+                          className="w-full justify-start text-left font-normal bg-gray-100 cursor-not-allowed"
+                          disabled
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {editFormData.startDate ? format(new Date(editFormData.startDate), 'PPP') : 'Same as Start Date'}
+                        </Button>
+                        <p className="text-xs text-gray-500 mt-1">End date is automatically same as start date for Day 1</p>
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4 mt-3">
+                      <div>
+                        <Label className="text-xs text-gray-600 mb-1.5 block">Start Time</Label>
+                        <Select 
+                          value={editFormData.startTime} 
+                          onValueChange={(value) => {
+                            setEditFormData(prev => ({ ...prev, startTime: value }));
+                            if (editFormData.endTime) {
+                              const timeToMinutes = (time: string) => {
+                                const [hours, minutes] = time.split(':').map(Number);
+                                return hours * 60 + minutes;
+                              };
+                              if (timeToMinutes(value) >= timeToMinutes(editFormData.endTime)) {
+                                setEditFormData(prev => ({ ...prev, endTime: '' }));
+                              }
+                            }
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select start time" />
+                          </SelectTrigger>
+                          <SelectContent className="max-h-80">
+                            {generateTimeOptions().map((timeOption) => {
+                              const isBooked = isTimeSlotBooked(timeOption.value);
+                              const hasReqConflicts = hasRequirementConflictsAtTime(timeOption.value);
+                              return (
+                                <SelectItem 
+                                  key={timeOption.value} 
+                                  value={timeOption.value}
+                                  disabled={isBooked}
+                                  className={isBooked ? 'opacity-50 cursor-not-allowed' : ''}
+                                >
+                                  <div className="flex items-center justify-between w-full gap-2">
+                                    <span className={isBooked ? 'text-gray-400' : ''}>
+                                      {timeOption.label}
+                                    </span>
+                                    <div className="flex items-center gap-1">
+                                      {hasReqConflicts && !isBooked && (
+                                        <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-300">
+                                          REQ
+                                        </Badge>
+                                      )}
+                                      {isBooked && (
+                                        <Badge variant="destructive" className="text-xs">
+                                          BOOKED
+                                        </Badge>
+                                      )}
+                                    </div>
+                                  </div>
+                                </SelectItem>
+                              );
+                            })}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label className="text-xs text-gray-600 mb-1.5 block">End Time</Label>
+                        <Select 
+                          value={editFormData.endTime} 
+                          onValueChange={(value) => setEditFormData(prev => ({ ...prev, endTime: value }))}
+                          disabled={!editFormData.startTime}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder={editFormData.startTime ? "Select end time" : "Select start time first"} />
+                          </SelectTrigger>
+                          <SelectContent className="max-h-80">
+                            {getAvailableEndTimes().map((timeOption) => {
+                              const isBooked = isTimeSlotBooked(timeOption.value);
+                              const hasReqConflicts = hasRequirementConflictsAtTime(timeOption.value);
+                              return (
+                                <SelectItem 
+                                  key={timeOption.value} 
+                                  value={timeOption.value}
+                                  disabled={isBooked}
+                                  className={isBooked ? 'opacity-50 cursor-not-allowed' : ''}
+                                >
+                                  <div className="flex items-center justify-between w-full gap-2">
+                                    <span className={isBooked ? 'text-gray-400' : ''}>
+                                      {timeOption.label}
+                                    </span>
+                                    <div className="flex items-center gap-1">
+                                      {hasReqConflicts && !isBooked && (
+                                        <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-300">
+                                          REQ
+                                        </Badge>
+                                      )}
+                                      {isBooked && (
+                                        <Badge variant="destructive" className="text-xs">
+                                          BOOKED
+                                        </Badge>
+                                      )}
+                                    </div>
+                                  </div>
+                                </SelectItem>
+                              );
+                            })}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* Single Day Event - Show Start and End columns */
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Start Date & Time */}
+                  <div className="space-y-4">
+                    <h4 className="text-sm font-medium text-gray-700">Start</h4>
                   
                   {/* Start Date */}
                   <div>
@@ -2982,7 +3292,12 @@ const MyEventsPage: React.FC = () => {
                           className="w-full justify-start text-left font-normal mt-1"
                         >
                           <CalendarIcon className="mr-2 h-4 w-4" />
-                          {editFormData.endDate ? format(new Date(editFormData.endDate), 'PPP') : 'Pick a date'}
+                          {/* For multi-day events, Day 1 end date = start date */}
+                          {editFormData.startDate && editFormData.endDate && editFormData.startDate !== editFormData.endDate
+                            ? format(new Date(editFormData.startDate), 'PPP')
+                            : editFormData.endDate 
+                              ? format(new Date(editFormData.endDate), 'PPP') 
+                              : 'Pick a date'}
                         </Button>
                       </PopoverTrigger>
                       <PopoverContent className="w-auto p-0">
@@ -3053,6 +3368,280 @@ const MyEventsPage: React.FC = () => {
                   </div>
                 </div>
               </div>
+              )}
+
+              {/* Multi-Day Event - Additional Date Slots */}
+              {editFormData.startDate && editFormData.endDate && editFormData.startDate !== editFormData.endDate && (
+                <div className="border-t pt-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h4 className="font-medium text-gray-900">Additional Days for Multi-Day Event</h4>
+                      <p className="text-sm text-gray-600">
+                        Your event spans from {format(new Date(editFormData.startDate), "MMM dd")} to {format(new Date(editFormData.endDate), "MMM dd")}. 
+                        Add time slots for each additional day.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Generate date slots for each day between start and end */}
+                  {(() => {
+                    const days: Date[] = [];
+                    const currentDate = new Date(editFormData.startDate);
+                    const endDate = new Date(editFormData.endDate);
+                    
+                    // Skip the first day (already covered by main start/end time)
+                    currentDate.setDate(currentDate.getDate() + 1);
+                    
+                    while (currentDate <= endDate) {
+                      days.push(new Date(currentDate));
+                      currentDate.setDate(currentDate.getDate() + 1);
+                    }
+                    
+                    return (
+                      <div className="space-y-3">
+                        {days.map((date, index) => {
+                          const dateStr = date.toISOString();
+                          const existingSlot = editFormData.dateTimeSlots.find(slot => 
+                            slot.date.toDateString() === date.toDateString()
+                          );
+                          
+                          return (
+                            <div key={dateStr} className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                              <div className="flex items-center justify-between mb-3">
+                                <div className="flex items-center gap-2">
+                                  <h5 className="text-sm font-medium text-gray-900">
+                                    Day {index + 2}: {format(date, "PPPP")}
+                                  </h5>
+                                  {existingSlot && existingSlot.startTime && existingSlot.endTime && (
+                                    <Badge variant="default" className="text-xs bg-green-600">
+                                      <CheckCircle className="w-3 h-3 mr-1" />
+                                      Configured
+                                    </Badge>
+                                  )}
+                                </div>
+                                {existingSlot && existingSlot.startTime && existingSlot.endTime && (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => {
+                                      const updatedSlots = editFormData.dateTimeSlots.filter(s => 
+                                        s.date.toDateString() !== date.toDateString()
+                                      );
+                                      setEditFormData(prev => ({ ...prev, dateTimeSlots: updatedSlots }));
+                                      toast.success(`Time slot for ${format(date, "MMM dd")} removed`);
+                                    }}
+                                    className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                  >
+                                    <XCircle className="w-4 h-4" />
+                                  </Button>
+                                )}
+                              </div>
+                              
+                              {/* Always show editable fields */}
+                              <div className="space-y-3">
+                                {/* Start Date */}
+                                <div>
+                                  <Label className="text-xs font-medium text-gray-700 mb-1.5 block">
+                                    Start Date (Day {index + 2})
+                                  </Label>
+                                  <Popover>
+                                    <PopoverTrigger asChild>
+                                      <Button
+                                        variant="outline"
+                                        className="w-full justify-start text-left font-normal"
+                                      >
+                                        <CalendarIcon className="mr-2 h-4 w-4" />
+                                        {format(date, 'PPP')}
+                                      </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-auto p-0">
+                                      <Calendar
+                                        mode="single"
+                                        selected={date}
+                                        onSelect={(newDate) => {
+                                          if (newDate) {
+                                            // Update the slot's date
+                                            const currentSlot = editFormData.dateTimeSlots.find(s => 
+                                              s.date.toDateString() === date.toDateString()
+                                            );
+                                            const updatedSlots = editFormData.dateTimeSlots.filter(s => 
+                                              s.date.toDateString() !== date.toDateString()
+                                            );
+                                            if (currentSlot) {
+                                              const newSlot = {
+                                                ...currentSlot,
+                                                date: newDate
+                                              };
+                                              setEditFormData(prev => ({ 
+                                                ...prev, 
+                                                dateTimeSlots: [...updatedSlots, newSlot],
+                                                // Update overall endDate to the last day
+                                                endDate: newDate.toISOString().split('T')[0]
+                                              }));
+                                            } else {
+                                              // Create new slot if doesn't exist
+                                              const newSlot = {
+                                                id: `slot-${newDate.getTime()}`,
+                                                date: newDate,
+                                                startTime: '',
+                                                endTime: ''
+                                              };
+                                              setEditFormData(prev => ({ 
+                                                ...prev, 
+                                                dateTimeSlots: [...prev.dateTimeSlots, newSlot],
+                                                endDate: newDate.toISOString().split('T')[0]
+                                              }));
+                                            }
+                                          }
+                                        }}
+                                        disabled={isDateDisabled}
+                                        initialFocus
+                                      />
+                                    </PopoverContent>
+                                  </Popover>
+                                </div>
+                                
+                                {/* End Date - Read only, shows same as start date */}
+                                <div>
+                                  <Label className="text-xs font-medium text-gray-700 mb-1.5 block">
+                                    End Date (Day {index + 2})
+                                  </Label>
+                                  <Button
+                                    variant="outline"
+                                    className="w-full justify-start text-left font-normal bg-gray-100 cursor-not-allowed"
+                                    disabled
+                                  >
+                                    <CalendarIcon className="mr-2 h-4 w-4" />
+                                    {format(date, 'PPP')}
+                                  </Button>
+                                  <p className="text-xs text-gray-500 mt-1">End date is automatically same as start date</p>
+                                </div>
+                                
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                      <Label className="text-xs font-medium text-gray-700 mb-1.5 block">
+                                        Start Time
+                                      </Label>
+                                      <Select 
+                                        value={existingSlot?.startTime || ''}
+                                        onValueChange={(value) => {
+                                          const currentSlot = editFormData.dateTimeSlots.find(s => 
+                                            s.date.toDateString() === date.toDateString()
+                                          );
+                                          const newSlot = {
+                                            id: currentSlot?.id || `slot-${date.getTime()}`,
+                                            date: date,
+                                            startTime: value,
+                                            endTime: currentSlot?.endTime || ''
+                                          };
+                                          const updatedSlots = editFormData.dateTimeSlots.filter(s => 
+                                            s.date.toDateString() !== date.toDateString()
+                                          );
+                                          setEditFormData(prev => ({ ...prev, dateTimeSlots: [...updatedSlots, newSlot] }));
+                                        }}
+                                      >
+                                        <SelectTrigger className="w-full h-9 text-sm">
+                                          <SelectValue placeholder="Select start time" />
+                                        </SelectTrigger>
+                                        <SelectContent className="max-h-60">
+                                          {generateTimeOptions().map((timeOption) => {
+                                            const isBooked = isTimeSlotBooked(timeOption.value, date);
+                                            return (
+                                              <SelectItem 
+                                                key={timeOption.value} 
+                                                value={timeOption.value}
+                                                disabled={isBooked}
+                                                className={`text-sm ${isBooked ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                              >
+                                                <div className="flex items-center justify-between w-full gap-2">
+                                                  <span className={isBooked ? 'text-gray-400' : ''}>
+                                                    {timeOption.label}
+                                                  </span>
+                                                  {isBooked && (
+                                                    <Badge variant="destructive" className="text-xs">
+                                                      BOOKED
+                                                    </Badge>
+                                                  )}
+                                                </div>
+                                              </SelectItem>
+                                            );
+                                          })}
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+
+                                    <div>
+                                      <Label className="text-xs font-medium text-gray-700 mb-1.5 block">
+                                        End Time
+                                      </Label>
+                                      <Select 
+                                        value={existingSlot?.endTime || ''}
+                                        onValueChange={(value) => {
+                                          const currentSlot = editFormData.dateTimeSlots.find(s => 
+                                            s.date.toDateString() === date.toDateString()
+                                          );
+                                          const newSlot = {
+                                            id: currentSlot?.id || `slot-${date.getTime()}`,
+                                            date: date,
+                                            startTime: currentSlot?.startTime || '',
+                                            endTime: value
+                                          };
+                                          const updatedSlots = editFormData.dateTimeSlots.filter(s => 
+                                            s.date.toDateString() !== date.toDateString()
+                                          );
+                                          setEditFormData(prev => ({ ...prev, dateTimeSlots: [...updatedSlots, newSlot] }));
+                                        }}
+                                        disabled={!existingSlot?.startTime}
+                                      >
+                                        <SelectTrigger className="w-full h-9 text-sm">
+                                          <SelectValue placeholder={existingSlot?.startTime ? "Select end time" : "Select start time first"} />
+                                        </SelectTrigger>
+                                        <SelectContent className="max-h-60">
+                                          {generateTimeOptions()
+                                            .filter(opt => {
+                                              if (!existingSlot?.startTime) return true;
+                                              const timeToMinutes = (time: string) => {
+                                                const [hours, minutes] = time.split(':').map(Number);
+                                                return hours * 60 + minutes;
+                                              };
+                                              return timeToMinutes(opt.value) > timeToMinutes(existingSlot.startTime);
+                                            })
+                                            .map((timeOption) => {
+                                              const isBooked = isTimeSlotBooked(timeOption.value, date);
+                                              return (
+                                                <SelectItem 
+                                                  key={timeOption.value} 
+                                                  value={timeOption.value}
+                                                  disabled={isBooked}
+                                                  className={`text-sm ${isBooked ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                >
+                                                  <div className="flex items-center justify-between w-full gap-2">
+                                                    <span className={isBooked ? 'text-gray-400' : ''}>
+                                                      {timeOption.label}
+                                                    </span>
+                                                    {isBooked && (
+                                                      <Badge variant="destructive" className="text-xs">
+                                                        BOOKED
+                                                      </Badge>
+                                                    )}
+                                                  </div>
+                                                </SelectItem>
+                                              );
+                                            })}
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                  </div>
+                                </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
 
               </div>
 

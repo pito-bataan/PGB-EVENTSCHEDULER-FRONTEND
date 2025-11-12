@@ -1391,7 +1391,7 @@ const AllEventsPage: React.FC = () => {
                                                   className="h-8 w-8"
                                                   onClick={() => {
                                                     const link = document.createElement('a');
-                                                    link.href = `${API_BASE_URL}/events/attachment/${attachment.filename}`;
+                                                    link.href = `${API_BASE_URL}/events/attachment/${attachment.filename}?download=true`;
                                                     link.download = attachment.originalName;
                                                     link.click();
                                                   }}
@@ -1434,7 +1434,7 @@ const AllEventsPage: React.FC = () => {
                                                   className="h-8 w-8"
                                                   onClick={() => {
                                                     const link = document.createElement('a');
-                                                    link.href = `${API_BASE_URL}/events/govfile/${selectedEvent.govFiles.brieferTemplate?.filename}`;
+                                                    link.href = `${API_BASE_URL}/events/govfile/${selectedEvent.govFiles.brieferTemplate?.filename}?download=true`;
                                                     link.download = selectedEvent.govFiles.brieferTemplate?.originalName || 'event-briefer';
                                                     link.click();
                                                   }}
@@ -1469,7 +1469,7 @@ const AllEventsPage: React.FC = () => {
                                                   className="h-8 w-8"
                                                   onClick={() => {
                                                     const link = document.createElement('a');
-                                                    link.href = `${API_BASE_URL}/events/govfile/${selectedEvent.govFiles.programme?.filename}`;
+                                                    link.href = `${API_BASE_URL}/events/govfile/${selectedEvent.govFiles.programme?.filename}?download=true`;
                                                     link.download = selectedEvent.govFiles.programme?.originalName || 'program-flow';
                                                     link.click();
                                                   }}
