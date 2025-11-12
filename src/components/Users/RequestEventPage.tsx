@@ -58,7 +58,8 @@ import {
   Settings,
   Clock,
   Loader2,
-  User
+  User,
+  MapPin
 } from 'lucide-react';
 
 interface DepartmentRequirement {
@@ -2145,7 +2146,22 @@ const RequestEventPage: React.FC = () => {
                     />
                   </div>
                   <div>
-                    <Label htmlFor="location" className="text-sm font-medium">Location <span className="text-red-500">*</span></Label>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="location" className="text-sm font-medium">Location <span className="text-red-500">*</span></Label>
+                      {/* Show matching count next to label when typing custom location */}
+                      {showCustomLocation && formData.location.trim() && locations.filter(loc => 
+                        loc.toLowerCase().includes(formData.location.trim().toLowerCase()) && 
+                        loc !== 'Add Custom Location'
+                      ).length > 0 && (
+                        <div className="flex items-center gap-1.5 text-amber-600 text-xs">
+                          <AlertCircle className="w-3.5 h-3.5" />
+                          <span>Found {locations.filter(loc => 
+                            loc.toLowerCase().includes(formData.location.trim().toLowerCase()) && 
+                            loc !== 'Add Custom Location'
+                          ).length} matching location(s). Click to select:</span>
+                        </div>
+                      )}
+                    </div>
                     {!showCustomLocation ? (
                       <div className="flex gap-2">
                         <Select 
@@ -2165,8 +2181,10 @@ const RequestEventPage: React.FC = () => {
                                 className={location === 'Add Custom Location' ? 'text-blue-600 font-medium' : ''}
                               >
                                 <div className="flex items-center gap-2">
-                                  {location === 'Add Custom Location' && (
+                                  {location === 'Add Custom Location' ? (
                                     <Plus className="w-3 h-3" />
+                                  ) : (
+                                    <MapPin className="w-3 h-3 text-gray-400" />
                                   )}
                                   {location}
                                 </div>
@@ -2191,14 +2209,45 @@ const RequestEventPage: React.FC = () => {
                         )}
                       </div>
                     ) : (
-                      <div className="space-y-2">
+                      <div className="relative">
                         <Input
                           placeholder="Enter custom location"
                           value={formData.location}
                           onChange={(e) => handleInputChange('location', e.target.value)}
                           className="mt-1"
                         />
-                        <div className="flex gap-2">
+                        {/* Show matching locations in real-time as user types - floating dropdown */}
+                        {formData.location.trim() && locations.filter(loc => 
+                          loc.toLowerCase().includes(formData.location.trim().toLowerCase()) && 
+                          loc !== 'Add Custom Location'
+                        ).length > 0 && (
+                          <div className="absolute top-full left-0 right-0 mt-0.5 z-50">
+                            <div className="border rounded-lg max-h-48 overflow-y-auto bg-white shadow-lg">
+                              {locations
+                                .filter(loc => 
+                                  loc.toLowerCase().includes(formData.location.trim().toLowerCase()) && 
+                                  loc !== 'Add Custom Location'
+                                )
+                                .map((location) => (
+                                  <button
+                                    key={location}
+                                    type="button"
+                                    onClick={async () => {
+                                      // Use the existing handleLocationChange function that has all the logic
+                                      await handleLocationChange(location);
+                                      setShowCustomLocation(false);
+                                      toast.success(`Selected: ${location}`);
+                                    }}
+                                    className="w-full text-left px-4 py-2.5 hover:bg-blue-50 border-b last:border-b-0 flex items-center gap-2 text-sm transition-colors"
+                                  >
+                                    <MapPin className="w-4 h-4 text-gray-400" />
+                                    <span className="font-medium">{location}</span>
+                                  </button>
+                                ))}
+                            </div>
+                          </div>
+                        )}
+                        <div className="flex gap-2 mt-2">
                           <Button
                             type="button"
                             variant="outline"
@@ -2216,14 +2265,27 @@ const RequestEventPage: React.FC = () => {
                             variant="default"
                             size="sm"
                             onClick={() => {
-                              if (formData.location.trim()) {
-                                setShowScheduleModal(true);
-                              } else {
+                              const trimmedLocation = formData.location.trim();
+                              
+                              // Check if location already exists (case-insensitive)
+                              const locationExists = locations.some(loc => 
+                                loc.toLowerCase() === trimmedLocation.toLowerCase() && 
+                                loc !== 'Add Custom Location'
+                              );
+                              
+                              if (!trimmedLocation) {
                                 toast.error('Please enter a custom location first');
+                              } else if (locationExists) {
+                                toast.error('This location already exists! Please select it from the dropdown instead.');
+                              } else {
+                                setShowScheduleModal(true);
                               }
                             }}
                             className="text-xs"
-                            disabled={!formData.location.trim()}
+                            disabled={!formData.location.trim() || locations.some(loc => 
+                              loc.toLowerCase() === formData.location.trim().toLowerCase() && 
+                              loc !== 'Add Custom Location'
+                            )}
                           >
                             Save & Check Schedule
                           </Button>
