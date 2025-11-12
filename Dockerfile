@@ -18,9 +18,15 @@ ENV NODE_OPTIONS=--max-old-space-size=4096
 # Copy package files first (for better layer caching)
 COPY package*.json ./
 
-# Install ALL dependencies (including devDependencies needed for build)
-# Don't set NODE_ENV=production yet, as it prevents devDependencies installation
-RUN npm ci --legacy-peer-deps --no-audit --loglevel=error && \
+# Configure npm for better reliability and install dependencies with retry logic
+RUN npm config set registry https://registry.npmjs.org/ && \
+    npm config set fetch-retry-mintimeout 20000 && \
+    npm config set fetch-retry-maxtimeout 120000 && \
+    npm config set fetch-retries 5 && \
+    npm config set fetch-timeout 300000 && \
+    npm ci --legacy-peer-deps --no-audit --loglevel=error || \
+    (echo "First attempt failed, retrying..." && npm ci --legacy-peer-deps --no-audit --loglevel=error) || \
+    (echo "Second attempt failed, retrying with cache clean..." && npm cache clean --force && npm ci --legacy-peer-deps --no-audit --loglevel=error) && \
     npm cache clean --force
 
 # Copy source code
