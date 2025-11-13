@@ -373,6 +373,67 @@ const RequestEventPage: React.FC = () => {
     return days < daysRequired;
   };
 
+  // Helper function to check if two locations conflict (Pavilion & Conference Room hierarchy)
+  const locationsConflict = (loc1: string, loc2: string): boolean => {
+    // Exact match
+    if (loc1 === loc2) return true;
+     
+    // Check Pavilion hierarchy
+    const isPavilion1 = loc1.includes('Pavilion');
+    const isPavilion2 = loc2.includes('Pavilion');
+    
+    if (isPavilion1 && isPavilion2) {
+      // Extract hall name (Kagitingan or Kalayaan)
+      const getHall = (loc: string) => {
+        if (loc.includes('Kagitingan')) return 'Kagitingan';
+        if (loc.includes('Kalayaan')) return 'Kalayaan';
+        return null;
+      };
+      
+      const hall1 = getHall(loc1);
+      const hall2 = getHall(loc2);
+      
+      // Different halls don't conflict
+      if (hall1 !== hall2) return false;
+      
+      // Same hall - check if one is "Entire" or both are sections
+      const isEntire1 = loc1.includes('(Entire)');
+      const isEntire2 = loc2.includes('(Entire)');
+      
+      // If either is "Entire", they conflict
+      if (isEntire1 || isEntire2) return true;
+      
+      // Both are sections - only conflict if same section
+      return loc1 === loc2;
+    }
+    
+    // Check Conference Room hierarchy (4th Conference Room 1, 2, 3)
+    const isConferenceRoom1 = loc1.includes('Conference Room');
+    const isConferenceRoom2 = loc2.includes('Conference Room');
+    
+    if (isConferenceRoom1 && isConferenceRoom2) {
+      // Extract the base conference room name (e.g., "4th Conference Room")
+      const getBaseRoom = (loc: string) => {
+        // Match patterns like "4th Conference Room 1", "4th Conference Room 2", etc.
+        const match = loc.match(/(.+Conference Room)\s*\d+/);
+        if (match) return match[1].trim();
+        // If no number, it might be the entire room
+        return loc.trim();
+      };
+      
+      const baseRoom1 = getBaseRoom(loc1);
+      const baseRoom2 = getBaseRoom(loc2);
+      
+      // Different conference rooms don't conflict
+      if (baseRoom1 !== baseRoom2) return false;
+      
+      // Same base room - they conflict (e.g., "4th Conference Room 1" conflicts with "4th Conference Room 2")
+      return true;
+    }
+    
+    return false;
+  };
+
   // Auto-check for venue conflicts when schedule changes in modal
   useEffect(() => {
     console.log('🚀 useEffect TRIGGERED:', {
@@ -420,7 +481,7 @@ const RequestEventPage: React.FC = () => {
           
           console.log('📅 useEffect: Checking dates:', datesToCheck.map(d => d.toDateString()));
           
-          // Filter events that are on ANY of the dates in the range
+          // Filter events that are on ANY of the dates in the range AND have location conflicts
           const conflicts = events.filter((event: any) => {
             if (!event.startDate || !event.location) return false;
             
@@ -429,6 +490,11 @@ const RequestEventPage: React.FC = () => {
             
             // Must have time information for requirement conflict checking
             if (!event.startTime || !event.endTime) return false;
+            
+            // Check if locations conflict (Entire vs Sections logic)
+            if (!locationsConflict(formData.location, event.location)) {
+              return false; // No location conflict, skip this event
+            }
             
             const eventStartDate = new Date(event.startDate);
             
@@ -1119,66 +1185,6 @@ const RequestEventPage: React.FC = () => {
       const eventsData = await response.json();
       const events = eventsData.data || [];
       
-      // Helper function to check if two locations conflict (Pavilion & Conference Room hierarchy)
-      const locationsConflict = (loc1: string, loc2: string): boolean => {
-        // Exact match
-        if (loc1 === loc2) return true;
-         
-        // Check Pavilion hierarchy
-        const isPavilion1 = loc1.includes('Pavilion');
-        const isPavilion2 = loc2.includes('Pavilion');
-        
-        if (isPavilion1 && isPavilion2) {
-          // Extract hall name (Kagitingan or Kalayaan)
-          const getHall = (loc: string) => {
-            if (loc.includes('Kagitingan')) return 'Kagitingan';
-            if (loc.includes('Kalayaan')) return 'Kalayaan';
-            return null;
-          };
-          
-          const hall1 = getHall(loc1);
-          const hall2 = getHall(loc2);
-          
-          // Different halls don't conflict
-          if (hall1 !== hall2) return false;
-          
-          // Same hall - check if one is "Entire" or both are sections
-          const isEntire1 = loc1.includes('(Entire)');
-          const isEntire2 = loc2.includes('(Entire)');
-          
-          // If either is "Entire", they conflict
-          if (isEntire1 || isEntire2) return true;
-          
-          // Both are sections - only conflict if same section
-          return loc1 === loc2;
-        }
-        
-        // Check Conference Room hierarchy (4th Conference Room 1, 2, 3)
-        const isConferenceRoom1 = loc1.includes('Conference Room');
-        const isConferenceRoom2 = loc2.includes('Conference Room');
-        
-        if (isConferenceRoom1 && isConferenceRoom2) {
-          // Extract the base conference room name (e.g., "4th Conference Room")
-          const getBaseRoom = (loc: string) => {
-            // Match patterns like "4th Conference Room 1", "4th Conference Room 2", etc.
-            const match = loc.match(/(.+Conference Room)\s*\d+/);
-            if (match) return match[1].trim();
-            // If no number, it might be the entire room
-            return loc.trim();
-          };
-          
-          const baseRoom1 = getBaseRoom(loc1);
-          const baseRoom2 = getBaseRoom(loc2);
-          
-          // Different conference rooms don't conflict
-          if (baseRoom1 !== baseRoom2) return false;
-          
-          // Same base room - they conflict (e.g., "4th Conference Room 1" conflicts with "4th Conference Room 2")
-          return true;
-        }
-        
-        return false;
-      };
       
       // Filter events that conflict with the selected time AND location (for venue booking)
       const conflicts = events.filter((event: any) => {
@@ -1695,52 +1701,6 @@ const RequestEventPage: React.FC = () => {
     return times;
   };
 
-  // Helper function to check if two locations conflict (Pavilion & Conference Room hierarchy)
-  const locationsConflict = (loc1: string, loc2: string): boolean => {
-    // Exact match - always conflicts
-    if (loc1 === loc2) return true;
-    
-    // Check if both are Conference Rooms
-    const isConferenceRoom1 = loc1.includes('Conference Room');
-    const isConferenceRoom2 = loc2.includes('Conference Room');
-    
-    // Conference Rooms only conflict if they're the exact same room
-    if (isConferenceRoom1 && isConferenceRoom2) {
-      return loc1 === loc2;
-    }
-    
-    // Check Pavilion hierarchy
-    const isPavilion1 = loc1.includes('Pavilion');
-    const isPavilion2 = loc2.includes('Pavilion');
-    
-    if (isPavilion1 && isPavilion2) {
-      // Extract hall name (Kagitingan or Kalayaan)
-      const getHall = (loc: string) => {
-        if (loc.includes('Kagitingan')) return 'Kagitingan';
-        if (loc.includes('Kalayaan')) return 'Kalayaan';
-        return null;
-      };
-      
-      const hall1 = getHall(loc1);
-      const hall2 = getHall(loc2);
-      
-      // Different halls don't conflict
-      if (hall1 !== hall2) return false;
-      
-      // Same hall - check if one is "Entire" or both are sections
-      const isEntire1 = loc1.includes('(Entire)');
-      const isEntire2 = loc2.includes('(Entire)');
-      
-      // If either is "Entire", they conflict
-      if (isEntire1 || isEntire2) return true;
-      
-      // Both are sections - only conflict if same section
-      return loc1 === loc2;
-    }
-    
-    // Different location types don't conflict
-    return false;
-  };
 
   // Check if a specific time slot is booked for the selected location and date
   const isTimeSlotBooked = (timeSlot: string, checkDate?: Date) => {
@@ -1797,7 +1757,26 @@ const RequestEventPage: React.FC = () => {
         const slotMinutes = timeToMinutes(timeSlot);
         const eventStartMinutes = timeToMinutes(startTime);
         const eventEndMinutes = timeToMinutes(endTime);
-        return slotMinutes >= eventStartMinutes && slotMinutes <= eventEndMinutes;
+        
+        // A time slot conflicts if it falls within the event's time range
+        // Include both start time AND end time (event is still happening at end time)
+        const isConflict = slotMinutes >= eventStartMinutes && slotMinutes <= eventEndMinutes;
+        
+        console.log('⏰ Time conflict check:', {
+          timeSlot,
+          slotMinutes,
+          eventStart: startTime,
+          eventStartMinutes,
+          eventEnd: endTime,
+          eventEndMinutes,
+          isConflict,
+          calculation: `${slotMinutes} >= ${eventStartMinutes} && ${slotMinutes} <= ${eventEndMinutes}`,
+          eventLocation: event.location,
+          userLocation: formData.location,
+          locationsConflictResult: locationsConflict(event.location, formData.location)
+        });
+        
+        return isConflict;
       };
       
       // If main date matches, check main time
@@ -3956,10 +3935,14 @@ const RequestEventPage: React.FC = () => {
                     const currentLocation = formData.location || selectedLocation;
                     const venueBookers = conflictingEvents
                       .filter(e => {
-                        // Check if event has the same location (could be in location or locations array)
-                        if (e.location === currentLocation) return true;
-                        if (e.locations && Array.isArray(e.locations) && e.locations.includes(currentLocation)) return true;
-                        return false;
+                        // Check if event location conflicts with current location (handles Entire vs Sections)
+                        const eventLocations = e.locations && Array.isArray(e.locations) && e.locations.length > 0
+                          ? e.locations
+                          : [e.location];
+                        
+                        return eventLocations.some((eventLoc: string) => 
+                          locationsConflict(eventLoc, currentLocation)
+                        );
                       })
                       .map(e => e.requestorDepartment)
                       .filter((v, i, a) => a.indexOf(v) === i);
