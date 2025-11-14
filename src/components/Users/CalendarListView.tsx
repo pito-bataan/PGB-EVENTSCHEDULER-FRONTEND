@@ -42,6 +42,8 @@ interface CalendarEvent {
   contactNumber?: string;
   contactEmail?: string;
   location: string;
+  locations?: string[];
+  multipleLocations?: boolean;
   startDate: string;
   endDate: string;
   startTime: string;
@@ -71,7 +73,9 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
   const [screenshotModal, setScreenshotModal] = useState(false);
   const [screenshotPreview, setScreenshotPreview] = useState<string | null>(null);
   const [capturingEventId, setCapturingEventId] = useState<string | null>(null);
+  const [capturingAll, setCapturingAll] = useState(false);
   const eventRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
+  const allEventsRef = useRef<HTMLDivElement | null>(null);
   
   // Get current user and fetch function from store
   const { currentUser, fetchEvents } = useMyCalendarStore();
@@ -237,12 +241,59 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
     }
   };
 
+  // Screenshot capture function for all events in range
+  const handleScreenshotAll = async () => {
+    const element = allEventsRef.current;
+    
+    if (!element || dateEntries.length === 0) {
+      toast.error('No events to capture');
+      return;
+    }
+
+    try {
+      setCapturingAll(true);
+      
+      // Wait a bit for the UI to update
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Capture the entire events container as PNG
+      const dataUrl = await htmlToImage.toPng(element, {
+        quality: 1,
+        pixelRatio: 2,
+        backgroundColor: '#ffffff',
+        style: {
+          transform: 'scale(1)',
+          transformOrigin: 'top left'
+        },
+        filter: (node) => {
+          // Hide all individual screenshot buttons during capture
+          if (node.classList && (node.classList.contains('screenshot-button') || node.classList.contains('export-all-button'))) {
+            return false;
+          }
+          return true;
+        }
+      });
+
+      setScreenshotPreview(dataUrl);
+      setScreenshotModal(true);
+      setCapturingAll(false);
+    } catch (error) {
+      console.error('Screenshot error:', error);
+      toast.error('Failed to capture screenshot');
+      setCapturingAll(false);
+    }
+  };
+
   // Download screenshot
   const handleDownload = () => {
     if (!screenshotPreview) return;
 
+    const dateRangeText = dateRange.to 
+      ? `${format(dateRange.from, 'yyyy-MM-dd')}_to_${format(dateRange.to, 'yyyy-MM-dd')}`
+      : format(dateRange.from, 'yyyy-MM-dd');
+    
     const link = document.createElement('a');
-    link.download = `event-${format(new Date(), 'yyyy-MM-dd-HHmmss')}.png`;
+    link.download = `events-${dateRangeText}-${format(new Date(), 'HHmmss')}.png`;
     link.href = screenshotPreview;
     link.click();
     
@@ -261,28 +312,50 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
             <p className="text-sm font-medium mb-1">Select Date Range</p>
             <p className="text-xs text-muted-foreground">Choose dates to view events</p>
           </div>
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="outline" className="gap-2">
-                <Calendar className="w-4 h-4" />
-                {dateRange.to ? (
-                  <>
-                    {format(dateRange.from, 'MMM dd, yyyy')} - {format(dateRange.to, 'MMM dd, yyyy')}
-                  </>
-                ) : (
-                  format(dateRange.from, 'MMM dd, yyyy')
-                )}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="end">
-              <CalendarComponent
-                mode="range"
-                selected={dateRange}
-                onSelect={(range: any) => setDateRange(range || { from: new Date(), to: undefined })}
-                numberOfMonths={2}
-              />
-            </PopoverContent>
-          </Popover>
+          <div className="flex items-center gap-2">
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className="gap-2">
+                  <Calendar className="w-4 h-4" />
+                  {dateRange.to ? (
+                    <>
+                      {format(dateRange.from, 'MMM dd, yyyy')} - {format(dateRange.to, 'MMM dd, yyyy')}
+                    </>
+                  ) : (
+                    format(dateRange.from, 'MMM dd, yyyy')
+                  )}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="end">
+                <CalendarComponent
+                  mode="range"
+                  selected={dateRange}
+                  onSelect={(range: any) => setDateRange(range || { from: new Date(), to: undefined })}
+                  numberOfMonths={2}
+                />
+              </PopoverContent>
+            </Popover>
+            
+            {/* Export All Button */}
+            <Button
+              variant="default"
+              onClick={handleScreenshotAll}
+              disabled={capturingAll || dateEntries.length === 0}
+              className="gap-2 export-all-button bg-green-600 hover:bg-green-700"
+            >
+              {capturingAll ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  Exporting...
+                </>
+              ) : (
+                <>
+                  <Camera className="w-4 h-4" />
+                  Export All ({dateEntries.length})
+                </>
+              )}
+            </Button>
+          </div>
         </div>
         
         {/* Quick Date Buttons - Outside popover */}
@@ -307,7 +380,7 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
         </div>
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-4" ref={allEventsRef}>
         {dateEntries.length === 0 ? (
           <div className="flex items-center justify-center h-64">
             <div className="text-center">
@@ -413,8 +486,20 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
                                 <div className="flex items-start gap-3">
                                   <MapPin className="w-5 h-5 text-gray-700 flex-shrink-0 mt-0.5" />
                                   <div>
-                                    <p className="text-xs font-medium text-muted-foreground mb-1">Location</p>
-                                    <p className="text-sm font-semibold">{event.location}</p>
+                                    <p className="text-xs font-medium text-muted-foreground mb-1">
+                                      {event.multipleLocations && event.locations && event.locations.length > 1 ? 'Locations' : 'Location'}
+                                    </p>
+                                    {event.multipleLocations && event.locations && event.locations.length > 0 ? (
+                                      <div className="space-y-1">
+                                        {event.locations.map((loc, idx) => (
+                                          <p key={idx} className="text-sm font-semibold">
+                                            {idx + 1}. {loc}
+                                          </p>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <p className="text-sm font-semibold">{event.location}</p>
+                                    )}
                                   </div>
                                 </div>
 
@@ -459,7 +544,7 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
                                         <div>
                                           <p className="text-xs font-medium text-muted-foreground mb-1">Day 1 - End</p>
                                           <p className="text-sm font-semibold">
-                                            {format(new Date(event.endDate), 'MMM d, yyyy')} at {formatTime(event.endTime)}
+                                            {format(new Date(event.startDate), 'MMM d, yyyy')} at {formatTime(event.endTime)}
                                           </p>
                                         </div>
                                       </div>

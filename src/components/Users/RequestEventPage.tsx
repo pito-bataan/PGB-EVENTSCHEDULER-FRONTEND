@@ -591,10 +591,26 @@ const RequestEventPage: React.FC = () => {
         });
         
         if (exactMatch) {
+          console.log('✅ Found exact match for location:', locationName, exactMatch.requirements);
           return exactMatch.requirements || null;
         }
         
-        // If no exact match, don't return grouped requirements for single selection
+        // If no exact match, check if this location is part of a hierarchy group
+        const hierarchyMatch = allRequirements.find((req: any) => {
+          if (req.locationNames && Array.isArray(req.locationNames)) {
+            // Check if this location is included in a group (like Pavilion Overall)
+            return req.locationNames.includes(locationName);
+          }
+          return false;
+        });
+        
+        if (hierarchyMatch) {
+          console.log('🏢 Found hierarchy match for location:', locationName, 'in group with', hierarchyMatch.locationNames.length, 'locations');
+          console.log('📋 Hierarchy requirements:', hierarchyMatch.requirements);
+          return hierarchyMatch.requirements || null;
+        }
+        
+        console.log('❌ No requirements found for location:', locationName);
         return null;
       }
       return null;
@@ -5742,7 +5758,7 @@ const RequestEventPage: React.FC = () => {
                 ))}
               </div>
             ) : locationRequirements.length > 0 ? (
-              <div className="space-y-2">
+              <div className={`${locationRequirements.length > 4 ? 'grid grid-cols-2 gap-3' : 'space-y-2'}`}>
                 {locationRequirements.map((req, idx) => (
                   <div key={idx} className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border border-blue-200">
                     <div className="flex items-center gap-2">

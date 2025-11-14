@@ -152,7 +152,36 @@ const ManageLocationPage: React.FC = () => {
   const [editingLocation, setEditingLocation] = useState<string | null>(null);
   const [editingRequirements, setEditingRequirements] = useState<Array<{ name: string; quantity: number }>>([]);
   
-  // Default location names
+  // Default location names with hierarchy groups
+  const hierarchyGroups = [
+    {
+      name: 'Pavilion (Overall)',
+      type: 'hierarchy',
+      description: 'Applies to ALL Pavilion locations (Entire and Sections)',
+      children: [
+        'Pavilion - Kagitingan Hall (Entire)',
+        'Pavilion - Kagitingan Hall - Section A',
+        'Pavilion - Kagitingan Hall - Section B',
+        'Pavilion - Kagitingan Hall - Section C',
+        'Pavilion - Kalayaan Ballroom (Entire)',
+        'Pavilion - Kalayaan Ballroom - Section A',
+        'Pavilion - Kalayaan Ballroom - Section B',
+        'Pavilion - Kalayaan Ballroom - Section C'
+      ]
+    },
+    {
+      name: 'Conference Rooms (Overall)',
+      type: 'hierarchy',
+      description: 'Applies to ALL Conference Rooms',
+      children: [
+        '4th Flr. Conference Room 1',
+        '4th Flr. Conference Room 2',
+        '4th Flr. Conference Room 3',
+        '6th Flr. Meeting Room 7'
+      ]
+    }
+  ];
+
   const defaultLocationNames = [
     'Atrium',
     'Grand Lobby Entrance',
@@ -765,6 +794,27 @@ const ManageLocationPage: React.FC = () => {
     }
   };
 
+  // Expand hierarchy groups to individual locations
+  const expandHierarchyGroups = (selectedLocations: string[]): string[] => {
+    const expandedLocations: string[] = [];
+    
+    selectedLocations.forEach(location => {
+      // Check if this is a hierarchy group
+      const hierarchyGroup = hierarchyGroups.find(group => group.name === location);
+      
+      if (hierarchyGroup) {
+        // Add all children of this hierarchy group
+        expandedLocations.push(...hierarchyGroup.children);
+      } else {
+        // Add individual location as-is
+        expandedLocations.push(location);
+      }
+    });
+    
+    // Remove duplicates
+    return [...new Set(expandedLocations)];
+  };
+
   // Save global requirements for multiple locations as ONE entry
   const saveLocationRequirements = async () => {
     try {
@@ -779,7 +829,13 @@ const ManageLocationPage: React.FC = () => {
         return;
       }
 
-      // Save as ONE entry with multiple locationNames
+      // Expand hierarchy groups to individual locations
+      const expandedLocations = expandHierarchyGroups(selectedLocationsForRequirements);
+      
+      console.log('🏢 Selected locations:', selectedLocationsForRequirements);
+      console.log('📍 Expanded locations:', expandedLocations);
+
+      // Save as ONE entry with multiple locationNames (expanded)
       const response = await fetch(`${API_BASE_URL}/location-requirements`, {
         method: 'POST',
         headers: {
@@ -787,13 +843,25 @@ const ManageLocationPage: React.FC = () => {
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          locationNames: selectedLocationsForRequirements,
-          requirements: globalRequirements
+          locationNames: expandedLocations,
+          requirements: globalRequirements,
+          hierarchyInfo: {
+            originalSelection: selectedLocationsForRequirements,
+            expandedLocations: expandedLocations
+          }
         })
       });
 
       if (response.ok) {
-        toast.success(`Requirements saved for ${selectedLocationsForRequirements.length} location(s) together`);
+        const selectedHierarchyGroups = selectedLocationsForRequirements.filter(loc => 
+          hierarchyGroups.some(group => group.name === loc)
+        );
+        
+        if (selectedHierarchyGroups.length > 0) {
+          toast.success(`Requirements saved for ${selectedHierarchyGroups.join(', ')} affecting ${expandedLocations.length} locations`);
+        } else {
+          toast.success(`Requirements saved for ${expandedLocations.length} location(s)`);
+        }
       } else {
         const error = await response.json();
         toast.error(error.message || 'Failed to save requirements');
@@ -2405,28 +2473,73 @@ const ManageLocationPage: React.FC = () => {
                       </Badge>
                     )}
                   </div>
-                  <div className="border rounded-lg p-3 max-h-[200px] overflow-y-auto bg-white">
-                    <div className="space-y-2">
-                      {defaultLocationNames.map((locationName) => (
-                        <label
-                          key={locationName}
-                          className="flex items-center gap-2 p-2 hover:bg-purple-50 rounded cursor-pointer transition-colors"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={selectedLocationsForRequirements.includes(locationName)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setSelectedLocationsForRequirements([...selectedLocationsForRequirements, locationName]);
-                              } else {
-                                setSelectedLocationsForRequirements(selectedLocationsForRequirements.filter(loc => loc !== locationName));
-                              }
-                            }}
-                            className="w-4 h-4 text-purple-600 rounded"
-                          />
-                          <span className="text-sm text-gray-700">{locationName}</span>
-                        </label>
-                      ))}
+                  <div className="border rounded-lg p-3 max-h-[300px] overflow-y-auto bg-white">
+                    <div className="space-y-3">
+                      {/* Hierarchy Groups Section */}
+                      <div className="space-y-2">
+                        <div className="text-xs font-medium text-purple-600 uppercase tracking-wide border-b border-purple-100 pb-1">
+                          Overall Groups (Affects Multiple Locations)
+                        </div>
+                        {hierarchyGroups.map((group) => (
+                          <label
+                            key={group.name}
+                            className="flex items-start gap-2 p-3 hover:bg-purple-50 rounded-lg cursor-pointer transition-colors border border-purple-200 bg-purple-25"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedLocationsForRequirements.includes(group.name)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  // Add the hierarchy group name
+                                  setSelectedLocationsForRequirements([...selectedLocationsForRequirements, group.name]);
+                                } else {
+                                  // Remove the hierarchy group name
+                                  setSelectedLocationsForRequirements(selectedLocationsForRequirements.filter(loc => loc !== group.name));
+                                }
+                              }}
+                              className="w-4 h-4 text-purple-600 rounded mt-0.5"
+                            />
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2">
+                                <Building2 className="w-4 h-4 text-purple-600" />
+                                <span className="text-sm font-medium text-purple-700">{group.name}</span>
+                                <Badge variant="outline" className="text-xs bg-purple-100 text-purple-700">
+                                  {group.children.length} locations
+                                </Badge>
+                              </div>
+                              <p className="text-xs text-purple-600 mt-1">{group.description}</p>
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+
+                      {/* Individual Locations Section */}
+                      <div className="space-y-2">
+                        <div className="text-xs font-medium text-gray-600 uppercase tracking-wide border-b border-gray-100 pb-1">
+                          Individual Locations
+                        </div>
+                        {defaultLocationNames.map((locationName) => (
+                          <label
+                            key={locationName}
+                            className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer transition-colors"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedLocationsForRequirements.includes(locationName)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedLocationsForRequirements([...selectedLocationsForRequirements, locationName]);
+                                } else {
+                                  setSelectedLocationsForRequirements(selectedLocationsForRequirements.filter(loc => loc !== locationName));
+                                }
+                              }}
+                              className="w-4 h-4 text-purple-600 rounded"
+                            />
+                            <MapPinIcon className="w-4 h-4 text-gray-500" />
+                            <span className="text-sm text-gray-700">{locationName}</span>
+                          </label>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 </div>
