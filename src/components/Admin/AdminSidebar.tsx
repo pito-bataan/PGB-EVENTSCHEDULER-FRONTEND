@@ -87,6 +87,8 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ user }) => {
 
   const handleNavigation = (href: string) => {
     navigate(href);
+    // Auto-collapse sidebar after navigation for a cleaner workspace
+    setIsCollapsed(true);
   };
 
   // Fetch calendar event count

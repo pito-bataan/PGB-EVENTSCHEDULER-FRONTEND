@@ -1200,215 +1200,229 @@ const AllEventsPage: React.FC = () => {
                                   </Button>
                                 </DialogTrigger>
                               <DialogContent className="max-w-4xl w-[75vw] max-h-[80vh] overflow-y-auto sm:max-w-4xl">
-                                <DialogHeader>
-                                  <DialogTitle className="text-xl font-bold">
-                                    Event Details
+                                <DialogHeader className="border-b pb-3 mb-3">
+                                  <DialogTitle className="text-lg font-semibold text-gray-900 flex items-center justify-between gap-3">
+                                    <span>Event Details</span>
+                                    {selectedEvent && (
+                                      <Badge className={getStatusInfo(selectedEvent.status).className}>
+                                        {getStatusInfo(selectedEvent.status).icon}
+                                        <span className="ml-1">{getStatusInfo(selectedEvent.status).label}</span>
+                                      </Badge>
+                                    )}
                                   </DialogTitle>
-                                  <DialogDescription>
+                                  <DialogDescription className="text-xs text-gray-500">
                                     Complete information for this event request
                                   </DialogDescription>
                                 </DialogHeader>
-                                
+
                                 {selectedEvent && (
-                                  <div className="space-y-6">
+                                  <div className="space-y-5 text-sm text-gray-900">
                                     {/* Basic Info */}
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                      <div>
-                                        <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                                          <FileText className="w-4 h-4" />
-                                          Event Title
-                                        </label>
-                                        <p className="mt-1 text-sm text-gray-900 truncate" title={selectedEvent.eventTitle}>
-                                          {selectedEvent.eventTitle}
-                                        </p>
-                                      </div>
-                                      <div>
-                                        <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                                          <User className="w-4 h-4" />
-                                          Requestor
-                                        </label>
-                                        <p className="mt-1 text-sm text-gray-900">{selectedEvent.requestor}</p>
-                                      </div>
-                                      <div>
-                                        <label className="text-sm font-medium text-gray-700 flex items-start gap-2">
-                                          <MapPin className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                                          <span>Location{selectedEvent.locations && selectedEvent.locations.length > 1 ? 's' : ''}</span>
-                                        </label>
-                                        {selectedEvent.locations && selectedEvent.locations.length > 1 ? (
-                                          <div className="mt-1 ml-6 flex flex-col gap-1">
-                                            {selectedEvent.locations.map((loc, idx) => (
-                                              <p key={idx} className="text-sm text-gray-900">
-                                                {loc}
-                                              </p>
-                                            ))}
-                                          </div>
-                                        ) : (
-                                          <p className="mt-1 ml-6 text-sm text-gray-900">{selectedEvent.location}</p>
-                                        )}
+                                    <div className="rounded-xl border border-gray-100 bg-gray-50/70 px-4 py-4 space-y-3">
+                                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <div>
+                                          <label className="text-xs font-semibold text-gray-500 uppercase flex items-center gap-2 tracking-wide">
+                                            <FileText className="w-3.5 h-3.5" />
+                                            Event Title
+                                          </label>
+                                          <p className="mt-1 text-sm font-medium text-gray-900" title={selectedEvent.eventTitle}>
+                                            {selectedEvent.eventTitle}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <label className="text-xs font-semibold text-gray-500 uppercase flex items-center gap-2 tracking-wide">
+                                            <User className="w-3.5 h-3.5" />
+                                            Requestor
+                                          </label>
+                                          <p className="mt-1 text-sm text-gray-900">{selectedEvent.requestor}</p>
+                                        </div>
+                                        <div>
+                                          <label className="text-xs font-semibold text-gray-500 uppercase flex items-start gap-2 tracking-wide">
+                                            <MapPin className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                                            <span>Location{selectedEvent.locations && selectedEvent.locations.length > 1 ? 's' : ''}</span>
+                                          </label>
+                                          {selectedEvent.locations && selectedEvent.locations.length > 1 ? (
+                                            <div className="mt-1 ml-6 flex flex-col gap-1">
+                                              {selectedEvent.locations.map((loc, idx) => (
+                                                <p key={idx} className="text-sm text-gray-900">
+                                                  {loc}
+                                                </p>
+                                              ))}
+                                            </div>
+                                          ) : (
+                                            <p className="mt-1 ml-6 text-sm text-gray-900">{selectedEvent.location}</p>
+                                          )}
+                                        </div>
                                       </div>
                                     </div>
 
                                     {/* Date & Time & Status */}
-                                    {selectedEvent.dateTimeSlots && selectedEvent.dateTimeSlots.length > 0 ? (
-                                      <>
-                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                          <div className="md:col-span-2 space-y-3">
-                                            <label className="text-sm font-medium text-gray-700">
-                                              Multi-Day Event Schedule
-                                            </label>
-                                            
-                                            {/* Day 1 */}
-                                            <div className="flex items-center gap-2 text-sm">
-                                              <span className="font-medium text-gray-700">Day 1:</span>
-                                              <Calendar className="w-3.5 h-3.5 text-gray-400" />
-                                              <span className="text-gray-900">{format(new Date(selectedEvent.startDate), 'MMM d, yyyy')}</span>
-                                              <span className="text-gray-400">•</span>
-                                              <Clock className="w-3.5 h-3.5 text-gray-400" />
-                                              <span className="text-gray-900">{formatTime(selectedEvent.startTime)} - {formatTime(selectedEvent.endTime)}</span>
-                                            </div>
-                                            
-                                            {/* Additional Days */}
-                                            {selectedEvent.dateTimeSlots.map((slot: any, idx: number) => (
-                                              <div key={idx} className="flex items-center gap-2 text-sm">
-                                                <span className="font-medium text-gray-700">Day {idx + 2}:</span>
+                                    <div className="rounded-xl border border-gray-100 bg-white px-4 py-4">
+                                      {selectedEvent.dateTimeSlots && selectedEvent.dateTimeSlots.length > 0 ? (
+                                        <>
+                                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                            <div className="md:col-span-2 space-y-3">
+                                              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                                                Multi-Day Event Schedule
+                                              </label>
+                                              
+                                              {/* Day 1 */}
+                                              <div className="flex items-center gap-2 text-sm">
+                                                <span className="font-medium text-gray-700">Day 1:</span>
                                                 <Calendar className="w-3.5 h-3.5 text-gray-400" />
-                                                <span className="text-gray-900">{format(new Date(slot.startDate), 'MMM d, yyyy')}</span>
+                                                <span className="text-gray-900">{format(new Date(selectedEvent.startDate), 'MMM d, yyyy')}</span>
                                                 <span className="text-gray-400">•</span>
                                                 <Clock className="w-3.5 h-3.5 text-gray-400" />
-                                                <span className="text-gray-900">{formatTime(slot.startTime)} - {formatTime(slot.endTime)}</span>
+                                                <span className="text-gray-900">{formatTime(selectedEvent.startTime)} - {formatTime(selectedEvent.endTime)}</span>
                                               </div>
-                                            ))}
+                                              
+                                              {/* Additional Days */}
+                                              {selectedEvent.dateTimeSlots.map((slot: any, idx: number) => (
+                                                <div key={idx} className="flex items-center gap-2 text-sm">
+                                                  <span className="font-medium text-gray-700">Day {idx + 2}:</span>
+                                                  <Calendar className="w-3.5 h-3.5 text-gray-400" />
+                                                  <span className="text-gray-900">{format(new Date(slot.startDate), 'MMM d, yyyy')}</span>
+                                                  <span className="text-gray-400">•</span>
+                                                  <Clock className="w-3.5 h-3.5 text-gray-400" />
+                                                  <span className="text-gray-900">{formatTime(slot.startTime)} - {formatTime(slot.endTime)}</span>
+                                                </div>
+                                              ))}
+                                            </div>
+                                            
+                                            {/* Status in third column */}
+                                            <div>
+                                              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2">
+                                                <Tag className="w-3.5 h-3.5" />
+                                                Status
+                                              </label>
+                                              <div className="mt-2">
+                                                <Badge className={getStatusInfo(selectedEvent.status).className}>
+                                                  {getStatusInfo(selectedEvent.status).icon}
+                                                  <span className="ml-1">{getStatusInfo(selectedEvent.status).label}</span>
+                                                </Badge>
+                                              </div>
+                                            </div>
                                           </div>
-                                          
-                                          {/* Status in third column */}
+                                        </>
+                                      ) : (
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                           <div>
-                                            <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                                              <Tag className="w-4 h-4" />
+                                            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2">
+                                              <Calendar className="w-3.5 h-3.5" />
+                                              Event Date
+                                            </label>
+                                            <p className="mt-1 text-sm text-gray-900">
+                                              {format(new Date(selectedEvent.startDate), 'MMM dd, yyyy')}
+                                            </p>
+                                          </div>
+                                          <div>
+                                            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2">
+                                              <Clock className="w-3.5 h-3.5" />
+                                              Time
+                                            </label>
+                                            <p className="mt-1 text-sm text-gray-900">
+                                              {formatTime(selectedEvent.startTime)} - {formatTime(selectedEvent.endTime)}
+                                            </p>
+                                          </div>
+                                          <div>
+                                            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2">
+                                              <Tag className="w-3.5 h-3.5" />
                                               Status
                                             </label>
-                                            <div className="mt-1">
+                                            <div className="mt-2">
                                               <Badge className={getStatusInfo(selectedEvent.status).className}>
                                                 {getStatusInfo(selectedEvent.status).icon}
-                                                {getStatusInfo(selectedEvent.status).label}
+                                                <span className="ml-1">{getStatusInfo(selectedEvent.status).label}</span>
                                               </Badge>
                                             </div>
                                           </div>
                                         </div>
-                                      </>
-                                    ) : (
-                                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                        <div>
-                                          <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                                            <Calendar className="w-4 h-4" />
-                                            Event Date
-                                          </label>
-                                          <p className="mt-1 text-sm text-gray-900">
-                                            {format(new Date(selectedEvent.startDate), 'MMM dd, yyyy')}
-                                          </p>
-                                        </div>
-                                        <div>
-                                          <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                                            <Clock className="w-4 h-4" />
-                                            Time
-                                          </label>
-                                          <p className="mt-1 text-sm text-gray-900">
-                                            {formatTime(selectedEvent.startTime)} - {formatTime(selectedEvent.endTime)}
-                                          </p>
-                                        </div>
-                                        <div>
-                                          <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                                            <Tag className="w-4 h-4" />
-                                            Status
-                                          </label>
-                                          <div className="mt-1">
-                                            <Badge className={getStatusInfo(selectedEvent.status).className}>
-                                              {getStatusInfo(selectedEvent.status).icon}
-                                              {getStatusInfo(selectedEvent.status).label}
-                                            </Badge>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    )}
+                                      )}
+                                    </div>
 
                                     {/* Participants & VIP Info */}
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                      <div>
-                                        <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                                          <Users className="w-4 h-4" />
-                                          Participants
-                                        </label>
-                                        <p className="mt-1 text-sm text-gray-900">{selectedEvent.participants}</p>
-                                      </div>
-                                      <div>
-                                        <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                                          <Star className="w-4 h-4" />
-                                          VIP
-                                        </label>
-                                        <p className="mt-1 text-sm text-gray-900">{selectedEvent.vip || 0}</p>
-                                      </div>
-                                      <div>
-                                        <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                                          <Star className="w-4 h-4" />
-                                          VVIP
-                                        </label>
-                                        <p className="mt-1 text-sm text-gray-900">{selectedEvent.vvip || 0}</p>
+                                    <div className="rounded-xl border border-gray-100 bg-white px-4 py-4">
+                                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <div>
+                                          <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2">
+                                            <Users className="w-3.5 h-3.5" />
+                                            Participants
+                                          </label>
+                                          <p className="mt-1 text-sm text-gray-900">{selectedEvent.participants}</p>
+                                        </div>
+                                        <div>
+                                          <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2">
+                                            <Star className="w-3.5 h-3.5" />
+                                            VIP
+                                          </label>
+                                          <p className="mt-1 text-sm text-gray-900">{selectedEvent.vip || 0}</p>
+                                        </div>
+                                        <div>
+                                          <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2">
+                                            <Star className="w-3.5 h-3.5" />
+                                            VVIP
+                                          </label>
+                                          <p className="mt-1 text-sm text-gray-900">{selectedEvent.vvip || 0}</p>
+                                        </div>
                                       </div>
                                     </div>
 
                                     {/* Department & Contact */}
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                      <div>
-                                        <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                                          <Building2 className="w-4 h-4" />
-                                          Department
-                                        </label>
-                                        <p className="mt-1 text-sm text-gray-900">{selectedEvent.createdBy?.department || 'N/A'}</p>
-                                      </div>
-                                      <div>
-                                        <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                                          <Phone className="w-4 h-4" />
-                                          Contact Number
-                                        </label>
-                                        <p className="mt-1 text-sm text-gray-900">{selectedEvent.contactNumber || 'N/A'}</p>
-                                      </div>
-                                      <div>
-                                        <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                                          <Mail className="w-4 h-4" />
-                                          Contact Email
-                                        </label>
-                                        <p className="mt-1 text-sm text-gray-900">{selectedEvent.contactEmail || 'N/A'}</p>
+                                    <div className="rounded-xl border border-gray-100 bg-white px-4 py-4">
+                                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <div>
+                                          <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2">
+                                            <Building2 className="w-3.5 h-3.5" />
+                                            Department
+                                          </label>
+                                          <p className="mt-1 text-sm text-gray-900">{selectedEvent.createdBy?.department || 'N/A'}</p>
+                                        </div>
+                                        <div>
+                                          <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2">
+                                            <Phone className="w-3.5 h-3.5" />
+                                            Contact Number
+                                          </label>
+                                          <p className="mt-1 text-sm text-gray-900">{selectedEvent.contactNumber || 'N/A'}</p>
+                                        </div>
+                                        <div>
+                                          <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2">
+                                            <Mail className="w-3.5 h-3.5" />
+                                            Contact Email
+                                          </label>
+                                          <p className="mt-1 text-sm text-gray-900">{selectedEvent.contactEmail || 'N/A'}</p>
+                                        </div>
                                       </div>
                                     </div>
 
                                     {/* Tagged Departments */}
                                     {selectedEvent.taggedDepartments && selectedEvent.taggedDepartments.length > 0 && (
-                                      <div>
-                                        <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                                          <Building2 className="w-4 h-4" />
+                                      <div className="rounded-xl border border-gray-100 bg-white px-4 py-4">
+                                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2">
+                                          <Building2 className="w-3.5 h-3.5" />
                                           Tagged Departments
                                         </label>
-                                        <div className="mt-1 flex flex-wrap gap-2">
+                                        <div className="mt-2 flex flex-wrap gap-2">
                                           {selectedEvent.taggedDepartments.map((dept, index) => (
-                                            <Badge key={index} variant="secondary">{dept}</Badge>
+                                            <Badge key={index} variant="secondary" className="text-xs bg-gray-50 text-gray-800 border-gray-200">{dept}</Badge>
                                           ))}
                                         </div>
                                       </div>
                                     )}
 
                                     {/* View Description Button */}
-                                    <div className="pt-4 border-t">
+                                    <div className="pt-4 border-t border-gray-100 mt-2">
                                       <Button
                                         variant="outline"
                                         onClick={() => setShowDescription(!showDescription)}
-                                        className="gap-2"
+                                        className="gap-2 text-sm"
                                       >
                                         <FileText className="w-4 h-4" />
                                         {showDescription ? 'Hide Description' : 'View Description'}
                                       </Button>
                                       
                                       {showDescription && selectedEvent.description && (
-                                        <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-                                          <label className="text-sm font-medium text-gray-700">Event Description</label>
+                                        <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-100">
+                                          <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Event Description</label>
                                           <p className="mt-2 text-sm text-gray-900 whitespace-pre-wrap">
                                             {selectedEvent.description}
                                           </p>
@@ -1416,8 +1430,8 @@ const AllEventsPage: React.FC = () => {
                                       )}
                                       
                                       {showDescription && !selectedEvent.description && (
-                                        <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-                                          <p className="text-sm text-gray-500 italic">No description provided for this event.</p>
+                                        <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-100">
+                                          <p className="text-sm text-gray-500">No description provided for this event.</p>
                                         </div>
                                       )}
                                     </div>
@@ -1458,7 +1472,7 @@ const AllEventsPage: React.FC = () => {
                                             <div key={index} className="group flex items-center gap-3 rounded-lg border p-3 hover:bg-accent transition-colors">
                                               <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
                                               <div className="flex-1 min-w-0">
-                                                <p className="text-sm font-medium truncate" title={attachment.originalName}>
+                                                <p className="text-sm font-medium truncate max-w-[260px] sm:max-w-md" title={attachment.originalName}>
                                                   {attachment.originalName}
                                                 </p>
                                                 <p className="text-xs text-muted-foreground">
@@ -1504,7 +1518,7 @@ const AllEventsPage: React.FC = () => {
                                               <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
                                               <div className="flex-1 min-w-0">
                                                 <p className="text-sm font-medium">Event Briefer</p>
-                                                <p className="text-xs text-muted-foreground truncate" title={selectedEvent.govFiles.brieferTemplate.originalName}>
+                                                <p className="text-xs text-muted-foreground truncate max-w-[260px] sm:max-w-md" title={selectedEvent.govFiles.brieferTemplate.originalName}>
                                                   {selectedEvent.govFiles.brieferTemplate.originalName}
                                                 </p>
                                               </div>
@@ -1539,7 +1553,7 @@ const AllEventsPage: React.FC = () => {
                                               <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
                                               <div className="flex-1 min-w-0">
                                                 <p className="text-sm font-medium">Program Flow</p>
-                                                <p className="text-xs text-muted-foreground truncate" title={selectedEvent.govFiles.programme.originalName}>
+                                                <p className="text-xs text-muted-foreground truncate max-w-[260px] sm:max-w-md" title={selectedEvent.govFiles.programme.originalName}>
                                                   {selectedEvent.govFiles.programme.originalName}
                                                 </p>
                                               </div>

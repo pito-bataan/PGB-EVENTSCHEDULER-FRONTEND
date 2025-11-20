@@ -2650,14 +2650,19 @@ const MyEventsPage: React.FC = () => {
                   <div className="grid grid-cols-1 gap-3">
                     {selectedEventFiles.attachments.map((attachment, index) => (
                       <div key={index} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3 min-w-0 pr-4">
                           <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
                             <FileText className="w-5 h-5 text-blue-600" />
                           </div>
-                          <div>
-                            <p className="text-sm font-medium text-gray-900" title={attachment.originalName}>{formatFileName(attachment.originalName)}</p>
+                          <div className="flex-1 min-w-0">
+                            <p
+                              className="text-sm font-medium text-gray-900 truncate max-w-[150px] sm:max-w-[180px] lg:max-w-[220px]"
+                              title={attachment.originalName}
+                            >
+                              {attachment.originalName}
+                            </p>
                             <p className="text-xs text-gray-500">
-                              {formatMimeType(attachment.mimetype)} • {(attachment.size / 1024).toFixed(1)} KB
+                              {formatMimeType(attachment.mimetype)}  {(attachment.size / 1024).toFixed(1)} KB
                             </p>
                           </div>
                         </div>
@@ -2705,14 +2710,19 @@ const MyEventsPage: React.FC = () => {
                     {/* Briefer Template */}
                     {selectedEventFiles.govFiles.brieferTemplate && (
                       <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg border border-green-200">
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3 min-w-0 pr-4">
                           <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
                             <FileText className="w-5 h-5 text-green-600" />
                           </div>
-                          <div>
-                            <p className="text-sm font-medium text-gray-900" title={selectedEventFiles.govFiles.brieferTemplate.originalName}>{formatFileName(selectedEventFiles.govFiles.brieferTemplate.originalName)}</p>
+                          <div className="flex-1 min-w-0">
+                            <p
+                              className="text-sm font-medium text-gray-900 truncate max-w-[190px] sm:max-w-[220px] lg:max-w-[260px]"
+                              title={selectedEventFiles.govFiles.brieferTemplate.originalName}
+                            >
+                              {selectedEventFiles.govFiles.brieferTemplate.originalName}
+                            </p>
                             <p className="text-xs text-gray-500">
-                              {formatMimeType(selectedEventFiles.govFiles.brieferTemplate.mimetype)} • {(selectedEventFiles.govFiles.brieferTemplate.size / 1024).toFixed(1)} KB
+                              {formatMimeType(selectedEventFiles.govFiles.brieferTemplate.mimetype)}  {(selectedEventFiles.govFiles.brieferTemplate.size / 1024).toFixed(1)} KB
                             </p>
                             <p className="text-xs text-green-600 font-medium">Event Briefer</p>
                           </div>
@@ -2775,14 +2785,19 @@ const MyEventsPage: React.FC = () => {
                     {/* Programme */}
                     {selectedEventFiles.govFiles.programme && (
                       <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg border border-green-200">
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
                           <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
                             <FileText className="w-5 h-5 text-green-600" />
                           </div>
-                          <div>
-                            <p className="text-sm font-medium text-gray-900" title={selectedEventFiles.govFiles.programme.originalName}>{formatFileName(selectedEventFiles.govFiles.programme.originalName)}</p>
+                          <div className="flex-1 min-w-0">
+                            <p
+                              className="text-sm font-medium text-gray-900 truncate max-w-[190px] sm:max-w-[220px] lg:max-w-[260px]"
+                              title={selectedEventFiles.govFiles.programme.originalName}
+                            >
+                              {selectedEventFiles.govFiles.programme.originalName}
+                            </p>
                             <p className="text-xs text-gray-500">
-                              {formatMimeType(selectedEventFiles.govFiles.programme.mimetype)} • {(selectedEventFiles.govFiles.programme.size / 1024).toFixed(1)} KB
+                              {formatMimeType(selectedEventFiles.govFiles.programme.mimetype)}  {(selectedEventFiles.govFiles.programme.size / 1024).toFixed(1)} KB
                             </p>
                             <p className="text-xs text-green-600 font-medium">Program Flow</p>
                           </div>

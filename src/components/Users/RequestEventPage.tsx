@@ -94,6 +94,7 @@ interface FormData {
   requestor: string;
   location: string;
   locations: string[]; // Array for multiple conference rooms
+  roomType?: string;
   participants: string;
   vip: string;
   vvip: string;
@@ -144,7 +145,9 @@ const RequestEventPage: React.FC = () => {
   const [selectedDepartment, setSelectedDepartment] = useState<string>('');
   const [customRequirement, setCustomRequirement] = useState<string>('');
   const [customRequirementType, setCustomRequirementType] = useState<'physical' | 'service'>('service');
+  const [customRequirementNotes, setCustomRequirementNotes] = useState<string>('');
   const [showCustomInput, setShowCustomInput] = useState(false);
+  const [pendingCustomQuantity, setPendingCustomQuantity] = useState<string>('1');
   const [showAvailableDatesModal, setShowAvailableDatesModal] = useState(false);
   const [departmentAvailableDates, setDepartmentAvailableDates] = useState<any[]>([]);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
@@ -183,6 +186,7 @@ const RequestEventPage: React.FC = () => {
   const [showEventTypeAlert, setShowEventTypeAlert] = useState(false);
   const [loadingLocationRequirements, setLoadingLocationRequirements] = useState(false);
   const [loadingDepartmentRequirements, setLoadingDepartmentRequirements] = useState(false);
+  const [locationRoomTypes, setLocationRoomTypes] = useState<string[]>([]);
   
   // Dynamic data from database
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -193,6 +197,7 @@ const RequestEventPage: React.FC = () => {
     requestor: '',
     location: '',
     locations: [], // Initialize empty array for multiple locations
+    roomType: '',
     participants: '',
     vip: '',
     vvip: '',
@@ -276,7 +281,6 @@ const RequestEventPage: React.FC = () => {
         const response = await axios.get(`${API_BASE_URL}/location-availability`, { headers });
 
         if (response.data.success) {
-          console.log('Location API Response:', response.data.data); // Debug log
           
           // Extract unique location objects with their properties
           const locationMap = new Map();
@@ -302,7 +306,6 @@ const RequestEventPage: React.FC = () => {
           });
           
           const uniqueLocations = Array.from(locationMap.values());
-          console.log('Processed locations:', uniqueLocations); // Debug log
           setLocationData(uniqueLocations); // Store full location data
           
           // Extract just names for backward compatibility
@@ -436,17 +439,10 @@ const RequestEventPage: React.FC = () => {
 
   // Auto-check for venue conflicts when schedule changes in modal
   useEffect(() => {
-    console.log('🚀 useEffect TRIGGERED:', {
-      startDate: formData.startDate?.toDateString(),
-      endDate: formData.endDate?.toDateString(),
-      location: formData.location,
-      showScheduleModal
-    });
     
     const checkConflicts = async () => {
       
       if (formData.startDate && formData.location && showScheduleModal) {
-        console.log('🔄 useEffect: Checking conflicts for schedule modal');
         
         // Check conflicts for the entire day at this location to show booked time slots
         const response = await fetch(`${API_BASE_URL}/events`, {
@@ -465,7 +461,6 @@ const RequestEventPage: React.FC = () => {
           
           // If multi-day event, add all additional days
           if (formData.endDate && formData.startDate && formData.endDate.getTime() !== formData.startDate.getTime()) {
-            console.log('🗓️ useEffect: Multi-day event detected!');
             const currentDate = new Date(formData.startDate);
             const endDate = new Date(formData.endDate);
             
@@ -474,12 +469,10 @@ const RequestEventPage: React.FC = () => {
             
             while (currentDate <= endDate) {
               datesToCheck.push(new Date(currentDate));
-              console.log('➕ useEffect: Added date:', currentDate.toDateString());
               currentDate.setDate(currentDate.getDate() + 1);
             }
           }
           
-          console.log('📅 useEffect: Checking dates:', datesToCheck.map(d => d.toDateString()));
           
           // Filter events that are on ANY of the dates in the range AND have location conflicts
           const conflicts = events.filter((event: any) => {
@@ -518,17 +511,9 @@ const RequestEventPage: React.FC = () => {
             return mainDateMatches || slotDateMatches;
           });
           
-          console.log('⚠️ useEffect: Found conflicts:', conflicts.length);
           if (conflicts.length > 0) {
-            console.log('📋 Conflict details:', conflicts.map((e: any) => ({
-              title: e.eventTitle,
-              startDate: new Date(e.startDate).toDateString(),
-              endDate: new Date(e.endDate).toDateString(),
-              hasDateTimeSlots: !!e.dateTimeSlots,
-              dateTimeSlotsCount: e.dateTimeSlots?.length || 0
-            })));
+            setConflictingEvents(conflicts);
           }
-          setConflictingEvents(conflicts);
         }
       } else {
         if (!showScheduleModal) {
@@ -564,8 +549,10 @@ const RequestEventPage: React.FC = () => {
     }));
   };
 
-  // Fetch location requirements (prioritize exact single location match)
-  const fetchLocationRequirements = async (locationName: string) => {
+  // Fetch location requirements (prioritize hierarchy/group match with roomTypes, then exact single-location match) and room types
+  const fetchLocationRequirements = async (
+    locationName: string
+  ): Promise<{ requirements: Array<{ name: string; quantity: number }>; roomTypes: string[] } | null> => {
     try {
       const token = localStorage.getItem('authToken');
       if (!token) return null;
@@ -579,39 +566,84 @@ const RequestEventPage: React.FC = () => {
 
       if (response.ok) {
         const allRequirements = await response.json();
-        
-        // First, try to find EXACT match (single location only)
+
+        // Specific per-location doc (Kagitingan Hall A/B/C/Entire, etc.)
         const exactMatch = allRequirements.find((req: any) => {
-          // For new format: locationNames array with only 1 item that matches
+          // New format: locationNames array with only 1 item that matches
           if (req.locationNames && Array.isArray(req.locationNames)) {
             return req.locationNames.length === 1 && req.locationNames[0] === locationName;
           }
-          // For old format: locationName field
+          // Old format: single locationName field
           return req.locationName === locationName;
         });
-        
-        if (exactMatch) {
-          console.log('✅ Found exact match for location:', locationName, exactMatch.requirements);
-          return exactMatch.requirements || null;
-        }
-        
-        // If no exact match, check if this location is part of a hierarchy group
-        const hierarchyMatch = allRequirements.find((req: any) => {
+
+        // All group / hierarchy docs that include this location (Pavilion Overall, Kalayaan-only, etc.)
+        const groupMatches = allRequirements.filter((req: any) => {
           if (req.locationNames && Array.isArray(req.locationNames)) {
-            // Check if this location is included in a group (like Pavilion Overall)
-            return req.locationNames.includes(locationName);
+            return req.locationNames.length > 1 && req.locationNames.includes(locationName);
           }
           return false;
         });
-        
-        if (hierarchyMatch) {
-          console.log('🏢 Found hierarchy match for location:', locationName, 'in group with', hierarchyMatch.locationNames.length, 'locations');
-          console.log('📋 Hierarchy requirements:', hierarchyMatch.requirements);
-          return hierarchyMatch.requirements || null;
+
+        const candidateDocs: any[] = [];
+        if (exactMatch) candidateDocs.push(exactMatch);
+        candidateDocs.push(...groupMatches);
+
+        if (candidateDocs.length === 0) {
+          return null;
         }
-        
-        console.log('❌ No requirements found for location:', locationName);
-        return null;
+
+        const pickMostSpecific = (docs: any[]) => {
+          if (!docs.length) return null;
+          return docs.reduce((best, doc) => {
+            if (!best) return doc;
+            const bestLen =
+              best.locationNames && Array.isArray(best.locationNames) && best.locationNames.length > 0
+                ? best.locationNames.length
+                : 1;
+            const len =
+              doc.locationNames && Array.isArray(doc.locationNames) && doc.locationNames.length > 0
+                ? doc.locationNames.length
+                : 1;
+            return len < bestLen ? doc : best;
+          }, null as any);
+        };
+
+        // Decide which doc provides requirements (can come from Pavilion Overall)
+        const requirementDocs = candidateDocs.filter(
+          (doc) => Array.isArray(doc.requirements) && doc.requirements.length > 0
+        );
+        const requirementsSource =
+          requirementDocs.length > 0
+            ? pickMostSpecific(requirementDocs)
+            : exactMatch || groupMatches[0] || null;
+
+        // Decide which doc provides room types (prefer the most specific override doc)
+        const roomTypeDocs = candidateDocs.filter(
+          (doc) => Array.isArray(doc.roomTypes) && doc.roomTypes.length > 0
+        );
+        const roomTypesSource =
+          roomTypeDocs.length > 0
+            ? pickMostSpecific(roomTypeDocs)
+            : exactMatch || groupMatches[0] || null;
+
+        if (!requirementsSource && !roomTypesSource) {
+          return null;
+        }
+
+        const requirements =
+          requirementsSource && Array.isArray(requirementsSource.requirements)
+            ? requirementsSource.requirements
+            : [];
+        const roomTypes =
+          roomTypesSource && Array.isArray(roomTypesSource.roomTypes)
+            ? roomTypesSource.roomTypes
+            : [];
+
+        return {
+          requirements,
+          roomTypes
+        };
       }
       return null;
     } catch (error) {
@@ -625,12 +657,15 @@ const RequestEventPage: React.FC = () => {
       setShowCustomLocation(true);
       handleInputChange('location', '');
       handleInputChange('locations', []);
+      handleInputChange('roomType', '');
       setAvailableDates([]); // Clear available dates
+      setLocationRoomTypes([]);
     } else {
       setShowCustomLocation(false);
       handleInputChange('location', value);
       // Initialize locations array with the selected location
       handleInputChange('locations', [value]);
+      handleInputChange('roomType', '');
       
       // Show loading state and modal IMMEDIATELY before any API calls
       setLoadingLocationRequirements(true);
@@ -640,16 +675,18 @@ const RequestEventPage: React.FC = () => {
       await fetchAvailableDatesForLocation(value);
       
       // Check if this single location has requirements
-      const requirements = await fetchLocationRequirements(value);
+      const locationData = await fetchLocationRequirements(value);
       setLoadingLocationRequirements(false);
       
-      if (requirements && requirements.length > 0) {
+      if (locationData && locationData.requirements && locationData.requirements.length > 0) {
         // Show requirements modal for single location
-        setLocationRequirements(requirements);
+        setLocationRequirements(locationData.requirements);
+        setLocationRoomTypes(locationData.roomTypes || []);
         setSelectedLocation(value);
       } else {
         // No requirements, close modal and open schedule modal directly
         setShowLocationRequirementsModal(false);
+        setLocationRoomTypes(locationData?.roomTypes || []);
         setSelectedLocation(value);
         setShowScheduleModal(true);
       }
@@ -711,7 +748,6 @@ const RequestEventPage: React.FC = () => {
       }
       
       // Note: All conference rooms share the same availability since they're in the same building
-      console.log(`Added ${roomName} - using same availability as other conference rooms`);
     }
   };
 
@@ -726,10 +762,6 @@ const RequestEventPage: React.FC = () => {
   };
 
   const handleScheduleSave = async () => {
-    console.log('🎯 === HANDLE SCHEDULE SAVE CALLED ===');
-    console.log('📍 selectedDepartment:', selectedDepartment);
-    console.log('📅 formData.startDate:', formData.startDate);
-    console.log('🏷️ formData.taggedDepartments:', formData.taggedDepartments);
     
     // Check for venue conflicts before saving (location-specific)
     if (formData.startDate && formData.startTime && formData.endTime && formData.location) {
@@ -762,19 +794,15 @@ const RequestEventPage: React.FC = () => {
         ? [selectedDepartment] 
         : formData.taggedDepartments;
       
-      console.log('🔄 Departments to refresh:', depsToRefresh);
       
       for (const deptName of depsToRefresh) {
-        console.log(`📦 Fetching availabilities for ${deptName} on ${formData.startDate.toDateString()}`);
         const availabilities = await fetchResourceAvailabilities(deptName, formData.startDate);
-        console.log(`✅ Got ${availabilities.length} availabilities for ${deptName}`);
         
         const department = departments.find(dept => dept.name === deptName);
         
         if (department && department.requirements) {
           // If requirements don't exist yet, create them from department requirements
           if (!updatedRequirements[deptName] || updatedRequirements[deptName].length === 0) {
-            console.log(`📝 Creating new requirements array for ${deptName}`);
             updatedRequirements[deptName] = department.requirements
               .filter((req) => {
                 const availability = availabilities.find((avail: any) => avail.requirementId === req._id);
@@ -807,14 +835,12 @@ const RequestEventPage: React.FC = () => {
               };
             });
           }
-          console.log(`✅ Updated requirements for ${deptName}:`, updatedRequirements[deptName]);
         }
       }
       
       // Save the selected department before any modal operations
       const deptToRefresh = selectedDepartment;
       
-      console.log('💾 Selected department before refresh:', deptToRefresh);
       
       // Update form data with new requirements
       setFormData(prev => ({
@@ -824,14 +850,12 @@ const RequestEventPage: React.FC = () => {
       
       // If there's a selected department (from "Use This Date" flow), re-trigger department selection
       if (deptToRefresh) {
-        console.log('🔄 Re-triggering department selection for:', deptToRefresh);
         
         // Close modal first
         setShowRequirementsModal(false);
         
         // Wait longer for state to fully update, then automatically "click" the department checkbox again
         setTimeout(async () => {
-          console.log('🔄 Auto-clicking department checkbox for:', deptToRefresh);
           await handleDepartmentToggle(deptToRefresh);
           toast.success('Schedule saved! Requirements updated with conflicts.');
         }, 800);
@@ -1016,6 +1040,25 @@ const RequestEventPage: React.FC = () => {
     handleInputChange('departmentRequirements', newDeptReqs);
   };
 
+  const handleSelectedRequirementRemove = (requirement: DepartmentRequirement) => {
+    const currentReqs = formData.departmentRequirements[selectedDepartment] || [];
+    let updatedReqs: DepartmentRequirement[];
+
+    if (requirement.isCustom) {
+      // Completely remove custom requirement from the list
+      updatedReqs = currentReqs.filter(req => req.id !== requirement.id);
+    } else {
+      // For non-custom, just unselect it
+      updatedReqs = currentReqs.map(req =>
+        req.id === requirement.id ? { ...req, selected: false } : req
+      );
+    }
+
+    const newDeptReqs = { ...formData.departmentRequirements };
+    newDeptReqs[selectedDepartment] = updatedReqs;
+    handleInputChange('departmentRequirements', newDeptReqs);
+  };
+
   const handleRequirementNotes = (requirementId: string, notes: string) => {
     const currentReqs = formData.departmentRequirements[selectedDepartment] || [];
     const updatedReqs = currentReqs.map(req => 
@@ -1039,28 +1082,46 @@ const RequestEventPage: React.FC = () => {
   };
 
   const handleAddCustomRequirement = () => {
-    if (customRequirement.trim()) {
-      const currentReqs = formData.departmentRequirements[selectedDepartment] || [];
-      const newId = `${selectedDepartment.toLowerCase().replace(/\s+/g, '-')}-custom-${Date.now()}`;
-      const newRequirement: DepartmentRequirement = {
-        id: newId,
-        name: customRequirement.trim(),
-        selected: true,
-        notes: '',
-        type: customRequirementType, // Use selected type (physical or service)
-        quantity: customRequirementType === 'physical' ? 1 : undefined, // Default quantity for physical items
-        isCustom: true // Flag to identify custom requirements - status will default to 'For Validation'
-      };
-      
-      const updatedReqs = [...currentReqs, newRequirement];
-      const newDeptReqs = { ...formData.departmentRequirements };
-      newDeptReqs[selectedDepartment] = updatedReqs;
-      handleInputChange('departmentRequirements', newDeptReqs);
-      
-      setCustomRequirement('');
-      setCustomRequirementType('service'); // Reset to default
-      toast.success(`Custom ${customRequirementType === 'physical' ? 'quantity-based' : 'service'} requirement added - awaiting department validation`);
+    if (!customRequirement.trim()) {
+      return;
     }
+
+    const isPhysical = customRequirementType === 'physical';
+    const quantityValue = isPhysical ? parseInt(pendingCustomQuantity, 10) : undefined;
+
+    if (isPhysical && (!quantityValue || quantityValue <= 0)) {
+      toast.error('Please enter a valid quantity greater than 0');
+      return;
+    }
+
+    const currentReqs = formData.departmentRequirements[selectedDepartment] || [];
+    const newId = `${selectedDepartment.toLowerCase().replace(/\s+/g, '-')}-custom-${Date.now()}`;
+
+    const newRequirement: DepartmentRequirement = {
+      id: newId,
+      name: customRequirement.trim(),
+      selected: true,
+      notes: !isPhysical ? (customRequirementNotes ?? '') : '',
+      type: customRequirementType,
+      quantity: isPhysical ? quantityValue : undefined,
+      isCustom: true
+    };
+
+    const updatedReqs = [...currentReqs, newRequirement];
+    const newDeptReqs = { ...formData.departmentRequirements };
+    newDeptReqs[selectedDepartment] = updatedReqs;
+    handleInputChange('departmentRequirements', newDeptReqs);
+
+    // Reset modal fields
+    setCustomRequirement('');
+    setCustomRequirementType('service');
+    setCustomRequirementNotes('');
+    setPendingCustomQuantity('1');
+    setShowCustomInput(false);
+
+    toast.success(
+      `Custom ${isPhysical ? 'quantity-based' : 'service'} requirement added - awaiting department validation`
+    );
   };
 
   const handleSaveRequirements = () => {
@@ -1235,14 +1296,6 @@ const RequestEventPage: React.FC = () => {
   // Fetch conflicting events for resource availability checking (across ALL locations)
   const fetchConflictingEvents = async (date: Date, startTime: string, endTime: string, location?: string) => {
     try {
-      console.log('🔍 fetchConflictingEvents called with:', {
-        date: date.toDateString(),
-        startTime,
-        endTime,
-        location,
-        formDataStartDate: formData.startDate?.toDateString(),
-        formDataEndDate: formData.endDate?.toDateString()
-      });
       
       const response = await fetch(`${API_BASE_URL}/events`, {
         headers: {
@@ -1260,11 +1313,9 @@ const RequestEventPage: React.FC = () => {
       
       // Build list of all dates to check (Day 1 + additional days)
       const datesToCheck: Date[] = [date]; // Start with Day 1
-      console.log('📅 Initial datesToCheck:', datesToCheck.map(d => d.toDateString()));
       
       // If multi-day event, add all additional days
       if (formData.endDate && formData.startDate && formData.endDate.getTime() !== formData.startDate.getTime()) {
-        console.log('🗓️ Multi-day event detected!');
         const currentDate = new Date(formData.startDate);
         const endDate = new Date(formData.endDate);
         
@@ -1273,12 +1324,10 @@ const RequestEventPage: React.FC = () => {
         
         while (currentDate <= endDate) {
           datesToCheck.push(new Date(currentDate));
-          console.log('➕ Added date:', currentDate.toDateString());
           currentDate.setDate(currentDate.getDate() + 1);
         }
       }
       
-      console.log('📅 Final datesToCheck:', datesToCheck.map(d => d.toDateString()));
       
       // Filter events that conflict with ANY of the dates in the range
       const conflicts = events.filter((event: any) => {
@@ -1299,13 +1348,6 @@ const RequestEventPage: React.FC = () => {
         });
       });
       
-      console.log('⚠️ Found conflicts:', conflicts.length);
-      console.log('Conflicting events:', conflicts.map((e: any) => ({
-        title: e.eventTitle,
-        date: new Date(e.startDate).toDateString(),
-        time: `${e.startTime}-${e.endTime}`,
-        location: e.location
-      })));
       
       setConflictingEvents(conflicts);
       return conflicts;
@@ -1482,6 +1524,10 @@ const RequestEventPage: React.FC = () => {
         formDataToSubmit.append('multipleLocations', 'false');
       }
       
+      if (formData.roomType) {
+        formDataToSubmit.append('roomType', formData.roomType);
+      }
+      
       formDataToSubmit.append('participants', formData.participants);
       formDataToSubmit.append('vip', formData.vip || '0');
       formDataToSubmit.append('vvip', formData.vvip || '0');
@@ -1576,10 +1622,6 @@ const RequestEventPage: React.FC = () => {
         'Content-Type': 'multipart/form-data',
       };
 
-      console.log('📤 [EVENT SUBMISSION] Submitting event request...');
-      console.log('📤 [EVENT SUBMISSION] API URL:', `${API_BASE_URL}/events`);
-      console.log('📤 [EVENT SUBMISSION] Total files:', formData.attachments.length);
-      console.log('📤 [EVENT SUBMISSION] Total size:', formData.attachments.reduce((sum, f) => sum + f.size, 0) / 1024 / 1024, 'MB');
       
       // Show initial loading toast with unique ID
       uploadToastId = `upload-${Date.now()}`;
@@ -1600,7 +1642,6 @@ const RequestEventPage: React.FC = () => {
             const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
             const loadedMB = (progressEvent.loaded / 1024 / 1024).toFixed(2);
             const totalMB = (progressEvent.total / 1024 / 1024).toFixed(2);
-            console.log(`📤 Upload progress: ${percentCompleted}% (${loadedMB}MB / ${totalMB}MB)`);
             
             // Update the SAME toast with new progress
             toast.loading('Submitting event request...', {
@@ -1615,7 +1656,6 @@ const RequestEventPage: React.FC = () => {
       // Dismiss loading toast after upload completes
       toast.dismiss(uploadToastId);
 
-      console.log('✅ [EVENT SUBMISSION] Response received:', response.data);
 
       if (response.data.success) {
         toast.success('Event request submitted successfully!', {
@@ -1723,16 +1763,8 @@ const RequestEventPage: React.FC = () => {
     // Use checkDate if provided, otherwise use formData.startDate (Day 1)
     const dateToCheck = checkDate || formData.startDate;
     
-    console.log('🔍 isTimeSlotBooked called:', {
-      timeSlot,
-      checkDate: checkDate?.toDateString(),
-      dateToCheck: dateToCheck?.toDateString(),
-      location: formData.location,
-      conflictingEventsCount: conflictingEvents.length
-    });
     
     if (!dateToCheck || !formData.location || conflictingEvents.length === 0) {
-      console.log('❌ Early return - missing data');
       return false;
     }
 
@@ -1743,14 +1775,6 @@ const RequestEventPage: React.FC = () => {
       const eventDate = new Date(event.startDate);
       const eventDateStr = eventDate.toDateString();
       const mainDateMatches = checkDateStr === eventDateStr;
-      
-      console.log('📅 Comparing dates:', {
-        checkDate: checkDateStr,
-        eventDate: eventDateStr,
-        eventTitle: event.eventTitle,
-        mainDateMatches,
-        hasDateTimeSlots: !!event.dateTimeSlots
-      });
       
       // Check location conflict
       const eventLocations = event.locations && Array.isArray(event.locations) && event.locations.length > 0
@@ -1778,19 +1802,6 @@ const RequestEventPage: React.FC = () => {
         // Include both start time AND end time (event is still happening at end time)
         const isConflict = slotMinutes >= eventStartMinutes && slotMinutes <= eventEndMinutes;
         
-        console.log('⏰ Time conflict check:', {
-          timeSlot,
-          slotMinutes,
-          eventStart: startTime,
-          eventStartMinutes,
-          eventEnd: endTime,
-          eventEndMinutes,
-          isConflict,
-          calculation: `${slotMinutes} >= ${eventStartMinutes} && ${slotMinutes} <= ${eventEndMinutes}`,
-          eventLocation: event.location,
-          userLocation: formData.location,
-          locationsConflictResult: locationsConflict(event.location, formData.location)
-        });
         
         return isConflict;
       };
@@ -1799,11 +1810,6 @@ const RequestEventPage: React.FC = () => {
       if (mainDateMatches) {
         const isBlocked = checkTimeConflict(event.startTime, event.endTime);
         if (isBlocked) {
-          console.log('🚫 MAIN DATE - Time slot BLOCKED:', {
-            timeSlot,
-            eventTitle: event.eventTitle,
-            eventTime: `${event.startTime}-${event.endTime}`
-          });
           return true;
         }
       }
@@ -1817,12 +1823,6 @@ const RequestEventPage: React.FC = () => {
           if (slotDate.toDateString() === checkDateStr) {
             const isBlocked = checkTimeConflict(slot.startTime, slot.endTime);
             if (isBlocked) {
-              console.log('🚫 SLOT DATE - Time slot BLOCKED:', {
-                timeSlot,
-                eventTitle: event.eventTitle,
-                slotDate: slotDate.toDateString(),
-                slotTime: `${slot.startTime}-${slot.endTime}`
-              });
               return true;
             }
           }
@@ -1832,7 +1832,6 @@ const RequestEventPage: React.FC = () => {
       return false;
     });
     
-    console.log(`✅ isTimeSlotBooked result for ${timeSlot}:`, result);
     return result;
   };
 
@@ -2357,7 +2356,7 @@ const RequestEventPage: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Row 3: Participants */}
+                {/* Row 3: Participants / VIP / VVIP / Governor, with optional Room Type row below */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <div>
                     <Label htmlFor="participants" className="text-sm font-medium">Participants <span className="text-red-500">*</span></Label>
@@ -2395,10 +2394,10 @@ const RequestEventPage: React.FC = () => {
                       className="mt-1"
                     />
                   </div>
-                  <div>
-                    <Label htmlFor="withoutGov" className="text-sm font-medium">
-                      {formData.withoutGov ? 'w/ Governor' : 'w/o Governor'}
-                    </Label>
+                  <div className="flex flex-col justify-between">
+                    <div>
+                      <Label htmlFor="withoutGovernor" className="text-sm font-medium">w/o Governor</Label>
+                    </div>
                     <div className="mt-1 h-10 flex items-center border border-input rounded-md px-3 bg-background">
                       <Switch
                         id="withoutGov"
@@ -2407,6 +2406,24 @@ const RequestEventPage: React.FC = () => {
                       />
                     </div>
                   </div>
+                  {locationRoomTypes.length > 0 && (
+                    <div className="md:col-span-4">
+                      <Label htmlFor="roomType" className="text-sm font-medium">Room Type</Label>
+                      <Select
+                        value={formData.roomType || ''}
+                        onValueChange={(value) => handleInputChange('roomType', value)}
+                      >
+                        <SelectTrigger id="roomType" className="mt-1">
+                          <SelectValue placeholder="Select room type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {locationRoomTypes.map((type) => (
+                            <SelectItem key={type} value={type}>{type}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                 </div>
 
                 {/* Description */}
@@ -3532,7 +3549,7 @@ const RequestEventPage: React.FC = () => {
                       ? 'bg-blue-50 border-blue-300' 
                       : 'border-gray-300 hover:border-blue-300 hover:bg-blue-50'
                   }`}
-                  onClick={() => setShowCustomInput(!showCustomInput)}
+                  onClick={() => setShowCustomInput(true)}
                 >
                   <div className="flex items-center justify-center gap-2 text-sm text-gray-600">
                     <Plus className="w-4 h-4" />
@@ -3542,54 +3559,95 @@ const RequestEventPage: React.FC = () => {
               </div>
             </div>
           </div>
+          {/* Custom Requirement Modal (name, type, and quantity/notes in one place) */}
+          <Dialog open={showCustomInput} onOpenChange={setShowCustomInput}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Add Custom Requirement</DialogTitle>
+                <DialogDescription>
+                  Define a new requirement for {selectedDepartment || 'this department'}.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 pt-2">
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-gray-900">Requirement Name</Label>
+                  <Input
+                    placeholder="Enter custom requirement name..."
+                    value={customRequirement}
+                    onChange={(e) => setCustomRequirement(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-gray-900">Type</Label>
+                  <Select 
+                    value={customRequirementType || 'service'} 
+                    onValueChange={(value: 'physical' | 'service') => setCustomRequirementType(value)}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="physical">
+                        <div className="flex items-center gap-2">
+                          <Package className="w-3 h-3" />
+                          Quantity (Physical Item)
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="service">
+                        <div className="flex items-center gap-2">
+                          <StickyNote className="w-3 h-3" />
+                          Notes (Service)
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Choose "Quantity" for physical items or "Notes" for services.
+                  </p>
+                </div>
 
-          {/* Custom Requirement Input */}
-          {showCustomInput && (
-            <div className="mb-6 space-y-3">
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Enter custom requirement name..."
-                  value={customRequirement}
-                  onChange={(e) => setCustomRequirement(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && handleAddCustomRequirement()}
-                  className="flex-1"
-                />
-                <Select 
-                  value={customRequirementType || 'service'} 
-                  onValueChange={(value: 'physical' | 'service') => setCustomRequirementType(value)}
+                {customRequirementType === 'physical' && (
+                  <div className="space-y-2">
+                    <Label className="text-xs font-medium text-gray-900">Quantity Needed</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      value={pendingCustomQuantity}
+                      onChange={(e) => setPendingCustomQuantity(e.target.value)}
+                    />
+                  </div>
+                )}
+
+                {customRequirementType === 'service' && (
+                  <div className="space-y-2">
+                    <Label className="text-xs font-medium text-gray-900">Notes / Special Instructions</Label>
+                    <Textarea
+                      placeholder="Enter notes for this custom requirement..."
+                      value={customRequirementNotes}
+                      onChange={(e) => setCustomRequirementNotes(e.target.value)}
+                      className="text-sm min-h-24"
+                    />
+                  </div>
+                )}
+              </div>
+              <DialogFooter className="mt-4">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowCustomInput(false);
+                  }}
                 >
-                  <SelectTrigger className="w-[140px]">
-                    <SelectValue placeholder="Type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="physical">
-                      <div className="flex items-center gap-2">
-                        <Package className="w-3 h-3" />
-                        Quantity
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="service">
-                      <div className="flex items-center gap-2">
-                        <StickyNote className="w-3 h-3" />
-                        Notes
-                      </div>
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button 
+                  Cancel
+                </Button>
+                <Button
                   onClick={handleAddCustomRequirement}
                   disabled={!customRequirement.trim()}
-                  variant="outline"
-                  size="sm"
                 >
                   Add
                 </Button>
-              </div>
-              <p className="text-xs text-gray-500">
-                Choose "Quantity" for physical items or "Notes" for services
-              </p>
-            </div>
-          )}
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           {/* Selected Requirements */}
           {formData.departmentRequirements[selectedDepartment]?.filter(req => req.selected).length > 0 && (
@@ -3640,7 +3698,7 @@ const RequestEventPage: React.FC = () => {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => handleRequirementToggle(requirement.id)}
+                      onClick={() => handleSelectedRequirementRemove(requirement)}
                       className="h-5 w-5 p-0 text-gray-500 hover:text-red-500"
                     >
                       <X className="w-3 h-3" />
@@ -5425,6 +5483,12 @@ const RequestEventPage: React.FC = () => {
                         <p className="text-base font-medium text-gray-900">{formData.location}</p>
                       )}
                     </div>
+                    {formData.roomType && (
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Room Type</Label>
+                        <p className="text-base font-medium text-gray-900">{formData.roomType}</p>
+                      </div>
+                    )}
                     <div className="space-y-1.5">
                       <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Participants</Label>
                       <div className="flex items-center gap-3 text-sm">
