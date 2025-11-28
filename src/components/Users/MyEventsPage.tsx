@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
-import { getGlobalSocket } from '@/hooks/useSocket';
+import { getGlobalSocket, useSocket } from '@/hooks/useSocket';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -53,7 +53,8 @@ import {
   ChevronRight,
   AlertTriangle,
   HelpCircle,
-  Loader2
+  Loader2,
+  MessageSquare
 } from 'lucide-react';
 
 interface Event {
@@ -131,6 +132,9 @@ const locations = [
 ];
 
 const MyEventsPage: React.FC = () => {
+  const currentUser = JSON.parse(localStorage.getItem('userData') || '{}');
+  const userId = currentUser._id || currentUser.id || 'unknown';
+
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -174,6 +178,119 @@ const MyEventsPage: React.FC = () => {
     notes: ''
   });
   
+  // Per-requirement reply drafts for department notes conversation
+  const [requirementReplyDrafts, setRequirementReplyDrafts] = useState<{ [reqId: string]: string }>({});
+
+  // Track which events have had their Tagged/Requirements badge viewed
+  const [viewedTaggedRequirementsEvents, setViewedTaggedRequirementsEvents] = useState<Set<string>>(
+    new Set(JSON.parse(localStorage.getItem('viewedTaggedRequirementsEvents') || '[]'))
+  );
+
+  // Socket helpers for status updates
+  const { onStatusUpdate, offStatusUpdate } = useSocket(userId);
+
+  // Mark My Events badge as viewed when events are loaded
+  useEffect(() => {
+    if (events.length > 0 && !loading) {
+      // Set flag in localStorage to indicate user has viewed My Events
+      localStorage.setItem('myEventsBadgeViewed', 'true');
+      
+      // Dispatch custom event to notify sidebar to hide badge
+      window.dispatchEvent(new CustomEvent('myEventsBadgeViewed'));
+    }
+  }, [events, loading]);
+
+  // Realtime reply updates via Socket.IO (for requirement conversations)
+  useEffect(() => {
+    const socket = getGlobalSocket();
+    if (!socket) return;
+
+    const handleReplyUpdate = async (data: any) => {
+      if (!data || !data.eventId) return;
+
+      try {
+        const token = localStorage.getItem('authToken');
+        const response = await axios.get(`${API_BASE_URL}/events/${data.eventId}`, {
+          headers: {
+            'Authorization': token ? `Bearer ${token}` : '',
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (response.data?.success && response.data.data) {
+          const updatedEvent = response.data.data as Event;
+
+          // Update main events list
+          setEvents(prev => prev.map(ev => (ev._id === updatedEvent._id ? updatedEvent : ev)));
+
+          // Update currently open Tagged Departments modal event, if matches
+          setSelectedEventDepartments(prev => (prev && prev._id === updatedEvent._id ? updatedEvent : prev));
+        }
+      } catch (error) {
+      }
+    };
+
+    if (socket.connected) {
+      socket.on('reply-update', handleReplyUpdate);
+    } else {
+      socket.once('connect', () => {
+        socket.on('reply-update', handleReplyUpdate);
+      });
+    }
+
+    return () => {
+      socket.off('reply-update', handleReplyUpdate);
+    };
+  }, []);
+
+  // Realtime requirement status updates via Socket.IO
+  useEffect(() => {
+    if (typeof onStatusUpdate !== 'function') {
+      return;
+    }
+
+    const handleStatusUpdate = async (data: any) => {
+      if (!data || !data.eventId) return;
+
+      try {
+        const token = localStorage.getItem('authToken');
+        const response = await axios.get(`${API_BASE_URL}/events/${data.eventId}`, {
+          headers: {
+            'Authorization': token ? `Bearer ${token}` : '',
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (response.data?.success && response.data.data) {
+          const updatedEvent = response.data.data as Event;
+
+          // Update main events list
+          setEvents(prev => prev.map(ev => (ev._id === updatedEvent._id ? updatedEvent : ev)));
+
+          // Update currently open Tagged Departments modal event, if matches
+          setSelectedEventDepartments(prev => (prev && prev._id === updatedEvent._id ? updatedEvent : prev));
+          
+          // Reset viewed flag for this event's badge if there are new updates
+          if (getTaggedUpdatesCount(updatedEvent) > 0) {
+            const newViewedSet = new Set(viewedTaggedRequirementsEvents);
+            newViewedSet.delete(updatedEvent._id);
+            setViewedTaggedRequirementsEvents(newViewedSet);
+            localStorage.setItem('viewedTaggedRequirementsEvents', JSON.stringify(Array.from(newViewedSet)));
+          }
+        }
+      } catch (error) {
+      }
+    };
+
+    onStatusUpdate(handleStatusUpdate);
+
+    return () => {
+      if (typeof offStatusUpdate === 'function') {
+        offStatusUpdate();
+      }
+    };
+  }, [onStatusUpdate, offStatusUpdate]);
+  
   // Edit Event Details Modal State (for on-hold events)
   const [showEditDetailsModal, setShowEditDetailsModal] = useState(false);
   const [editDetailsData, setEditDetailsData] = useState({
@@ -206,6 +323,30 @@ const MyEventsPage: React.FC = () => {
   const [selectedDepartmentData, setSelectedDepartmentData] = useState<any>(null);
   const [departmentRequirements, setDepartmentRequirements] = useState<any[]>([]);
   const [addDepartmentSearchQuery, setAddDepartmentSearchQuery] = useState('');
+
+  // Compute real-time badge count for Tagged/Requirements button
+  const getTaggedUpdatesCount = (event: Event): number => {
+    if (!event.departmentRequirements) return 0;
+
+    let count = 0;
+    Object.values(event.departmentRequirements).forEach((reqs: any) => {
+      if (!Array.isArray(reqs)) return;
+      reqs.forEach((req: any) => {
+        const status = (req.status || 'pending').toLowerCase();
+        const hasStatusChange = status !== 'pending';
+        const hasDeptNotes = !!req.departmentNotes;
+        const hasDeptReplies = Array.isArray(req.replies)
+          ? req.replies.some((r: any) => r.role === 'department')
+          : false;
+
+        if (hasStatusChange || hasDeptNotes || hasDeptReplies) {
+          count += 1;
+        }
+      });
+    });
+
+    return count;
+  };
 
   // Fetch available dates for selected location
   const fetchAvailableDates = async (locationName: string) => {
@@ -982,6 +1123,12 @@ const MyEventsPage: React.FC = () => {
     setSelectedEventDepartments(event);
     setSelectedStatusFilter('all'); // Reset filter when opening modal
     setShowDepartmentsModal(true);
+    
+    // Mark this event's Tagged/Requirements badge as viewed
+    const newViewedSet = new Set(viewedTaggedRequirementsEvents);
+    newViewedSet.add(event._id);
+    setViewedTaggedRequirementsEvents(newViewedSet);
+    localStorage.setItem('viewedTaggedRequirementsEvents', JSON.stringify(Array.from(newViewedSet)));
   };
 
   // Check if a time slot has requirement conflicts
@@ -1184,11 +1331,25 @@ const MyEventsPage: React.FC = () => {
   const handleSaveEditedRequirement = async () => {
     if (!editingRequirement) return;
 
+    // Compute effective available quantity, respecting pavilion/location defaults when present
+    let effectiveTotal = editingRequirement.totalQuantity;
+    if (
+      editingRequirement.availabilityNotes &&
+      typeof editingRequirement.availabilityNotes === 'string' &&
+      editingRequirement.availabilityNotes.startsWith('PAVILION_DEFAULT:')
+    ) {
+      const parts = editingRequirement.availabilityNotes.split(':');
+      const parsed = parseInt(parts[1] || '0', 10);
+      if (!isNaN(parsed) && parsed > 0) {
+        effectiveTotal = parsed;
+      }
+    }
+
     // Validate based on requirement type
     if (editingRequirement.type === 'physical') {
       // Validate quantity for physical requirements
-      if (editRequirementData.quantity > editingRequirement.totalQuantity) {
-        toast.error(`Quantity cannot exceed ${editingRequirement.totalQuantity} (available in database)`);
+      if (effectiveTotal && editRequirementData.quantity > effectiveTotal) {
+        toast.error(`Quantity cannot exceed ${effectiveTotal} (available)`);
         return;
       }
 
@@ -1414,7 +1575,23 @@ const MyEventsPage: React.FC = () => {
             })
             .map((req: any) => {
               const avail = availabilities.find((a: any) => a.requirementId === req._id);
-              const baseQuantity = avail?.quantity || req.totalQuantity || 0;
+
+              // Determine base quantity, respecting pavilion/location defaults when present.
+              // For PGSO, if availability notes contain a PAVILION_DEFAULT marker, use that
+              // quantity as the base pool (e.g. 30 for chairs in a specific pavilion/location)
+              // instead of the global department total (e.g. 600).
+              let baseQuantity: number = 0;
+              if (dept.name === 'PGSO' && avail?.notes && typeof avail.notes === 'string' && avail.notes.startsWith('PAVILION_DEFAULT:')) {
+                const parts = avail.notes.split(':');
+                const pavilionQty = parseInt(parts[1] || '0', 10);
+                if (!isNaN(pavilionQty) && pavilionQty > 0) {
+                  baseQuantity = pavilionQty;
+                } else {
+                  baseQuantity = (avail?.quantity || req.totalQuantity || 0);
+                }
+              } else {
+                baseQuantity = avail?.quantity || req.totalQuantity || 0;
+              }
               
               // Calculate how much is already booked by conflicting events AND current event
               let bookedQuantity = 0;
@@ -2052,16 +2229,32 @@ const MyEventsPage: React.FC = () => {
                             <Eye className="w-3 h-3" />
                             Details
                           </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleShowDepartments(event)}
-                            className="gap-1 h-7 px-2 text-[10px] md:text-xs whitespace-nowrap"
-                          >
-                            <Building2 className="w-3 h-3" />
-                            <span className="hidden sm:inline">Tagged/Requirements</span>
-                            <span className="sm:hidden">Tagged</span>
-                          </Button>
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleShowDepartments(event)}
+                                  className="gap-1 h-7 px-2 text-[10px] md:text-xs whitespace-nowrap relative"
+                                >
+                                  <Building2 className="w-3 h-3" />
+                                  <span className="hidden sm:inline">Tagged/Requirements</span>
+                                  <span className="sm:hidden">Tagged</span>
+                                  {getTaggedUpdatesCount(event) > 0 && !viewedTaggedRequirementsEvents.has(event._id) && (
+                                    <span className="ml-1 inline-flex items-center justify-center rounded-full bg-red-500 text-white text-[9px] min-w-[16px] h-[16px] px-1">
+                                      {getTaggedUpdatesCount(event) > 99 ? '99+' : getTaggedUpdatesCount(event)}
+                                    </span>
+                                  )}
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p className="text-xs">
+                                  Shows how many requirements have updates (confirmed/declined or new department notes/replies).
+                                </p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
                           <Button
                             variant="default"
                             size="sm"
@@ -2506,8 +2699,30 @@ const MyEventsPage: React.FC = () => {
                                               {/* Quantity/Notes */}
                                               {req.type === 'physical' && req.quantity ? (
                                                 <div className="text-sm text-gray-600 bg-white rounded p-2">
-                                                  <span className="font-medium">Requested:</span> {req.quantity}
-                                                  {req.totalQuantity && <span className="text-gray-500"> of {req.totalQuantity} available</span>}
+                                                  {(() => {
+                                                    // Prefer baseQuantity (location/default pool) if present, otherwise fall back to totalQuantity.
+                                                    let displayTotal = (typeof req.baseQuantity === 'number' && req.baseQuantity > 0)
+                                                      ? req.baseQuantity
+                                                      : req.totalQuantity;
+
+                                                    // If availabilityNotes encodes a PAVILION/LOCATION default, override with that quantity.
+                                                    if (req.availabilityNotes && req.availabilityNotes.startsWith('PAVILION_DEFAULT:')) {
+                                                      const parts = req.availabilityNotes.split(':');
+                                                      const parsed = parseInt(parts[1], 10);
+                                                      if (!isNaN(parsed) && parsed > 0) {
+                                                        displayTotal = parsed;
+                                                      }
+                                                    }
+
+                                                    return (
+                                                      <>
+                                                        <span className="font-medium">Requested:</span> {req.quantity}
+                                                        {displayTotal && (
+                                                          <span className="text-gray-500"> of {displayTotal} available</span>
+                                                        )}
+                                                      </>
+                                                    );
+                                                  })()}
                                                 </div>
                                               ) : req.type === 'yesno' && req.yesNoAnswer ? (
                                                 <div className="text-sm text-gray-600 bg-white rounded p-2">
@@ -2519,14 +2734,136 @@ const MyEventsPage: React.FC = () => {
                                                 </div>
                                               ) : null}
 
-                                              {/* Department Notes */}
+                                              {/* Department Notes (show department name) */}
                                               {req.departmentNotes && (
-                                                <div className="bg-blue-50 border border-blue-200 rounded p-3">
-                                                  <div className="text-xs font-medium text-blue-800 mb-1 flex items-center gap-1">
+                                                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-2">
+                                                  <div className="text-xs font-medium text-blue-800 flex items-center gap-1">
                                                     <FileText className="w-3 h-3" />
-                                                    Department Notes:
+                                                    <span>{dept} Notes</span>
                                                   </div>
-                                                  <div className="text-sm text-blue-700">{req.departmentNotes}</div>
+                                                  <div className="text-sm text-blue-900 whitespace-pre-wrap">
+                                                    {req.departmentNotes}
+                                                  </div>
+
+                                                  {/* Replies Thread */}
+                                                  <div className="pt-2 border-t border-blue-100 space-y-2">
+                                                    <Label className="text-[11px] font-medium text-blue-900 flex items-center gap-1">
+                                                      <MessageSquare className="w-3 h-3" />
+                                                      <span>Replies</span>
+                                                    </Label>
+
+                                                    {/* Conversation card with messages + input */}
+                                                    <div className="bg-white/80 rounded-md border border-blue-100 min-h-[180px] max-h-60 flex flex-col px-2 py-2 text-xs">
+                                                      {/* Scrollable messages */}
+                                                      <div className="flex-1 overflow-y-auto space-y-1.5 pr-1">
+                                                        {req.replies && req.replies.length > 0 ? (
+                                                          req.replies.map((reply: any, idx: number) => (
+                                                            <div
+                                                              key={idx}
+                                                              className={`flex ${reply.role === 'requestor' ? 'justify-end' : 'justify-start'}`}
+                                                            >
+                                                              <div
+                                                                className={`max-w-[80%] rounded-lg px-2 py-1.5 shadow-sm border text-[11px] whitespace-pre-wrap ${
+                                                                  reply.role === 'requestor'
+                                                                    ? 'bg-blue-600 text-white border-blue-700'
+                                                                    : 'bg-gray-100 text-gray-900 border-gray-200'
+                                                                }`}
+                                                              >
+                                                                <div className="flex items-center justify-between gap-2 mb-0.5">
+                                                                  <span className="font-semibold truncate max-w-[140px]">
+                                                                    {reply.role === 'requestor' ? 'You' : reply.userName || 'Department'}
+                                                                  </span>
+                                                                  <span className="text-[9px] opacity-80">
+                                                                    {reply.createdAt ? new Date(reply.createdAt).toLocaleString() : ''}
+                                                                  </span>
+                                                                </div>
+                                                                <p className="leading-snug">
+                                                                  {reply.message}
+                                                                </p>
+                                                              </div>
+                                                            </div>
+                                                          ))
+                                                        ) : (
+                                                          <p className="text-[11px] text-gray-400 italic">
+                                                            No replies yet.
+                                                          </p>
+                                                        )}
+                                                      </div>
+
+                                                      {/* Reply input inside card */}
+                                                      <div className="mt-2 border-t pt-2 space-y-1.5">
+                                                        <Label className="text-[11px] text-gray-700">
+                                                          Your reply as <span className="font-semibold">Requestor</span>
+                                                        </Label>
+                                                        <div className="flex items-center gap-2">
+                                                          <Input
+                                                            className="text-xs bg-white/90 border-blue-200 focus-visible:ring-blue-500 flex-1 h-8"
+                                                            placeholder="Type your reply to this department..."
+                                                            value={requirementReplyDrafts[req.id] || ''}
+                                                            onChange={(e) =>
+                                                              setRequirementReplyDrafts(prev => ({
+                                                                ...prev,
+                                                                [req.id]: e.target.value
+                                                              }))
+                                                            }
+                                                          />
+                                                          <Button
+                                                            type="button"
+                                                            size="sm"
+                                                            className="h-8 px-3 text-[11px] bg-blue-600 hover:bg-blue-700 whitespace-nowrap"
+                                                            disabled={!requirementReplyDrafts[req.id]?.trim()}
+                                                            onClick={async () => {
+                                                              const message = requirementReplyDrafts[req.id]?.trim();
+                                                              if (!message || !selectedEventDepartments) return;
+
+                                                              try {
+                                                                const token = localStorage.getItem('authToken');
+                                                                const response = await axios.patch(
+                                                                  `${API_BASE_URL}/events/${selectedEventDepartments._id}/requirements/${req.id}/replies`,
+                                                                  {
+                                                                    message,
+                                                                    role: 'requestor'
+                                                                  },
+                                                                  {
+                                                                    headers: {
+                                                                      'Authorization': token ? `Bearer ${token}` : '',
+                                                                      'Content-Type': 'application/json'
+                                                                    }
+                                                                  }
+                                                                );
+
+                                                                if (response.data?.success && response.data.data) {
+                                                                  const updatedEvent = response.data.data;
+
+                                                                  // Update events list so cards stay in sync
+                                                                  setEvents(prev =>
+                                                                    prev.map(ev => ev._id === updatedEvent._id ? updatedEvent : ev)
+                                                                  );
+
+                                                                  // Update the currently open departments modal event
+                                                                  setSelectedEventDepartments(updatedEvent);
+
+                                                                  // Clear draft for this requirement
+                                                                  setRequirementReplyDrafts(prev => ({
+                                                                    ...prev,
+                                                                    [req.id]: ''
+                                                                  }));
+
+                                                                  toast.success('Reply sent');
+                                                                } else {
+                                                                  toast.error('Failed to send reply');
+                                                                }
+                                                              } catch (error) {
+                                                                toast.error('Failed to send reply');
+                                                              }
+                                                            }}
+                                                          >
+                                                            Send Reply
+                                                          </Button>
+                                                        </div>
+                                                      </div>
+                                                    </div>
+                                                  </div>
                                                 </div>
                                               )}
 
@@ -3717,27 +4054,47 @@ const MyEventsPage: React.FC = () => {
                     <Label htmlFor="edit-quantity">
                       Quantity <span className="text-red-500">*</span>
                     </Label>
-                    <Input
-                      id="edit-quantity"
-                      type="number"
-                      min="1"
-                      max={editingRequirement.totalQuantity}
-                      value={editRequirementData.quantity}
-                      onChange={(e) => setEditRequirementData(prev => ({ 
-                        ...prev, 
-                        quantity: parseInt(e.target.value) || 0 
-                      }))}
-                      placeholder="Enter quantity"
-                    />
-                    <p className="text-xs text-gray-500">
-                      Current Available: <span className="font-medium text-gray-700">{editingRequirement.totalQuantity}</span>
-                    </p>
-                    {editRequirementData.quantity > editingRequirement.totalQuantity && (
-                      <p className="text-xs text-red-600 flex items-center gap-1">
-                        <AlertTriangle className="w-3 h-3" />
-                        Quantity cannot exceed available amount
-                      </p>
-                    )}
+                    {(() => {
+                      // Compute the same effective total used in validation
+                      let effectiveTotal = editingRequirement.totalQuantity;
+                      if (
+                        editingRequirement.availabilityNotes &&
+                        typeof editingRequirement.availabilityNotes === 'string' &&
+                        editingRequirement.availabilityNotes.startsWith('PAVILION_DEFAULT:')
+                      ) {
+                        const parts = editingRequirement.availabilityNotes.split(':');
+                        const parsed = parseInt(parts[1] || '0', 10);
+                        if (!isNaN(parsed) && parsed > 0) {
+                          effectiveTotal = parsed;
+                        }
+                      }
+
+                      return (
+                        <>
+                          <Input
+                            id="edit-quantity"
+                            type="number"
+                            min="1"
+                            max={effectiveTotal}
+                            value={editRequirementData.quantity}
+                            onChange={(e) => setEditRequirementData(prev => ({ 
+                              ...prev, 
+                              quantity: parseInt(e.target.value) || 0 
+                            }))}
+                            placeholder="Enter quantity"
+                          />
+                          <p className="text-xs text-gray-500">
+                            Current Available: <span className="font-medium text-gray-700">{effectiveTotal}</span>
+                          </p>
+                          {effectiveTotal && editRequirementData.quantity > effectiveTotal && (
+                            <p className="text-xs text-red-600 flex items-center gap-1">
+                              <AlertTriangle className="w-3 h-3" />
+                              Quantity cannot exceed available amount
+                            </p>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
 
                   {/* Notes Input (Optional for Physical) */}

@@ -285,73 +285,80 @@ const CustomCalendar: React.FC<CustomCalendarProps> = ({
             <span className="truncate">{truncateTitle(event.title)}</span>
           </div>
         </PopoverTrigger>
-        <PopoverContent className="w-80" side="top" align="start">
-          <div className="space-y-3">
-            <div>
-              <h4 className="font-semibold text-sm mb-2">{event.title}</h4>
-            </div>
-            <div className="space-y-2 text-sm">
-              <div className="flex items-start gap-2">
-                <MapPin className="w-4 h-4 text-gray-500 mt-0.5 flex-shrink-0" />
-                <div>
-                  <p className="text-xs text-gray-500">Location</p>
-                  <p className="font-medium">{eventDetails.location}</p>
-                </div>
+        <PopoverContent
+          className="w-80 p-4 bg-white/95 backdrop-blur-sm border border-gray-200 shadow-lg rounded-xl"
+          side="top"
+          align="start"
+        >
+          <div className="space-y-4">
+            {/* Title + Status */}
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-1">
+                <h4 className="font-semibold text-sm text-gray-900 leading-snug line-clamp-2">
+                  {event.title}
+                </h4>
+                {eventDetails.location && (
+                  <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
+                    <MapPin className="w-3 h-3 flex-shrink-0" />
+                    <span className="truncate max-w-[11rem]">{eventDetails.location}</span>
+                  </div>
+                )}
               </div>
-              
-              {/* Show date/time - different format for single vs multiple dates */}
+              {eventDetails.status && (
+                <Badge className={`${getStatusBadgeColor(eventDetails.status)} border text-[10px] px-2 py-0.5 whitespace-nowrap`}>
+                  {eventDetails.status}
+                </Badge>
+              )}
+            </div>
+
+            <div className="space-y-3 text-xs text-gray-700">
+              {/* Date & Time section */}
               <div className="flex items-start gap-2">
-                <Calendar className="w-4 h-4 text-gray-500 mt-0.5 flex-shrink-0" />
-                <div className="flex-1">
+                <div className="mt-0.5 flex-shrink-0">
+                  <Calendar className="w-3.5 h-3.5 text-gray-400" />
+                </div>
+                <div className="flex-1 space-y-1.5">
+                  <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Schedule</p>
                   {eventDetails.dateTimeSlots && eventDetails.dateTimeSlots.length > 0 ? (
-                    // Multiple date/time slots
-                    <>
-                      <p className="text-xs text-gray-500 mb-1">Date/Time Slots</p>
-                      <div className="space-y-1">
-                        {/* Main date slot */}
-                        <div className="text-xs bg-blue-50 p-2 rounded border border-blue-200">
-                          <p className="font-medium">
-                            {eventDetails.startDate !== 'N/A' 
-                              ? `${format(new Date(eventDetails.startDate), 'MMM d, yyyy')} ${eventDetails.startTime} - ${eventDetails.endTime}`
-                              : 'N/A'
-                            }
+                    <div className="space-y-1.5">
+                      {/* Main date slot */}
+                      <div className="rounded-md border border-gray-200 bg-gray-50 px-2 py-1.5 text-[11px]">
+                        <p className="font-medium text-gray-900">
+                          {eventDetails.startDate !== 'N/A'
+                            ? `${format(new Date(eventDetails.startDate), 'MMM d, yyyy')} · ${eventDetails.startTime} - ${eventDetails.endTime}`
+                            : 'N/A'}
+                        </p>
+                      </div>
+                      {/* Additional date/time slots */}
+                      {eventDetails.dateTimeSlots.map((slot: any, idx: number) => (
+                        <div
+                          key={idx}
+                          className="rounded-md border border-dashed border-gray-200 bg-white px-2 py-1.5 text-[11px]"
+                        >
+                          <p className="font-medium text-gray-800">
+                            {format(new Date(slot.startDate), 'MMM d, yyyy')} · {formatTime12Hour(slot.startTime)} - {formatTime12Hour(slot.endTime)}
                           </p>
                         </div>
-                        
-                        {/* Additional date/time slots */}
-                        {eventDetails.dateTimeSlots.map((slot: any, idx: number) => (
-                          <div key={idx} className="text-xs bg-gray-50 p-2 rounded border">
-                            <p className="font-medium">
-                              {format(new Date(slot.startDate), 'MMM d, yyyy')} {formatTime12Hour(slot.startTime)} - {formatTime12Hour(slot.endTime)}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-                    </>
+                      ))}
+                    </div>
                   ) : (
-                    // Single date/time
-                    <>
-                      <p className="text-xs text-gray-500 mb-1">Date & Time</p>
-                      <p className="font-medium text-xs">
-                        {eventDetails.startDate !== 'N/A' 
-                          ? `${format(new Date(eventDetails.startDate), 'MMM d, yyyy')} at ${eventDetails.startTime} to ${eventDetails.endTime}`
-                          : 'N/A'
-                        }
+                    <div className="rounded-md border border-gray-200 bg-gray-50 px-2 py-1.5 text-[11px]">
+                      <p className="font-medium text-gray-900">
+                        {eventDetails.startDate !== 'N/A'
+                          ? `${format(new Date(eventDetails.startDate), 'MMM d, yyyy')} · ${eventDetails.startTime} - ${eventDetails.endTime}`
+                          : 'N/A'}
                       </p>
-                    </>
+                    </div>
                   )}
                 </div>
               </div>
-              
+
+              {/* Status row (secondary, since badge is in header) */}
               {eventDetails.status && (
-                <div className="flex items-start gap-2">
-                  <CheckCircle className="w-4 h-4 text-gray-500 mt-0.5 flex-shrink-0" />
-                  <div className="flex-1">
-                    <p className="text-xs text-gray-500 mb-1">Status</p>
-                    <Badge className={`${getStatusBadgeColor(eventDetails.status)} border text-xs`}>
-                      {eventDetails.status}
-                    </Badge>
-                  </div>
+                <div className="flex items-center gap-2 text-[11px] text-gray-500">
+                  <CheckCircle className="w-3.5 h-3.5 text-gray-400" />
+                  <span>Event status:</span>
+                  <span className="font-medium text-gray-800">{eventDetails.status}</span>
                 </div>
               )}
             </div>
@@ -532,52 +539,57 @@ const CustomCalendar: React.FC<CustomCalendarProps> = ({
 
       {/* All Events Modal */}
       <Dialog open={showAllEventsModal} onOpenChange={setShowAllEventsModal}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>All Events</DialogTitle>
-            <DialogDescription>
-              {selectedDateEvents.length > 0 && 
-                `${selectedDateEvents.length} event${selectedDateEvents.length > 1 ? 's' : ''} on ${format(new Date(selectedDateEvents[0].date), 'MMMM d, yyyy')}`
-              }
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto bg-white/95 backdrop-blur-sm border border-gray-200 shadow-xl rounded-2xl">
+          <DialogHeader className="space-y-1">
+            <DialogTitle className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+              All Events
+            </DialogTitle>
+            <DialogDescription className="text-xs text-gray-500">
+              {selectedDateEvents.length > 0 &&
+                `${selectedDateEvents.length} event${selectedDateEvents.length > 1 ? 's' : ''} on ${format(new Date(selectedDateEvents[0].date), 'MMMM d, yyyy')}`}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2 mt-4">
+          <div className="mt-4 space-y-3">
             {selectedDateEvents.map((event) => {
               const eventDetails = parseEventNotes(event.notes);
               const getEventStyle = (type: string) => {
                 switch (type) {
-                  case 'completed': return 'bg-violet-100 text-violet-800 border-violet-200';
-                  case 'submitted': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-                  case 'approved': return 'bg-green-100 text-green-800 border-green-200';
-                  case 'rejected': return 'bg-red-100 text-red-800 border-red-200';
-                  default: return 'bg-gray-100 text-gray-800 border-gray-200';
+                  case 'completed':
+                    return 'bg-violet-50 text-violet-800 border-violet-200';
+                  case 'submitted':
+                    return 'bg-amber-50 text-amber-800 border-amber-200';
+                  case 'approved':
+                    return 'bg-emerald-50 text-emerald-800 border-emerald-200';
+                  case 'rejected':
+                    return 'bg-rose-50 text-rose-800 border-rose-200';
+                  default:
+                    return 'bg-gray-50 text-gray-800 border-gray-200';
                 }
               };
 
               return (
-                <div
+                <button
+                  type="button"
                   key={event.id}
-                  className="p-4 border rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
+                  className="w-full text-left rounded-xl border border-gray-200 bg-white/80 px-4 py-3 hover:bg-gray-50/80 transition-colors flex items-start justify-between gap-4"
                   onClick={() => {
                     setShowAllEventsModal(false);
                     handleShowEventDetail(event);
                   }}
                 >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1">
-                      <h4 className="font-semibold text-sm mb-2">{event.title}</h4>
-                      <div className="space-y-1 text-xs text-gray-600">
-                        <div className="flex items-center gap-2">
-                          <MapPin className="w-3 h-3" />
-                          <span>{eventDetails.location}</span>
-                        </div>
-                      </div>
+                  <div className="flex-1 space-y-1">
+                    <p className="text-sm font-semibold text-gray-900 line-clamp-2">
+                      {event.title}
+                    </p>
+                    <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
+                      <MapPin className="w-3 h-3 flex-shrink-0" />
+                      <span className="truncate max-w-xs">{eventDetails.location}</span>
                     </div>
-                    <Badge className={`${getEventStyle(event.type)} border text-xs`}>
-                      {eventDetails.status}
-                    </Badge>
                   </div>
-                </div>
+                  <Badge className={`${getEventStyle(event.type)} border text-[10px] px-2 py-0.5 whitespace-nowrap`}>
+                    {eventDetails.status}
+                  </Badge>
+                </button>
               );
             })}
           </div>
@@ -586,75 +598,75 @@ const CustomCalendar: React.FC<CustomCalendarProps> = ({
 
       {/* Event Detail Modal */}
       <Dialog open={showEventDetailModal} onOpenChange={setShowEventDetailModal}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Event Details</DialogTitle>
-          </DialogHeader>
+        <DialogContent className="max-w-md bg-white/95 backdrop-blur-sm border border-gray-200 shadow-xl rounded-2xl">
           {selectedEventDetail && (() => {
             const details = parseEventNotes(selectedEventDetail.notes);
             return (
-              <div className="space-y-4 mt-4">
-                <div>
-                  <h3 className="font-semibold text-lg mb-4">{selectedEventDetail.title}</h3>
-                </div>
-                <div className="space-y-3">
+              <div className="space-y-4">
+                <DialogHeader className="space-y-1">
+                  <DialogTitle className="text-base font-semibold text-gray-900 leading-snug line-clamp-2">
+                    {selectedEventDetail.title}
+                  </DialogTitle>
+                  <DialogDescription className="text-xs text-gray-500">
+                    Detailed schedule and status for this event.
+                  </DialogDescription>
+                </DialogHeader>
+
+                <div className="space-y-4 text-xs text-gray-700">
+                  {/* Location */}
                   <div className="flex items-start gap-3">
-                    <MapPin className="w-5 h-5 text-gray-500 mt-0.5 flex-shrink-0" />
-                    <div className="flex-1">
-                      <p className="text-xs text-gray-500 mb-1">Location</p>
-                      <p className="font-medium">{details.location}</p>
+                    <MapPin className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1 space-y-1">
+                      <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Location</p>
+                      <p className="text-sm font-medium text-gray-900">{details.location}</p>
                     </div>
                   </div>
-                  
-                  {/* Show date/time - different format for single vs multiple dates */}
+
+                  {/* Schedule */}
                   <div className="flex items-start gap-3">
-                    <Calendar className="w-5 h-5 text-gray-500 mt-0.5 flex-shrink-0" />
-                    <div className="flex-1">
+                    <Calendar className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1 space-y-2">
+                      <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Schedule</p>
                       {details.dateTimeSlots && details.dateTimeSlots.length > 0 ? (
-                        // Multiple date/time slots
-                        <>
-                          <p className="text-xs text-gray-500 mb-2">Date/Time Slots</p>
-                          <div className="space-y-2">
-                            {/* Main date slot */}
-                            <div className="bg-blue-50 p-3 rounded border border-blue-200">
-                              <p className="font-medium text-sm">
-                                {details.startDate !== 'N/A' 
-                                  ? `${format(new Date(details.startDate), 'MMMM d, yyyy')} ${details.startTime} - ${details.endTime}`
-                                  : 'N/A'
-                                }
+                        <div className="space-y-1.5">
+                          {/* Main date slot */}
+                          <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-[11px]">
+                            <p className="font-medium text-gray-900">
+                              {details.startDate !== 'N/A'
+                                ? `${format(new Date(details.startDate), 'MMM d, yyyy')} · ${details.startTime} - ${details.endTime}`
+                                : 'N/A'}
+                            </p>
+                          </div>
+                          {/* Additional date/time slots */}
+                          {details.dateTimeSlots.map((slot: any, idx: number) => (
+                            <div
+                              key={idx}
+                              className="rounded-md border border-dashed border-gray-200 bg-white px-3 py-2 text-[11px]"
+                            >
+                              <p className="font-medium text-gray-800">
+                                {format(new Date(slot.startDate), 'MMM d, yyyy')} · {formatTime12Hour(slot.startTime)} - {formatTime12Hour(slot.endTime)}
                               </p>
                             </div>
-                            
-                            {/* Additional date/time slots */}
-                            {details.dateTimeSlots.map((slot: any, idx: number) => (
-                              <div key={idx} className="bg-gray-50 p-3 rounded border">
-                                <p className="font-medium text-sm">
-                                  {format(new Date(slot.startDate), 'MMMM d, yyyy')} {formatTime12Hour(slot.startTime)} - {formatTime12Hour(slot.endTime)}
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-                        </>
+                          ))}
+                        </div>
                       ) : (
-                        // Single date/time
-                        <>
-                          <p className="text-xs text-gray-500 mb-2">Date & Time</p>
-                          <p className="font-medium">
-                            {details.startDate !== 'N/A' 
-                              ? `${format(new Date(details.startDate), 'MMMM d, yyyy')} at ${details.startTime} to ${details.endTime}`
-                              : 'N/A'
-                            }
+                        <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-[11px]">
+                          <p className="font-medium text-gray-900">
+                            {details.startDate !== 'N/A'
+                              ? `${format(new Date(details.startDate), 'MMM d, yyyy')} · ${details.startTime} - ${details.endTime}`
+                              : 'N/A'}
                           </p>
-                        </>
+                        </div>
                       )}
                     </div>
                   </div>
-                  
+
+                  {/* Status */}
                   <div className="flex items-start gap-3">
-                    <CheckCircle className="w-5 h-5 text-gray-500 mt-0.5 flex-shrink-0" />
-                    <div className="flex-1">
-                      <p className="text-xs text-gray-500 mb-1">Status</p>
-                      <Badge className={`${getStatusBadgeColor(details.status)} border text-xs`}>
+                    <CheckCircle className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1 space-y-1">
+                      <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide">Status</p>
+                      <Badge className={`${getStatusBadgeColor(details.status)} border text-[11px] px-2 py-0.5 w-fit`}>
                         {details.status}
                       </Badge>
                     </div>

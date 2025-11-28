@@ -26,9 +26,11 @@ import {
   Phone,
   Mail,
   Camera,
-  Download
+  Download,
+  FileText
 } from 'lucide-react';
 import { format, isWithinInterval, startOfDay, endOfDay, eachDayOfInterval, addDays, startOfWeek, endOfWeek } from 'date-fns';
+import jsPDF from 'jspdf';
 import * as htmlToImage from 'html-to-image';
 import { toast } from 'sonner';
 import { useSocket } from '@/hooks/useSocket';
@@ -70,10 +72,10 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
     from: new Date(),
     to: undefined
   });
-  const [screenshotModal, setScreenshotModal] = useState(false);
-  const [screenshotPreview, setScreenshotPreview] = useState<string | null>(null);
-  const [capturingEventId, setCapturingEventId] = useState<string | null>(null);
-  const [capturingAll, setCapturingAll] = useState(false);
+  const [pdfModal, setPdfModal] = useState(false);
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
+  const [exportingEventId, setExportingEventId] = useState<string | null>(null);
+  const [exportingAll, setExportingAll] = useState(false);
   const eventRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
   const allEventsRef = useRef<HTMLDivElement | null>(null);
   
@@ -194,36 +196,46 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
     return status.charAt(0).toUpperCase() + status.slice(1);
   };
 
-  // Screenshot capture function using html-to-image
-  const handleScreenshot = async (eventId: string, eventTitle: string) => {
-    const element = eventRefs.current[eventId];
-    const dateElement = eventRefs.current[`date-${eventId}`];
-    
-    if (!element) {
-      toast.error('Failed to capture screenshot');
-      return;
-    }
-
+  // Helper: load Bataan logo for PDF header
+  const loadLogo = async (): Promise<HTMLImageElement | null> => {
     try {
-      setCapturingEventId(eventId);
-      
-      // Wait a bit for the UI to update
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const logo = new Image();
+        logo.crossOrigin = 'anonymous';
+        logo.onload = () => resolve(logo);
+        logo.onerror = reject;
+        logo.src = '/images/bataanlogo.png';
+      });
+      return img;
+    } catch (error) {
+      console.log('Logo not found, continuing without logo');
+      return null;
+    }
+  };
+
+  // Generate PDF for a single event: header + PNG of the event card, scaled to fit
+  const generateEventPdf = async (event: CalendarEvent) => {
+    try {
+      setExportingEventId(event._id);
+      const element = eventRefs.current[event._id];
+      if (!element) {
+        toast.error('Unable to capture event card');
+        setExportingEventId(null);
+        return;
+      }
+
+      // Small delay to ensure UI settled
       await new Promise(resolve => setTimeout(resolve, 100));
-      
-      // Capture both date header and event card together
-      const containerToCapture = dateElement || element;
-      
-      // Capture the element as PNG
-      const dataUrl = await htmlToImage.toPng(containerToCapture, {
+
+      const dataUrl = await htmlToImage.toPng(element, {
         quality: 1,
         pixelRatio: 2,
         backgroundColor: '#ffffff',
         style: {
           transform: 'scale(1)',
-          transformOrigin: 'top left'
+          transformOrigin: 'top left',
         },
-        filter: (node) => {
-          // Hide the screenshot button during capture
+        filter: (node: any) => {
           if (node.classList && node.classList.contains('screenshot-button')) {
             return false;
           }
@@ -231,75 +243,186 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
         }
       });
 
-      setScreenshotPreview(dataUrl);
-      setScreenshotModal(true);
-      setCapturingEventId(null);
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 15;
+      let yPos = margin;
+
+      // Header with logo + text
+      const logoImg = await loadLogo();
+      if (logoImg) {
+        const logoW = 18;
+        const logoH = 18;
+        const logoX = (pageWidth - logoW) / 2;
+        pdf.addImage(logoImg, 'PNG', logoX, yPos, logoW, logoH);
+        yPos += logoH + 4;
+      } else {
+        yPos += 4;
+      }
+
+      pdf.setFontSize(13);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('PROVINCIAL GOVERNMENT OF BATAAN', pageWidth / 2, yPos, { align: 'center' });
+      yPos += 6;
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text('My Calendar - Event Summary', pageWidth / 2, yPos, { align: 'center' });
+      yPos += 7;
+      pdf.setFontSize(9);
+      pdf.text(`Generated on ${format(new Date(), 'MMMM dd, yyyy')} at ${format(new Date(), 'h:mm a')}`, pageWidth / 2, yPos, { align: 'center' });
+      yPos += 8;
+
+      // Date label (top-left) above the card image
+      const eventDateLabel = format(new Date(event.startDate), 'EEEE, MMMM d, yyyy');
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(eventDateLabel, margin, yPos);
+      yPos += 7;
+
+      // Space available for the card image
+      const availableHeight = pageHeight - yPos - margin;
+      const imgProps = pdf.getImageProperties(dataUrl);
+      let imgWidth = pageWidth - 2 * margin;
+      let imgHeight = (imgProps.height * imgWidth) / imgProps.width;
+
+      if (imgHeight > availableHeight) {
+        const scale = availableHeight / imgHeight;
+        imgHeight = availableHeight;
+        imgWidth = imgWidth * scale;
+      }
+
+      const x = (pageWidth - imgWidth) / 2;
+      pdf.addImage(dataUrl, 'PNG', x, yPos, imgWidth, imgHeight);
+
+      const blob = pdf.output('blob');
+      const url = URL.createObjectURL(blob);
+      setPdfPreviewUrl(url);
+      setPdfModal(true);
+      setExportingEventId(null);
     } catch (error) {
-      console.error('Screenshot error:', error);
-      toast.error('Failed to capture screenshot');
-      setCapturingEventId(null);
+      console.error('Error generating PDF:', error);
+      toast.error('Failed to generate PDF');
+      setExportingEventId(null);
     }
   };
 
-  // Screenshot capture function for all events in range
-  const handleScreenshotAll = async () => {
-    const element = allEventsRef.current;
-    
-    if (!element || dateEntries.length === 0) {
-      toast.error('No events to capture');
+  // Generate PDF for all events: header + up to 3 PNG cards per page
+  const generateAllPdf = async () => {
+    if (dateEntries.length === 0) {
+      toast.error('No events to export');
       return;
     }
 
     try {
-      setCapturingAll(true);
-      
-      // Wait a bit for the UI to update
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      // Capture the entire events container as PNG
-      const dataUrl = await htmlToImage.toPng(element, {
-        quality: 1,
-        pixelRatio: 2,
-        backgroundColor: '#ffffff',
-        style: {
-          transform: 'scale(1)',
-          transformOrigin: 'top left'
-        },
-        filter: (node) => {
-          // Hide all individual screenshot buttons during capture
-          if (node.classList && (node.classList.contains('screenshot-button') || node.classList.contains('export-all-button'))) {
-            return false;
-          }
-          return true;
+      setExportingAll(true);
+
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 15;
+
+      const logoImg = await loadLogo();
+
+      const addHeader = () => {
+        let yPos = margin;
+        if (logoImg) {
+          const logoW = 18;
+          const logoH = 18;
+          const logoX = (pageWidth - logoW) / 2;
+          pdf.addImage(logoImg, 'PNG', logoX, yPos, logoW, logoH);
+          yPos += logoH + 4;
+        } else {
+          yPos += 4;
         }
-      });
 
-      setScreenshotPreview(dataUrl);
-      setScreenshotModal(true);
-      setCapturingAll(false);
+        pdf.setFontSize(13);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('PROVINCIAL GOVERNMENT OF BATAAN', pageWidth / 2, yPos, { align: 'center' });
+        yPos += 6;
+        pdf.setFontSize(10);
+        pdf.setFont('helvetica', 'normal');
+        pdf.text('My Calendar - Events List', pageWidth / 2, yPos, { align: 'center' });
+        yPos += 7;
+        pdf.setFontSize(9);
+        const rangeText = dateRange.to
+          ? `${format(dateRange.from, 'MMM dd, yyyy')} - ${format(dateRange.to, 'MMM dd, yyyy')}`
+          : format(dateRange.from, 'MMM dd, yyyy');
+        pdf.text(`Date Range: ${rangeText}`, pageWidth / 2, yPos, { align: 'center' });
+        return yPos + 8;
+      };
+
+      let yPos = addHeader();
+      let eventsOnPage = 0;
+
+      const maxCardsPerPage = 3;
+      const availableHeightPerPage = pageHeight - yPos - margin;
+      const maxCardHeight = availableHeightPerPage / maxCardsPerPage - 4; // small gap
+
+      for (const entry of dateEntries) {
+        for (const event of entry.events) {
+          const element = eventRefs.current[event._id];
+          if (!element) continue;
+
+          if (eventsOnPage === maxCardsPerPage) {
+            pdf.addPage();
+            yPos = addHeader();
+            eventsOnPage = 0;
+          }
+
+          await new Promise(resolve => setTimeout(resolve, 50));
+
+          const dataUrl = await htmlToImage.toPng(element, {
+            quality: 1,
+            pixelRatio: 2,
+            backgroundColor: '#ffffff',
+            style: {
+              transform: 'scale(1)',
+              transformOrigin: 'top left',
+            },
+            filter: (node: any) => {
+              if (node.classList && node.classList.contains('screenshot-button')) {
+                return false;
+              }
+              return true;
+            }
+          });
+
+          const imgProps = pdf.getImageProperties(dataUrl);
+          const maxWidth = pageWidth - 2 * margin;
+          let imgWidth = maxWidth;
+          let imgHeight = (imgProps.height * imgWidth) / imgProps.width;
+
+          if (imgHeight > maxCardHeight) {
+            const scale = maxCardHeight / imgHeight;
+            imgHeight = maxCardHeight;
+            imgWidth = imgWidth * scale;
+          }
+
+          // Date label (top-left) for this event card
+          const eventDateLabel = format(new Date(event.startDate), 'EEEE, MMMM d, yyyy');
+          pdf.setFontSize(10);
+          pdf.setFont('helvetica', 'bold');
+          pdf.text(eventDateLabel, margin, yPos);
+          yPos += 6;
+
+          const x = (pageWidth - imgWidth) / 2;
+          pdf.addImage(dataUrl, 'PNG', x, yPos, imgWidth, imgHeight);
+          yPos += imgHeight + 4;
+          eventsOnPage += 1;
+        }
+      }
+
+      const blob = pdf.output('blob');
+      const url = URL.createObjectURL(blob);
+      setPdfPreviewUrl(url);
+      setPdfModal(true);
+      setExportingAll(false);
     } catch (error) {
-      console.error('Screenshot error:', error);
-      toast.error('Failed to capture screenshot');
-      setCapturingAll(false);
+      console.error('Error generating PDF:', error);
+      toast.error('Failed to generate PDF');
+      setExportingAll(false);
     }
-  };
-
-  // Download screenshot
-  const handleDownload = () => {
-    if (!screenshotPreview) return;
-
-    const dateRangeText = dateRange.to 
-      ? `${format(dateRange.from, 'yyyy-MM-dd')}_to_${format(dateRange.to, 'yyyy-MM-dd')}`
-      : format(dateRange.from, 'yyyy-MM-dd');
-    
-    const link = document.createElement('a');
-    link.download = `events-${dateRangeText}-${format(new Date(), 'HHmmss')}.png`;
-    link.href = screenshotPreview;
-    link.click();
-    
-    toast.success('Screenshot downloaded successfully!');
-    setScreenshotModal(false);
-    setScreenshotPreview(null);
   };
 
   return (
@@ -336,22 +459,22 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
               </PopoverContent>
             </Popover>
             
-            {/* Export All Button */}
+            {/* Export All Button - PDF */}
             <Button
               variant="default"
-              onClick={handleScreenshotAll}
-              disabled={capturingAll || dateEntries.length === 0}
+              onClick={generateAllPdf}
+              disabled={exportingAll || dateEntries.length === 0}
               className="gap-2 export-all-button bg-green-600 hover:bg-green-700"
             >
-              {capturingAll ? (
+              {exportingAll ? (
                 <>
                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                  Exporting...
+                  Exporting PDF...
                 </>
               ) : (
                 <>
-                  <Camera className="w-4 h-4" />
-                  Export All ({dateEntries.length})
+                  <FileText className="w-4 h-4" />
+                  Export All PDF ({dateEntries.length})
                 </>
               )}
             </Button>
@@ -437,25 +560,25 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
                       >
                         <CardContent className="p-5">
                           <div className="flex items-center justify-between mb-4">
-                            <h4 className="text-lg font-bold text-foreground">
+                            <h4 className="text-2xl font-bold text-foreground">
                               {event.eventTitle}
                             </h4>
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => handleScreenshot(event._id, event.eventTitle)}
-                              disabled={capturingEventId === event._id}
+                              onClick={() => generateEventPdf(event)}
+                              disabled={exportingEventId === event._id}
                               className="gap-2 screenshot-button"
                             >
-                              {capturingEventId === event._id ? (
+                              {exportingEventId === event._id ? (
                                 <>
                                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current"></div>
-                                  Capturing...
+                                  Generating PDF...
                                 </>
                               ) : (
                                 <>
-                                  <Camera className="w-4 h-4" />
-                                  Export Image
+                                  <FileText className="w-4 h-4" />
+                                  Export PDF
                                 </>
                               )}
                             </Button>
@@ -466,59 +589,59 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
                             <div className="space-y-4 pr-6">
                               <div className="space-y-3">
                                 <div className="flex items-start gap-3">
-                                  <User className="w-5 h-5 text-gray-700 flex-shrink-0 mt-0.5" />
+                                  <User className="w-7 h-7 text-gray-700 flex-shrink-0 mt-0.5" />
                                   <div>
-                                    <p className="text-xs font-medium text-muted-foreground mb-1">Requestor</p>
-                                    <p className="text-sm font-semibold">{event.requestor}</p>
+                                    <p className="text-base font-medium text-muted-foreground mb-1">Requestor</p>
+                                    <p className="text-lg font-semibold">{event.requestor}</p>
                                   </div>
                                 </div>
 
                                 {event.requestorDepartment && (
                                   <div className="flex items-start gap-3">
-                                    <Building2 className="w-5 h-5 text-gray-700 flex-shrink-0 mt-0.5" />
+                                    <Building2 className="w-7 h-7 text-gray-700 flex-shrink-0 mt-0.5" />
                                     <div>
-                                      <p className="text-xs font-medium text-muted-foreground mb-1">Requestor Department</p>
-                                      <p className="text-sm font-semibold">{event.requestorDepartment}</p>
+                                      <p className="text-base font-medium text-muted-foreground mb-1">Requestor Department</p>
+                                      <p className="text-lg font-semibold">{event.requestorDepartment}</p>
                                     </div>
                                   </div>
                                 )}
 
                                 <div className="flex items-start gap-3">
-                                  <MapPin className="w-5 h-5 text-gray-700 flex-shrink-0 mt-0.5" />
+                                  <MapPin className="w-7 h-7 text-gray-700 flex-shrink-0 mt-0.5" />
                                   <div>
-                                    <p className="text-xs font-medium text-muted-foreground mb-1">
+                                    <p className="text-base font-medium text-muted-foreground mb-1">
                                       {event.multipleLocations && event.locations && event.locations.length > 1 ? 'Locations' : 'Location'}
                                     </p>
                                     {event.multipleLocations && event.locations && event.locations.length > 0 ? (
                                       <div className="space-y-1">
                                         {event.locations.map((loc, idx) => (
-                                          <p key={idx} className="text-sm font-semibold">
+                                          <p key={idx} className="text-lg font-semibold">
                                             {idx + 1}. {loc}
                                           </p>
                                         ))}
                                       </div>
                                     ) : (
-                                      <p className="text-sm font-semibold">{event.location}</p>
+                                      <p className="text-lg font-semibold">{event.location}</p>
                                     )}
                                   </div>
                                 </div>
 
                                 {event.contactNumber && (
                                   <div className="flex items-start gap-3">
-                                    <Phone className="w-5 h-5 text-gray-700 flex-shrink-0 mt-0.5" />
+                                    <Phone className="w-7 h-7 text-gray-700 flex-shrink-0 mt-0.5" />
                                     <div>
-                                      <p className="text-xs font-medium text-muted-foreground mb-1">Contact Number</p>
-                                      <p className="text-sm font-semibold">{event.contactNumber}</p>
+                                      <p className="text-base font-medium text-muted-foreground mb-1">Contact Number</p>
+                                      <p className="text-lg font-semibold">{event.contactNumber}</p>
                                     </div>
                                   </div>
                                 )}
 
                                 {event.contactEmail && (
                                   <div className="flex items-start gap-3">
-                                    <Mail className="w-5 h-5 text-gray-700 flex-shrink-0 mt-0.5" />
+                                    <Mail className="w-7 h-7 text-gray-700 flex-shrink-0 mt-0.5" />
                                     <div>
-                                      <p className="text-xs font-medium text-muted-foreground mb-1">Contact Email</p>
-                                      <p className="text-sm font-semibold">{event.contactEmail}</p>
+                                      <p className="text-base font-medium text-muted-foreground mb-1">Contact Email</p>
+                                      <p className="text-lg font-semibold break-all">{event.contactEmail}</p>
                                     </div>
                                   </div>
                                 )}
@@ -533,17 +656,17 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
                                   <>
                                     {/* Day 1 */}
                                     <div className="flex items-start gap-3">
-                                      <Clock className="w-5 h-5 text-gray-700 flex-shrink-0 mt-0.5" />
+                                      <Clock className="w-7 h-7 text-gray-700 flex-shrink-0 mt-0.5" />
                                       <div className="flex-1 grid grid-cols-2 gap-4">
                                         <div>
-                                          <p className="text-xs font-medium text-muted-foreground mb-1">Day 1 - Start</p>
-                                          <p className="text-sm font-semibold">
+                                          <p className="text-base font-medium text-muted-foreground mb-1">Day 1 - Start</p>
+                                          <p className="text-lg font-semibold">
                                             {format(new Date(event.startDate), 'MMM d, yyyy')} at {formatTime(event.startTime)}
                                           </p>
                                         </div>
                                         <div>
-                                          <p className="text-xs font-medium text-muted-foreground mb-1">Day 1 - End</p>
-                                          <p className="text-sm font-semibold">
+                                          <p className="text-base font-medium text-muted-foreground mb-1">Day 1 - End</p>
+                                          <p className="text-lg font-semibold">
                                             {format(new Date(event.startDate), 'MMM d, yyyy')} at {formatTime(event.endTime)}
                                           </p>
                                         </div>
@@ -553,17 +676,17 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
                                     {/* Additional days from dateTimeSlots */}
                                     {event.dateTimeSlots.map((slot, idx) => (
                                       <div key={idx} className="flex items-start gap-3">
-                                        <Clock className="w-5 h-5 text-gray-700 flex-shrink-0 mt-0.5" />
+                                        <Clock className="w-7 h-7 text-gray-700 flex-shrink-0 mt-0.5" />
                                         <div className="flex-1 grid grid-cols-2 gap-4">
                                           <div>
-                                            <p className="text-xs font-medium text-muted-foreground mb-1">Day {idx + 2} - Start</p>
-                                            <p className="text-sm font-semibold">
+                                            <p className="text-base font-medium text-muted-foreground mb-1">Day {idx + 2} - Start</p>
+                                            <p className="text-lg font-semibold">
                                               {format(new Date(slot.startDate), 'MMM d, yyyy')} at {formatTime(slot.startTime)}
                                             </p>
                                           </div>
                                           <div>
-                                            <p className="text-xs font-medium text-muted-foreground mb-1">Day {idx + 2} - End</p>
-                                            <p className="text-sm font-semibold">
+                                            <p className="text-base font-medium text-muted-foreground mb-1">Day {idx + 2} - End</p>
+                                            <p className="text-lg font-semibold">
                                               {format(new Date(slot.endDate), 'MMM d, yyyy')} at {formatTime(slot.endTime)}
                                             </p>
                                           </div>
@@ -573,17 +696,17 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
                                   </>
                                 ) : (
                                   <div className="flex items-start gap-3">
-                                    <Clock className="w-5 h-5 text-gray-700 flex-shrink-0 mt-0.5" />
+                                    <Clock className="w-7 h-7 text-gray-700 flex-shrink-0 mt-0.5" />
                                     <div className="flex-1 grid grid-cols-2 gap-4">
                                       <div>
-                                        <p className="text-xs font-medium text-muted-foreground mb-1">Start</p>
-                                        <p className="text-sm font-semibold">
+                                        <p className="text-base font-medium text-muted-foreground mb-1">Start</p>
+                                        <p className="text-lg font-semibold">
                                           {format(new Date(event.startDate), 'MMM d, yyyy')} at {formatTime(event.startTime)}
                                         </p>
                                       </div>
                                       <div>
-                                        <p className="text-xs font-medium text-muted-foreground mb-1">End</p>
-                                        <p className="text-sm font-semibold">
+                                        <p className="text-base font-medium text-muted-foreground mb-1">End</p>
+                                        <p className="text-lg font-semibold">
                                           {format(new Date(event.endDate), 'MMM d, yyyy')} at {formatTime(event.endTime)}
                                         </p>
                                       </div>
@@ -592,20 +715,20 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
                                 )}
 
                                 <div className="flex items-start gap-3">
-                                  <Users className="w-5 h-5 text-gray-700 flex-shrink-0 mt-0.5" />
+                                  <Users className="w-7 h-7 text-gray-700 flex-shrink-0 mt-0.5" />
                                   <div className="flex-1">
-                                    <p className="text-xs font-medium text-muted-foreground mb-1">Participants</p>
+                                    <p className="text-base font-medium text-muted-foreground mb-1">Participants</p>
                                     <div className="space-y-1">
-                                      <p className="text-sm font-semibold">
+                                      <p className="text-lg font-semibold">
                                         Total: {(event as any).numberOfParticipants || (event as any).participants || 0}
                                       </p>
                                       {((event as any).numberOfVIP || (event as any).vip || 0) > 0 && (
-                                        <p className="text-sm font-semibold">
+                                        <p className="text-lg font-semibold">
                                           VIP: {(event as any).numberOfVIP || (event as any).vip}
                                         </p>
                                       )}
                                       {((event as any).numberOfVVIP || (event as any).vvip || 0) > 0 && (
-                                        <p className="text-sm font-semibold">
+                                        <p className="text-lg font-semibold">
                                           VVIP: {(event as any).numberOfVVIP || (event as any).vvip}
                                         </p>
                                       )}
@@ -615,12 +738,12 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
 
                                 {event.taggedDepartments && event.taggedDepartments.length > 0 && (
                                   <div className="flex items-start gap-3">
-                                    <Building2 className="w-5 h-5 text-gray-700 flex-shrink-0 mt-0.5" />
+                                    <Building2 className="w-7 h-7 text-gray-700 flex-shrink-0 mt-0.5" />
                                     <div className="flex-1">
-                                      <p className="text-xs font-medium text-muted-foreground mb-2">Tagged Departments</p>
+                                      <p className="text-base font-medium text-muted-foreground mb-2">Tagged Departments</p>
                                       <div className="flex flex-wrap gap-2">
                                         {event.taggedDepartments.map((dept, idx) => (
-                                          <Badge key={idx} variant="secondary" className="text-xs">
+                                          <Badge key={idx} variant="secondary" className="text-sm">
                                             {dept}
                                           </Badge>
                                         ))}
@@ -630,10 +753,10 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
                                 )}
 
                                 <div className="flex items-start gap-3 pt-2">
-                                  <div className="w-5 h-5 flex-shrink-0" />
+                                  <div className="w-7 h-7 flex-shrink-0" />
                                   <div>
-                                    <p className="text-xs font-medium text-muted-foreground mb-2">Status</p>
-                                    <Badge className={`${getStatusColor(event.status)} border`}>
+                                    <p className="text-base font-medium text-muted-foreground mb-2">Status</p>
+                                    <Badge className={`${getStatusColor(event.status)} border text-sm px-3 py-1`}>
                                       {getStatusLabel(event.status)}
                                     </Badge>
                                   </div>
@@ -653,42 +776,63 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
         )}
       </div>
 
-      {/* Screenshot Preview Modal */}
-      <Dialog open={screenshotModal} onOpenChange={setScreenshotModal}>
-        <DialogContent className="max-w-4xl">
+      {/* PDF Preview Modal */}
+      <Dialog open={pdfModal} onOpenChange={(open) => {
+        setPdfModal(open);
+        if (!open && pdfPreviewUrl) {
+          URL.revokeObjectURL(pdfPreviewUrl);
+          setPdfPreviewUrl(null);
+        }
+      }}>
+        <DialogContent className="max-w-4xl h-[80vh] flex flex-col">
           <DialogHeader>
-            <DialogTitle>Screenshot Preview</DialogTitle>
+            <DialogTitle>PDF Preview</DialogTitle>
             <DialogDescription>
-              Preview your screenshot before downloading
+              Preview your PDF before downloading
             </DialogDescription>
           </DialogHeader>
           
-          <div className="max-h-[500px] overflow-auto border rounded-lg bg-gray-50 p-4">
-            {screenshotPreview && (
-              <img 
-                src={screenshotPreview} 
-                alt="Screenshot preview" 
-                className="w-full h-auto"
+          <div className="flex-1 border rounded-lg overflow-hidden bg-gray-50 mt-2">
+            {pdfPreviewUrl && (
+              <iframe
+                src={pdfPreviewUrl}
+                title="PDF Preview"
+                className="w-full h-full"
               />
             )}
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="mt-3">
             <Button
               variant="outline"
               onClick={() => {
-                setScreenshotModal(false);
-                setScreenshotPreview(null);
+                if (pdfPreviewUrl) {
+                  URL.revokeObjectURL(pdfPreviewUrl);
+                  setPdfPreviewUrl(null);
+                }
+                setPdfModal(false);
               }}
             >
               Cancel
             </Button>
             <Button
-              onClick={handleDownload}
+              onClick={() => {
+                if (!pdfPreviewUrl) return;
+                const dateRangeText = dateRange.to 
+                  ? `${format(dateRange.from, 'yyyy-MM-dd')}_to_${format(dateRange.to, 'yyyy-MM-dd')}`
+                  : format(dateRange.from, 'yyyy-MM-dd');
+                const link = document.createElement('a');
+                link.href = pdfPreviewUrl;
+                link.download = `MyCalendar_Events_${dateRangeText}.pdf`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                toast.success('PDF downloaded successfully!');
+              }}
               className="gap-2"
             >
               <Download className="w-4 h-4" />
-              Download
+              Download PDF
             </Button>
           </DialogFooter>
         </DialogContent>

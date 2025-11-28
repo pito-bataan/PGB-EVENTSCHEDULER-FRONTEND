@@ -867,9 +867,21 @@ const Dashboard: React.FC = () => {
                           
                           {/* Show quantity for physical requirements, notes for service requirements */}
                           {req.quantity ? (
-                            <p className="text-xs md:text-sm text-gray-500 mb-2">
-                              Quantity: <span className="font-medium">{req.quantity}</span> of {req.totalQuantity} available
-                            </p>
+                            (() => {
+                              let displayTotal = req.totalQuantity;
+                              if (req.availabilityNotes && req.availabilityNotes.startsWith('PAVILION_DEFAULT:')) {
+                                const parts = req.availabilityNotes.split(':');
+                                const parsed = parseInt(parts[1], 10);
+                                if (!isNaN(parsed)) {
+                                  displayTotal = parsed;
+                                }
+                              }
+                              return (
+                                <p className="text-xs md:text-sm text-gray-500 mb-2">
+                                  Requested: <span className="font-medium">{req.quantity}</span> of <span className="font-medium">{displayTotal || 'N/A'}</span> available (location)
+                                </p>
+                              );
+                            })()
                           ) : req.notes && (
                             <div className="bg-blue-50 rounded-lg p-2 md:p-3 mb-2">
                               <p className="text-xs text-blue-600 font-medium mb-1">Requestor's Notes:</p>

@@ -928,6 +928,41 @@ const RequestEventPage: React.FC = () => {
       // Show loading state and modal IMMEDIATELY
       setLoadingDepartmentRequirements(true);
       setShowRequirementsModal(true);
+
+      const isPgso = departmentName.toLowerCase().includes('pgso');
+      const isPavilionLocation = typeof formData.location === 'string' && formData.location.toLowerCase().includes('pavilion');
+
+      // PGSO + non-pavilion location that DOES have locationRequirements
+      // (e.g., Conference Rooms, Meeting Rooms): use the locationRequirements
+      // list directly as the PGSO defaults, bypassing the global PGSO master
+      // list / availability API.
+      if (isPgso && locationRequirements.length > 0 && !isPavilionLocation) {
+        const mappedRequirements: DepartmentRequirement[] = locationRequirements.map((locReq, idx) => ({
+          id: `pgso-location-${idx}-${locReq.name}`,
+          name: locReq.name,
+          selected: false,
+          notes: '',
+          type: 'physical',
+          quantity: undefined,
+          totalQuantity: locReq.quantity,
+          // These are default requirements configured for the location,
+          // so treat them as normal available items (not custom/pending).
+          isAvailable: true,
+          // Encode the location default quantity in the same marker format
+          // used elsewhere (PAVILION_DEFAULT:<qty>:<location>) so that
+          // MyEvents and other pages can consistently display and validate
+          // using the per-location pool instead of the global PGSO total.
+          availabilityNotes: `PAVILION_DEFAULT:${locReq.quantity}:${selectedLocation || formData.location || 'selected location'}`,
+          isCustom: false
+        }));
+
+        const newRequirements = { ...formData.departmentRequirements };
+        newRequirements[departmentName] = mappedRequirements;
+        handleInputChange('departmentRequirements', newRequirements);
+
+        setLoadingDepartmentRequirements(false);
+        return;
+      }
       
       // Fetch conflicting events if date and time are set
       if (formData.startDate && formData.startTime && formData.endTime) {
@@ -945,23 +980,46 @@ const RequestEventPage: React.FC = () => {
       // Find the department and use its requirements
       const department = departments.find(dept => dept.name === departmentName);
       if (department && department.requirements && availabilities.length > 0) {
+        const isPgso = departmentName.toLowerCase().includes('pgso');
+
+        // If PGSO is selected but the current location has NO default
+        // locationRequirements (not a pavilion scenario), do not preload any
+        // built-in PGSO items. The modal will show only the custom
+        // requirement controls.
+        if (isPgso && locationRequirements.length === 0) {
+          const newRequirements = { ...formData.departmentRequirements };
+          newRequirements[departmentName] = [];
+          handleInputChange('departmentRequirements', newRequirements);
+          return;
+        }
+
+        const pavilionNames = isPgso && locationRequirements.length > 0
+          ? new Set(locationRequirements.map((lr) => lr.name))
+          : null;
+
         // Only show requirements that have availability data for this specific date
+        // For PGSO + pavilion, further limit to pavilion default requirement names
         const dbRequirements = department.requirements
           .filter((req) => {
             // Only include requirements that have availability data for this date
             const availability = availabilities.find((avail: any) => 
               avail.requirementId === req._id
             );
-            return availability !== undefined;
+            if (!availability) return false;
+
+            if (pavilionNames) {
+              // Only keep requirements whose text matches a pavilion default name
+              return pavilionNames.has(req.text);
+            }
+
+            return true;
           })
           .map((req) => {
             // Find matching resource availability for this requirement and date
             const availability = availabilities.find((avail: any) => 
               avail.requirementId === req._id
             );
-            
-            
-            return {
+            const baseRequirement: DepartmentRequirement = {
               id: req._id,
               name: req.text,
               selected: false,
@@ -973,6 +1031,21 @@ const RequestEventPage: React.FC = () => {
               responsiblePerson: req.responsiblePerson,
               availabilityNotes: availability.notes || ''
             };
+
+            // Pavilion override for PGSO: if this requirement name matches a
+            // location-based default requirement, adjust totalQuantity to use
+            // the pavilion pool (e.g., 300 chairs) instead of the global pool
+            // (e.g., 2148), and embed a PAVILION_DEFAULT marker so other pages
+            // can display the pavilion total consistently.
+            if (isPgso && locationRequirements.length > 0) {
+              const matchingLocationReq = locationRequirements.find((locReq) => locReq.name === req.text);
+              if (matchingLocationReq) {
+                baseRequirement.totalQuantity = matchingLocationReq.quantity;
+                baseRequirement.availabilityNotes = `PAVILION_DEFAULT:${matchingLocationReq.quantity}:${selectedLocation || formData.location || 'selected location'}`;
+              }
+            }
+
+            return baseRequirement;
           });
 
         // Initialize requirements for this department
@@ -1031,13 +1104,22 @@ const RequestEventPage: React.FC = () => {
 
   const handleRequirementToggle = (requirementId: string) => {
     const currentReqs = formData.departmentRequirements[selectedDepartment] || [];
-    const updatedReqs = currentReqs.map(req => 
+    const updatedReqs = currentReqs.map(req =>
       req.id === requirementId ? { ...req, selected: !req.selected } : req
     );
-    
+
     const newDeptReqs = { ...formData.departmentRequirements };
     newDeptReqs[selectedDepartment] = updatedReqs;
     handleInputChange('departmentRequirements', newDeptReqs);
+
+    // If this requirement just became selected, immediately open the
+    // details popup for quantity/notes.
+    const newlySelected = updatedReqs.find(req => req.id === requirementId && req.selected);
+    if (newlySelected) {
+      setActiveRequirement(newlySelected);
+      setShowRequirementMaxWarning(false);
+      setShowRequirementDetailsModal(true);
+    }
   };
 
   const handleSelectedRequirementRemove = (requirement: DepartmentRequirement) => {
@@ -1069,6 +1151,10 @@ const RequestEventPage: React.FC = () => {
     newDeptReqs[selectedDepartment] = updatedReqs;
     handleInputChange('departmentRequirements', newDeptReqs);
   };
+
+  const [activeRequirement, setActiveRequirement] = useState<DepartmentRequirement | null>(null);
+  const [showRequirementDetailsModal, setShowRequirementDetailsModal] = useState(false);
+  const [showRequirementMaxWarning, setShowRequirementMaxWarning] = useState(false);
 
   const handleRequirementQuantity = (requirementId: string, quantity: number) => {
     const currentReqs = formData.departmentRequirements[selectedDepartment] || [];
@@ -1104,6 +1190,10 @@ const RequestEventPage: React.FC = () => {
       notes: !isPhysical ? (customRequirementNotes ?? '') : '',
       type: customRequirementType,
       quantity: isPhysical ? quantityValue : undefined,
+      // Custom requirements are pending validation but should still be clickable
+      // and show the user's entered quantity as "Available Quantity" when physical.
+      totalQuantity: isPhysical ? quantityValue : undefined,
+      isAvailable: true,
       isCustom: true
     };
 
@@ -2647,11 +2737,11 @@ const RequestEventPage: React.FC = () => {
           {/* Sidebar */}
           <div className="space-y-6">
             {/* Selected Departments */}
-            <Card>
+            <Card className="border border-gray-200 shadow-sm bg-white">
               <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium text-gray-700">Selected Departments</CardTitle>
+                <CardTitle className="text-sm font-semibold text-gray-900">Selected Departments</CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-2">
                 {formData.taggedDepartments.length > 0 ? (
                   <div className={`space-y-2 ${formData.taggedDepartments.length >= 3 ? 'max-h-64 overflow-y-auto pr-2' : ''}`}>
                     {formData.taggedDepartments.map((dept) => {
@@ -2664,18 +2754,18 @@ const RequestEventPage: React.FC = () => {
                           initial={{ opacity: 0, x: -10 }}
                           animate={{ opacity: 1, x: 0 }}
                           exit={{ opacity: 0, x: 10 }}
-                          className="p-2 bg-blue-50 rounded-md border border-blue-200"
+                          className="p-3 rounded-lg border border-gray-200 bg-white flex flex-col gap-2"
                         >
                           <div className="flex items-start justify-between">
                             <div className="flex-1">
                               <div className="flex items-center gap-2 mb-1">
-                                <span className="text-sm font-medium text-blue-900">{dept}</span>
+                                <span className="text-sm font-semibold text-gray-900">{dept}</span>
                                 <Button
                                   type="button"
                                   variant="ghost"
-                                  size="sm"
+                                  size="icon"
                                   onClick={() => handleDepartmentToggle(dept)}
-                                  className="h-4 w-4 p-0 text-blue-600 hover:text-red-600"
+                                  className="h-5 w-5 p-0 text-gray-400 hover:text-red-600 hover:bg-gray-100"
                                 >
                                   <X className="w-3 h-3" />
                                 </Button>
@@ -2683,22 +2773,24 @@ const RequestEventPage: React.FC = () => {
                               
                               {deptRequirements.length > 0 && (
                                 <div className="space-y-2">
-                                  <div className="text-xs text-blue-600 flex items-center gap-1">
-                                    <FileText className="w-2.5 h-2.5" />
-                                    {deptRequirements.length} requirement(s)
-                                    {notesCount > 0 && ` • ${notesCount} with notes`}
+                                  <div className="text-xs text-gray-600 flex items-center gap-1">
+                                    <FileText className="w-3 h-3 text-gray-500" />
+                                    <span className="font-medium">{deptRequirements.length} requirement(s)</span>
+                                    {notesCount > 0 && (
+                                      <span className="text-gray-500">• {notesCount} with notes</span>
+                                    )}
                                   </div>
                                   <div className="space-y-1">
                                     {deptRequirements.slice(0, 3).map((req) => (
                                       <div 
                                         key={req.id} 
-                                        className="text-xs bg-blue-100 text-blue-700 p-2 rounded border border-blue-200"
+                                        className="text-xs bg-gray-50 text-gray-800 p-2 rounded-md border border-gray-200"
                                       >
                                         <div className="flex items-center justify-between mb-1">
-                                          <span className="font-medium">{req.name}</span>
+                                          <span className="font-medium text-gray-900">{req.name}</span>
                                           <div className="flex items-center gap-1">
                                             {req.type && (
-                                              <span className="text-xs bg-blue-200 px-1 py-0.5 rounded flex items-center">
+                                              <span className="text-[10px] bg-gray-200 text-gray-700 px-1.5 py-0.5 rounded-full flex items-center gap-1">
                                                 {req.type === 'physical' ? (
                                                   <Package className="w-2.5 h-2.5" />
                                                 ) : req.type === 'yesno' ? (
@@ -2706,10 +2798,11 @@ const RequestEventPage: React.FC = () => {
                                                 ) : (
                                                   <Settings className="w-2.5 h-2.5" />
                                                 )}
+                                                <span className="capitalize">{req.type}</span>
                                               </span>
                                             )}
                                             {req.notes && req.notes.trim() && (
-                                              <StickyNote className="w-2 h-2" />
+                                              <StickyNote className="w-3 h-3 text-gray-500" />
                                             )}
                                           </div>
                                         </div>
@@ -2738,10 +2831,10 @@ const RequestEventPage: React.FC = () => {
                                                   : `Available: ${req.totalQuantity || 'N/A'}`}
                                               </span>
                                               <span className={`flex items-center gap-1 ${
-                                                req.isAvailable ? 'text-green-700' : 'text-red-700'
+                                                req.isAvailable ? 'text-emerald-700' : 'text-red-700'
                                               }`}>
                                                 <div className={`w-1.5 h-1.5 rounded-full ${
-                                                  req.isAvailable ? 'bg-green-500' : 'bg-red-500'
+                                                  req.isAvailable ? 'bg-emerald-500' : 'bg-red-500'
                                                 }`}></div>
                                                 {req.isAvailable ? 'Available' : 'Unavailable'}
                                               </span>
@@ -2749,15 +2842,15 @@ const RequestEventPage: React.FC = () => {
                                           )}
                                         </div>
                                         {req.responsiblePerson && (
-                                          <div className="text-xs text-blue-600 mt-1">
+                                          <div className="text-[11px] text-gray-500 mt-1">
                                             Contact: {req.responsiblePerson}
                                           </div>
                                         )}
                                       </div>
                                     ))}
                                     {deptRequirements.length > 3 && (
-                                      <div className="text-xs text-blue-500 text-center py-1">
-                                        +{deptRequirements.length - 3} more requirements
+                                      <div className="text-[11px] text-gray-500 text-center py-1">
+                                        +{deptRequirements.length - 3} more requirement(s)
                                       </div>
                                     )}
                                   </div>
@@ -3323,20 +3416,31 @@ const RequestEventPage: React.FC = () => {
                         )}
                         
                         <div className={`grid ${requirement.serviceType === 'yesno' ? 'grid-cols-1' : 'grid-cols-2'} gap-3 text-xs text-gray-600`}>
-                          {/* Only show Available Quantity for non-YESNO requirements */}
+                          {/* Quantity display: for custom physical show Requested Quantity, else Available Quantity */}
                           {requirement.serviceType !== 'yesno' && (
                             <div className="flex items-center gap-1">
-                              <span className="font-medium">Available Quantity:</span>
-                              {conflictingEvents.length > 0 && formData.startDate && formData.startTime && 
-                               hasRequirementConflict(requirement, selectedDepartment) ? (
-                                <span className="text-blue-600 font-medium">
-                                  {getAvailableQuantity(requirement, selectedDepartment)}
-                                  <span className="text-gray-500 ml-1">(of {requirement.totalQuantity || 0})</span>
-                                </span>
+                              {requirement.type === 'physical' && requirement.isCustom ? (
+                                <>
+                                  <span className="font-medium">Requested Quantity:</span>
+                                  <span className={requirement.quantity ? 'text-gray-900' : 'text-gray-400'}>
+                                    {requirement.quantity || 'N/A'}
+                                  </span>
+                                </>
                               ) : (
-                                <span className={requirement.totalQuantity ? 'text-gray-900' : 'text-gray-400'}>
-                                  {requirement.totalQuantity || 'N/A'}
-                                </span>
+                                <>
+                                  <span className="font-medium">Available Quantity:</span>
+                                  {conflictingEvents.length > 0 && formData.startDate && formData.startTime && 
+                                   hasRequirementConflict(requirement, selectedDepartment) ? (
+                                    <span className="text-blue-600 font-medium">
+                                      {getAvailableQuantity(requirement, selectedDepartment)}
+                                      <span className="text-gray-500 ml-1">(of {requirement.totalQuantity || 0})</span>
+                                    </span>
+                                  ) : (
+                                    <span className={requirement.totalQuantity ? 'text-gray-900' : 'text-gray-400'}>
+                                      {requirement.totalQuantity || 'N/A'}
+                                    </span>
+                                  )}
+                                </>
                               )}
                             </div>
                           )}
@@ -3368,135 +3472,20 @@ const RequestEventPage: React.FC = () => {
                         
                         {requirement.availabilityNotes && (
                           <div className="mt-2 p-2 bg-gray-50 border border-gray-200 rounded text-xs text-gray-700">
-                            <span className="font-medium">Availability Notes:</span> {requirement.availabilityNotes}
-                          </div>
-                        )}
-                        
-                        {/* Quantity/Notes Input - Show when selected */}
-                        {requirement.selected && (
-                          <div className="mt-3 pt-3 border-t border-blue-200 space-y-2 bg-blue-50 p-3 rounded-lg">
-                            {requirement.type === 'physical' ? (
-                              <div className="space-y-2">
-                                <Label className="text-xs font-medium text-gray-900">Quantity Needed</Label>
-                                <Input
-                                  type="number"
-                                  placeholder="Enter quantity..."
-                                  value={requirement.quantity || ''}
-                                  onChange={(e) => {
-                                    e.stopPropagation();
-                                    handleRequirementQuantity(requirement.id, parseInt(e.target.value) || 0);
-                                  }}
-                                  onClick={(e) => e.stopPropagation()}
-                                  className={`text-sm ${
-                                    !requirement.isCustom && requirement.quantity && (
-                                      (conflictingEvents.length > 0 && formData.startDate && formData.startTime && 
-                                       hasRequirementConflict(requirement, selectedDepartment) &&
-                                       requirement.quantity > getAvailableQuantity(requirement, selectedDepartment)) ||
-                                      ((!conflictingEvents.length || !formData.startDate || !formData.startTime || 
-                                        !hasRequirementConflict(requirement, selectedDepartment)) && 
-                                       requirement.quantity > (requirement.totalQuantity || 0))
-                                    ) ? 'border-red-300 focus:border-red-500 focus:ring-red-200' : ''
-                                  }`}
-                                  min="1"
-                                  max={requirement.isCustom ? undefined : (
-                                    conflictingEvents.length > 0 && formData.startDate && formData.startTime && 
-                                    hasRequirementConflict(requirement, selectedDepartment)
-                                      ? getAvailableQuantity(requirement, selectedDepartment)
-                                      : (requirement.totalQuantity || undefined)
-                                  )}
-                                />
-                                {requirement.isCustom ? (
-                                  <p className="text-xs text-orange-600 bg-orange-50 p-2 rounded flex items-center gap-1">
-                                    <Info className="w-3 h-3" />
-                                    Custom requirement - quantity will be validated by {selectedDepartment}
-                                  </p>
-                                ) : requirement.quantity && (
-                                  (conflictingEvents.length > 0 && formData.startDate && formData.startTime && 
-                                   hasRequirementConflict(requirement, selectedDepartment) &&
-                                   requirement.quantity > getAvailableQuantity(requirement, selectedDepartment)) ||
-                                  ((!conflictingEvents.length || !formData.startDate || !formData.startTime || 
-                                    !hasRequirementConflict(requirement, selectedDepartment)) && 
-                                   requirement.quantity > (requirement.totalQuantity || 0))
-                                ) ? (
-                                  <div className="flex items-center gap-1 text-xs text-red-600 bg-red-50 p-2 rounded">
-                                    <AlertTriangle className="w-3 h-3" />
-                                    <span className="font-medium">Warning:</span>
-                                    <span>
-                                      Requested {requirement.quantity} but only {' '}
-                                      {conflictingEvents.length > 0 && formData.startDate && formData.startTime
-                                        ? getAvailableQuantity(requirement, selectedDepartment)
-                                        : requirement.totalQuantity
-                                      } available
-                                      {conflictingEvents.length > 0 && formData.startDate && formData.startTime && ' (after conflicts)'}
-                                    </span>
-                                  </div>
-                                ) : (
-                                  <p className="text-xs text-gray-600">
-                                    Available: {' '}
-                                    {conflictingEvents.length > 0 && formData.startDate && formData.startTime && 
-                                     hasRequirementConflict(requirement, selectedDepartment)
-                                      ? `${getAvailableQuantity(requirement, selectedDepartment)} (after conflicts)`
-                                      : (requirement.totalQuantity || 'N/A')
-                                    }
-                                  </p>
-                                )}
-                              </div>
-                            ) : requirement.serviceType === 'yesno' ? (
-                              <div className="space-y-2">
-                                <Label className="text-xs font-medium text-gray-900">Select Answer</Label>
-                                <div className="flex gap-2">
-                                  <Button
-                                    type="button"
-                                    variant={requirement.yesNoAnswer === 'yes' ? 'default' : 'outline'}
-                                    className={`flex-1 ${requirement.yesNoAnswer === 'yes' ? 'bg-green-600 hover:bg-green-700' : ''}`}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      const currentReqs = formData.departmentRequirements[selectedDepartment] || [];
-                                      const updatedReqs = currentReqs.map(req => 
-                                        req.id === requirement.id ? { ...req, yesNoAnswer: 'yes' as 'yes' | 'no' } : req
-                                      );
-                                      const newDeptReqs = { ...formData.departmentRequirements };
-                                      newDeptReqs[selectedDepartment] = updatedReqs;
-                                      handleInputChange('departmentRequirements', newDeptReqs);
-                                    }}
-                                  >
-                                    <Check className="w-4 h-4 mr-1" />
-                                    Yes
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    variant={requirement.yesNoAnswer === 'no' ? 'default' : 'outline'}
-                                    className={`flex-1 ${requirement.yesNoAnswer === 'no' ? 'bg-red-600 hover:bg-red-700' : ''}`}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      const currentReqs = formData.departmentRequirements[selectedDepartment] || [];
-                                      const updatedReqs = currentReqs.map(req => 
-                                        req.id === requirement.id ? { ...req, yesNoAnswer: 'no' as 'yes' | 'no' } : req
-                                      );
-                                      const newDeptReqs = { ...formData.departmentRequirements };
-                                      newDeptReqs[selectedDepartment] = updatedReqs;
-                                      handleInputChange('departmentRequirements', newDeptReqs);
-                                    }}
-                                  >
-                                    <X className="w-4 h-4 mr-1" />
-                                    No
-                                  </Button>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="space-y-2">
-                                <Label className="text-xs font-medium text-gray-900">Notes / Special Requirements</Label>
-                                <Textarea
-                                  placeholder="Add specific notes or requirements..."
-                                  value={requirement.notes || ''}
-                                  onChange={(e) => {
-                                    e.stopPropagation();
-                                    handleRequirementNotes(requirement.id, e.target.value);
-                                  }}
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="min-h-20 text-sm"
-                                />
-                              </div>
+                            {requirement.availabilityNotes.startsWith('PAVILION_DEFAULT:') ? (() => {
+                              const parts = requirement.availabilityNotes.split(':');
+                              const pavilionLocation = parts.slice(2).join(':') || 'this location';
+                              return (
+                                <>
+                                  <span className="font-medium">Availability Notes:</span>{' '}
+                                  Default requirement for {pavilionLocation}
+                                </>
+                              );
+                            })() : (
+                              <>
+                                <span className="font-medium">Availability Notes:</span>{' '}
+                                {requirement.availabilityNotes}
+                              </>
                             )}
                           </div>
                         )}
@@ -3514,29 +3503,43 @@ const RequestEventPage: React.FC = () => {
                         <Building2 className="w-8 h-8 text-gray-400" />
                       </div>
                       <div className="space-y-1 text-center">
-                        <h5 className="font-medium text-gray-900 text-center">No Requirements Available</h5>
-                        <p className="text-sm text-gray-600 max-w-md text-center mx-auto">
-                          The <strong>{selectedDepartment}</strong> department hasn't set up resource availability for{' '}
-                          {formData.startDate ? (
-                            <strong>{formData.startDate.toDateString()}</strong>
-                          ) : (
-                            <strong>the selected date</strong>
-                          )}.
-                        </p>
-                        <p className="text-xs text-gray-500 mt-2 text-center">
-                          The department needs to configure their equipment and service availability in the Calendar page first.
-                        </p>
-                        <div className="mt-4">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleViewAvailableDates(selectedDepartment)}
-                            className="gap-2"
-                          >
-                            <CalendarIcon className="w-4 h-4" />
-                            View Available Dates
-                          </Button>
-                        </div>
+                        {selectedDepartment && selectedDepartment.toLowerCase().includes('pgso') && locationRequirements.length === 0 ? (
+                          <>
+                            <h5 className="font-medium text-gray-900 text-center">No Default Requirements for this Location</h5>
+                            <p className="text-sm text-gray-600 max-w-md text-center mx-auto">
+                              The <strong>PGSO</strong> department doesn't have pre-configured requirements for this location.
+                            </p>
+                            <p className="text-xs text-gray-500 mt-2 text-center">
+                              Please use the <strong>Add Custom Requirement</strong> option below to specify what you need from PGSO for this event.
+                            </p>
+                          </>
+                        ) : (
+                          <>
+                            <h5 className="font-medium text-gray-900 text-center">No Requirements Available</h5>
+                            <p className="text-sm text-gray-600 max-w-md text-center mx-auto">
+                              The <strong>{selectedDepartment}</strong> department hasn't set up resource availability for{' '}
+                              {formData.startDate ? (
+                                <strong>{formData.startDate.toDateString()}</strong>
+                              ) : (
+                                <strong>the selected date</strong>
+                              )}.
+                            </p>
+                            <p className="text-xs text-gray-500 mt-2 text-center">
+                              The department needs to configure their equipment and service availability in the Calendar page first.
+                            </p>
+                            <div className="mt-4">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleViewAvailableDates(selectedDepartment)}
+                                className="gap-2"
+                              >
+                                <CalendarIcon className="w-4 h-4" />
+                                View Available Dates
+                              </Button>
+                            </div>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -3649,66 +3652,6 @@ const RequestEventPage: React.FC = () => {
             </DialogContent>
           </Dialog>
 
-          {/* Selected Requirements */}
-          {formData.departmentRequirements[selectedDepartment]?.filter(req => req.selected).length > 0 && (
-            <div className="border-t pt-4">
-              <h3 className="text-sm font-medium text-gray-900 mb-3">
-                Selected Requirements ({formData.departmentRequirements[selectedDepartment]?.filter(req => req.selected).length})
-              </h3>
-              <div className="flex flex-wrap gap-2">
-                {formData.departmentRequirements[selectedDepartment]
-                  ?.filter(req => req.selected)
-                  .map((requirement) => (
-                  <div key={requirement.id} className={`flex items-center gap-1 rounded-full px-3 py-1 ${
-                    requirement.isCustom ? 'bg-orange-100 border border-orange-300' : 'bg-gray-100'
-                  }`}>
-                    <span className="text-sm font-medium text-gray-800 truncate max-w-[200px]" title={requirement.name}>
-                      {requirement.name}
-                    </span>
-                    {requirement.isCustom && (
-                      <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-300">
-                        Custom
-                      </Badge>
-                    )}
-                    {requirement.type === 'physical' && requirement.quantity && (
-                      <Badge variant="secondary" className="text-xs bg-blue-600 text-white">
-                        Qty: {requirement.quantity}
-                      </Badge>
-                    )}
-                    {requirement.type === 'service' && requirement.notes?.trim() && (
-                      <Badge variant="secondary" className="text-xs bg-green-600 text-white flex items-center gap-1">
-                        <StickyNote className="w-3 h-3" />
-                        Notes
-                      </Badge>
-                    )}
-                    {requirement.type === 'yesno' && requirement.yesNoAnswer && (
-                      <Badge 
-                        variant="secondary" 
-                        className={`text-xs flex items-center gap-1 ${
-                          requirement.yesNoAnswer === 'yes' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
-                        }`}
-                      >
-                        {requirement.yesNoAnswer === 'yes' ? (
-                          <><Check className="w-3 h-3" /> Yes</>
-                        ) : (
-                          <><X className="w-3 h-3" /> No</>
-                        )}
-                      </Badge>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleSelectedRequirementRemove(requirement)}
-                      className="h-5 w-5 p-0 text-gray-500 hover:text-red-500"
-                    >
-                      <X className="w-3 h-3" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
           <DialogFooter className="gap-2">
             <Button 
               variant="outline" 
@@ -3728,6 +3671,142 @@ const RequestEventPage: React.FC = () => {
               className="text-xs"
             >
               Save Requirements
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Requirement Quantity / Notes Popup */}
+      <Dialog open={showRequirementDetailsModal && !!activeRequirement} onOpenChange={setShowRequirementDetailsModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {activeRequirement ? `Set Details - ${activeRequirement.name}` : 'Set Requirement Details'}
+            </DialogTitle>
+            <DialogDescription>
+              Specify quantity and notes for this requirement.
+            </DialogDescription>
+          </DialogHeader>
+
+          {activeRequirement && (
+            <div className="space-y-4 pt-2">
+              {/* Show availability context */}
+              {activeRequirement.type === 'physical' && (
+                <div className="text-xs text-gray-700 bg-gray-50 border border-gray-200 rounded p-2">
+                  <span className="font-medium">Available:</span>{' '}
+                  {(() => {
+                    const currentReqs = formData.departmentRequirements[selectedDepartment] || [];
+                    const current = currentReqs.find(r => r.id === activeRequirement.id) || activeRequirement;
+                    if (
+                      conflictingEvents.length > 0 &&
+                      formData.startDate &&
+                      formData.startTime &&
+                      hasRequirementConflict(current, selectedDepartment)
+                    ) {
+                      return `${getAvailableQuantity(current, selectedDepartment)} (after conflicts)`;
+                    }
+                    return current.totalQuantity ?? 'N/A';
+                  })()}
+                </div>
+              )}
+
+              {/* Quantity for physical requirements */}
+              {activeRequirement.type === 'physical' && (
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-gray-900">Quantity Needed</Label>
+                  {(() => {
+                    const currentReqs = formData.departmentRequirements[selectedDepartment] || [];
+                    const current = currentReqs.find(r => r.id === activeRequirement.id) || activeRequirement;
+                    const value = current.quantity ?? '';
+
+                    // Determine the maximum available quantity for this requirement
+                    let maxAvailable: number | undefined;
+                    if (
+                      conflictingEvents.length > 0 &&
+                      formData.startDate &&
+                      formData.startTime &&
+                      hasRequirementConflict(current, selectedDepartment)
+                    ) {
+                      maxAvailable = getAvailableQuantity(current, selectedDepartment);
+                    } else if (typeof current.totalQuantity === 'number') {
+                      maxAvailable = current.totalQuantity;
+                    }
+
+                    return (
+                      <>
+                        <Input
+                          type="number"
+                          placeholder="Enter quantity..."
+                          value={value}
+                          onChange={(e) => {
+                            const raw = parseInt(e.target.value) || 0;
+                            let qty = raw;
+                            if (qty < 1) qty = 1;
+                            if (typeof maxAvailable === 'number' && qty > maxAvailable) {
+                              qty = maxAvailable;
+                              // User tried to go beyond max
+                              setShowRequirementMaxWarning(true);
+                            } else {
+                              setShowRequirementMaxWarning(false);
+                            }
+                            handleRequirementQuantity(activeRequirement.id, qty);
+                          }}
+                          className="text-sm"
+                          min={1}
+                          max={typeof maxAvailable === 'number' ? maxAvailable : undefined}
+                        />
+                        {typeof maxAvailable === 'number' && showRequirementMaxWarning && (
+                          <p className="mt-1 text-[11px] text-red-600">
+                            You reached the maximum available quantity for this item ({maxAvailable}). You cannot request more than this.
+                          </p>
+                        )}
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {/* Notes only for custom, non-physical requirements */}
+              {activeRequirement.type !== 'physical' && activeRequirement.isCustom && (
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-gray-900">Notes / Special Instructions</Label>
+                  {(() => {
+                    const currentReqs = formData.departmentRequirements[selectedDepartment] || [];
+                    const current = currentReqs.find(r => r.id === activeRequirement.id) || activeRequirement;
+                    const value = current.notes || '';
+                    return (
+                      <Textarea
+                        placeholder="Add specific notes or requirements..."
+                        value={value}
+                        onChange={(e) => handleRequirementNotes(activeRequirement.id, e.target.value)}
+                        className="min-h-20 text-sm"
+                      />
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter className="mt-4 gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowRequirementDetailsModal(false);
+                setActiveRequirement(null);
+                setShowRequirementMaxWarning(false);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                setShowRequirementDetailsModal(false);
+                setActiveRequirement(null);
+                setShowRequirementMaxWarning(false);
+              }}
+            >
+              Save
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -4110,7 +4189,7 @@ const RequestEventPage: React.FC = () => {
                           disabled={isDisabled}
                           className={isDisabled ? 'opacity-50 cursor-not-allowed' : ''}
                         >
-                          <div className="flex items-center justify-between w-full">
+                          <div className={`flex items-center justify-between w-full ${isBooked ? 'line-through' : ''}`}>
                             <span className={isDisabled ? 'text-gray-400' : ''}>
                               {timeOption.label}
                             </span>
@@ -4190,7 +4269,9 @@ const RequestEventPage: React.FC = () => {
                           disabled={isDisabled}
                           className={isDisabled ? 'opacity-50 cursor-not-allowed' : ''}
                         >
-                          <div className="flex items-center justify-between w-full">
+                          <div className={`flex items-center justify-between w-full ${
+                            isBooked ? 'border-b border-red-200 pb-1 mb-1' : ''
+                          }`}>
                             <span className={isDisabled ? 'text-gray-400' : ''}>
                               {timeOption.label}
                             </span>
@@ -4332,7 +4413,7 @@ const RequestEventPage: React.FC = () => {
                                               disabled={isDisabled}
                                               className={`text-sm ${isDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                                             >
-                                              <div className="flex items-center justify-between w-full">
+                                              <div className={`flex items-center justify-between w-full ${isBooked ? 'line-through' : ''}`}>
                                                 <span>{timeOption.label}</span>
                                                 {(isBooked || requirementConflict.hasConflict) && (
                                                   <div className="flex items-center gap-1 ml-2">
@@ -4404,7 +4485,7 @@ const RequestEventPage: React.FC = () => {
                                               key={timeOption.value} 
                                               value={timeOption.value}
                                               disabled={isDisabled}
-                                              className={`text-sm ${isDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                              className={`text-sm ${isDisabled ? 'opacity-50 cursor-not-allowed' : ''} ${isBooked ? 'border-b border-red-200 pb-1 mb-1' : ''}`}
                                             >
                                               <div className="flex items-center justify-between w-full">
                                                 <span>{timeOption.label}</span>

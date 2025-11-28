@@ -103,6 +103,27 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
   // All events count (all statuses: submitted, approved, rejected, etc.)
   const [allEventsCount, setAllEventsCount] = useState(0);
   
+  // My Events badge count (tagged requirements count - same logic as MyEventsPage)
+  const [myEventsBadgeCount, setMyEventsBadgeCount] = useState(0);
+  
+  // Track if My Events badge has been viewed
+  const [myEventsBadgeViewed, setMyEventsBadgeViewed] = useState(
+    localStorage.getItem('myEventsBadgeViewed') === 'true'
+  );
+  
+  // Listen for My Events badge viewed event
+  useEffect(() => {
+    const handleBadgeViewed = () => {
+      setMyEventsBadgeViewed(true);
+    };
+
+    window.addEventListener('myEventsBadgeViewed', handleBadgeViewed);
+
+    return () => {
+      window.removeEventListener('myEventsBadgeViewed', handleBadgeViewed);
+    };
+  }, []);
+
   // Fetch event count for My Calendar badge
   useEffect(() => {
     const fetchEventCount = async () => {
@@ -229,6 +250,70 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
     }
   }, [currentUser.department, permissions.allEvents]);
 
+  // Fetch My Events badge count (tagged requirements count - same logic as MyEventsPage)
+  useEffect(() => {
+    const fetchMyEventsBadgeCount = async () => {
+      try {
+        const token = localStorage.getItem('authToken');
+        if (!token) return;
+        
+        const response = await axios.get(`${API_BASE_URL}/events/my`, {
+          headers: getAuthHeaders()
+        });
+        
+        if (response.data.success) {
+          const events = response.data.data || [];
+          const viewedEvents = new Set(JSON.parse(localStorage.getItem('viewedTaggedRequirementsEvents') || '[]'));
+          
+          // Count only UNVIEWED events that have updates
+          let count = 0;
+          events.forEach((event: any) => {
+            // Skip if this event has already been viewed
+            if (viewedEvents.has(event._id)) {
+              return;
+            }
+            
+            if (event.departmentRequirements) {
+              let hasUpdates = false;
+              Object.entries(event.departmentRequirements).forEach(([dept, reqs]: [string, any]) => {
+                (reqs as any[]).forEach((req: any) => {
+                  const status = (req.status || 'pending').toLowerCase();
+                  const hasStatusChange = status !== 'pending';
+                  const hasDeptNotes = !!req.departmentNotes;
+                  const hasDeptReplies = Array.isArray(req.replies)
+                    ? req.replies.some((r: any) => r.role === 'department')
+                    : false;
+
+                  if (hasStatusChange || hasDeptNotes || hasDeptReplies) {
+                    hasUpdates = true;
+                  }
+                });
+              });
+              
+              if (hasUpdates) {
+                count += 1;
+              }
+            }
+          });
+          
+          setMyEventsBadgeCount(count);
+          // Reset viewed flag when there are unviewed events with updates
+          if (count > 0) {
+            setMyEventsBadgeViewed(false);
+            localStorage.removeItem('myEventsBadgeViewed');
+          }
+        }
+      } catch (error) {
+        // Keep default count if fetch fails
+        setMyEventsBadgeCount(0);
+      }
+    };
+    
+    if (currentUser.department && currentUser.department !== "Department") {
+      fetchMyEventsBadgeCount();
+    }
+  }, [currentUser.department]);
+
   // Real-time refresh functions
   const refreshEventCounts = async () => {
     try {
@@ -284,6 +369,55 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
           setTaggedDepartmentsCount(ongoingEvents.length);
         }
       }
+
+      // Update My Events badge count
+      const myEventsResponse = await axios.get(`${API_BASE_URL}/events/my`, {
+        headers: getAuthHeaders()
+      });
+      
+      if (myEventsResponse.data.success) {
+        const myEvents = myEventsResponse.data.data || [];
+        const viewedEvents = new Set(JSON.parse(localStorage.getItem('viewedTaggedRequirementsEvents') || '[]'));
+        
+        // Count only UNVIEWED events that have updates
+        let count = 0;
+        myEvents.forEach((event: any) => {
+          // Skip if this event has already been viewed
+          if (viewedEvents.has(event._id)) {
+            return;
+          }
+          
+          if (event.departmentRequirements) {
+            let hasUpdates = false;
+            Object.entries(event.departmentRequirements).forEach(([dept, reqs]: [string, any]) => {
+              (reqs as any[]).forEach((req: any) => {
+                const status = (req.status || 'pending').toLowerCase();
+                const hasStatusChange = status !== 'pending';
+                const hasDeptNotes = !!req.departmentNotes;
+                const hasDeptReplies = Array.isArray(req.replies)
+                  ? req.replies.some((r: any) => r.role === 'department')
+                  : false;
+
+                if (hasStatusChange || hasDeptNotes || hasDeptReplies) {
+                  hasUpdates = true;
+                }
+              });
+            });
+            
+            if (hasUpdates) {
+              count += 1;
+            }
+          }
+        });
+        // Only update if count changed
+        const previousCount = myEventsBadgeCount;
+        setMyEventsBadgeCount(count);
+        // Reset viewed flag ONLY if count increased (new updates)
+        if (count > previousCount && count > 0) {
+          setMyEventsBadgeViewed(false);
+          localStorage.removeItem('myEventsBadgeViewed');
+        }
+      }
     } catch (error) {
       // Keep current counts if refresh fails
     }
@@ -322,14 +456,15 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
 
   // Socket.IO listener for real-time requirement status updates
   useEffect(() => {
-    if (typeof onStatusUpdate === 'function' && permissions.taggedDepartments) {
+    if (typeof onStatusUpdate === 'function') {
       const handleStatusUpdate = (data: any) => {
         
-        // Immediately refresh badge count (non-blocking)
+        // Immediately refresh badge counts (non-blocking)
         setTimeout(() => {
-          if (permissions.taggedDepartments) {
-            const token = localStorage.getItem('authToken');
-            if (token) {
+          const token = localStorage.getItem('authToken');
+          if (token) {
+            // Update Tagged Departments count
+            if (permissions.taggedDepartments) {
               axios.get(`${API_BASE_URL}/events/tagged`, {
                 headers: getAuthHeaders()
               })
@@ -351,6 +486,59 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
                 // Failed to update badge
               });
             }
+
+            // Update My Events badge count
+            axios.get(`${API_BASE_URL}/events/my`, {
+              headers: getAuthHeaders()
+            })
+            .then(myEventsResponse => {
+              if (myEventsResponse.data.success) {
+                const myEvents = myEventsResponse.data.data || [];
+                const viewedEvents = new Set(JSON.parse(localStorage.getItem('viewedTaggedRequirementsEvents') || '[]'));
+                
+                // Count only UNVIEWED events that have updates
+                let count = 0;
+                myEvents.forEach((event: any) => {
+                  // Skip if this event has already been viewed
+                  if (viewedEvents.has(event._id)) {
+                    return;
+                  }
+                  
+                  if (event.departmentRequirements) {
+                    let hasUpdates = false;
+                    Object.entries(event.departmentRequirements).forEach(([dept, reqs]: [string, any]) => {
+                      (reqs as any[]).forEach((req: any) => {
+                        const status = (req.status || 'pending').toLowerCase();
+                        const hasStatusChange = status !== 'pending';
+                        const hasDeptNotes = !!req.departmentNotes;
+                        const hasDeptReplies = Array.isArray(req.replies)
+                          ? req.replies.some((r: any) => r.role === 'department')
+                          : false;
+
+                        if (hasStatusChange || hasDeptNotes || hasDeptReplies) {
+                          hasUpdates = true;
+                        }
+                      });
+                    });
+                    
+                    if (hasUpdates) {
+                      count += 1;
+                    }
+                  }
+                });
+                // Only update if count changed
+                const previousCount = myEventsBadgeCount;
+                setMyEventsBadgeCount(count);
+                // Reset viewed flag ONLY if count increased (new updates)
+                if (count > previousCount && count > 0) {
+                  setMyEventsBadgeViewed(false);
+                  localStorage.removeItem('myEventsBadgeViewed');
+                }
+              }
+            })
+            .catch(error => {
+              // Failed to update badge
+            });
           }
         }, 0); // Execute immediately but non-blocking
       };
@@ -618,6 +806,7 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
               const isTaggedDepartments = item.label === 'Tagged Departments';
               const isAllEvents = item.label === 'All Events';
               const isRequestEvent = item.label === 'Request Event';
+              const isMyEvents = item.label === 'My Events';
               const totalEventCount = isMyCalendar ? eventCount : 0;
               const hasSubmenu = item.hasSubmenu && item.submenu;
               const isSubmenuOpen = isRequestEvent && requestEventOpen;
@@ -698,6 +887,13 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
                   {isAllEvents && allEventsCount > 0 && !isCollapsed && (
                     <div className="absolute -top-1 -right-1 bg-red-500 text-white text-xs px-1.5 py-0.5 min-w-[20px] h-5 flex items-center justify-center rounded-full">
                       {allEventsCount > 99 ? '99+' : allEventsCount}
+                    </div>
+                  )}
+
+                  {/* My Events Badge Count (tagged requirements count) */}
+                  {isMyEvents && myEventsBadgeCount > 0 && !isCollapsed && !myEventsBadgeViewed && (
+                    <div className="absolute -top-1 -right-1 bg-red-500 text-white text-xs px-1.5 py-0.5 min-w-[20px] h-5 flex items-center justify-center rounded-full">
+                      {myEventsBadgeCount > 99 ? '99+' : myEventsBadgeCount}
                     </div>
                   )}
                   </div>

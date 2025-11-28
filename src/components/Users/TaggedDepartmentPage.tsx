@@ -1,8 +1,9 @@
 import React, { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
+import axios from 'axios';
 import { useTaggedDepartmentsStore } from '@/stores/taggedDepartmentsStore';
-import { useSocket } from '@/hooks/useSocket';
+import { useSocket, getGlobalSocket } from '@/hooks/useSocket';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -60,6 +61,8 @@ import {
   MapPin
 } from 'lucide-react';
 
+const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api`;
+
 // Event type definitions
 interface Requirement {
   id: string;
@@ -77,6 +80,14 @@ interface Requirement {
   declineReason?: string;
   requirementsStatus?: 'on-hold' | 'released'; // Track if requirements are on-hold or released
   yesNoAnswer?: 'yes' | 'no'; // For yesno type requirements
+  isCustom?: boolean; // Custom requirement added by requestor
+  replies?: Array<{
+    userId: string;
+    userName: string;
+    role: 'requestor' | 'department';
+    message: string;
+    createdAt: string;
+  }>;
 }
 
 interface Event {
@@ -135,6 +146,9 @@ const TaggedDepartmentPage: React.FC = () => {
   });
   const [declineReason, setDeclineReason] = React.useState('');
   
+  // Per-requirement reply drafts for department conversation
+  const [replyDrafts, setReplyDrafts] = React.useState<{ [reqId: string]: string }>({});
+  
   // Zustand store - replaces all useState calls above!
   const {
     events,
@@ -157,6 +171,30 @@ const TaggedDepartmentPage: React.FC = () => {
     getCompletedEvents,
     getRequirementCounts
   } = useTaggedDepartmentsStore();
+
+  // Realtime reply updates for department via Socket.IO
+  useEffect(() => {
+    const socket = getGlobalSocket();
+    if (!socket) return;
+
+    const handleReplyUpdate = (data: any) => {
+      // Ensure this event is one of our tagged events before forcing refresh
+      if (!data || !data.eventId) return;
+      fetchTaggedEvents(true);
+    };
+
+    if (socket.connected) {
+      socket.on('reply-update', handleReplyUpdate);
+    } else {
+      socket.once('connect', () => {
+        socket.on('reply-update', handleReplyUpdate);
+      });
+    }
+
+    return () => {
+      socket.off('reply-update', handleReplyUpdate);
+    };
+  }, [fetchTaggedEvents]);
 
   useEffect(() => {
     // Fetch tagged events using Zustand store (respects 30s cache)
@@ -521,15 +559,20 @@ const TaggedDepartmentPage: React.FC = () => {
                 >
                   <Clock className="h-3.5 w-3.5 flex-shrink-0" />
                   <span className="text-xs font-medium">Pending</span>
-                  <Badge variant="secondary" className="text-[10px] h-4 px-1.5 ml-auto">
-                    {events.filter(event => {
+                  {(() => {
+                    const pendingCount = events.filter(event => {
                       const userDeptReqs = event.departmentRequirements[currentUserDepartment] || [];
                       const confirmedCount = userDeptReqs.filter(r => getRequirementStatus(r) === 'confirmed').length;
                       const declinedCount = userDeptReqs.filter(r => getRequirementStatus(r) === 'declined').length;
                       const totalCount = userDeptReqs.length;
                       return totalCount > 0 && confirmedCount < totalCount && declinedCount < totalCount;
-                    }).length}
-                  </Badge>
+                    }).length;
+                    return pendingCount > 0 ? (
+                      <Badge variant="secondary" className="text-[10px] h-4 px-1.5 ml-auto bg-red-500 text-white">
+                        {pendingCount}
+                      </Badge>
+                    ) : null;
+                  })()}
                 </TabsTrigger>
                 <TabsTrigger 
                   value="completed" 
@@ -537,14 +580,19 @@ const TaggedDepartmentPage: React.FC = () => {
                 >
                   <CheckCircle className="h-3.5 w-3.5 flex-shrink-0" />
                   <span className="text-xs font-medium">Completed</span>
-                  <Badge variant="secondary" className="text-[10px] h-4 px-1.5 ml-auto">
-                    {events.filter(event => {
+                  {(() => {
+                    const completedCount = events.filter(event => {
                       const userDeptReqs = event.departmentRequirements[currentUserDepartment] || [];
                       const confirmedCount = userDeptReqs.filter(r => getRequirementStatus(r) === 'confirmed').length;
                       const totalCount = userDeptReqs.length;
                       return totalCount > 0 && confirmedCount === totalCount;
-                    }).length}
-                  </Badge>
+                    }).length;
+                    return completedCount > 0 ? (
+                      <Badge variant="secondary" className="text-[10px] h-4 px-1.5 ml-auto bg-red-500 text-white">
+                        {completedCount}
+                      </Badge>
+                    ) : null;
+                  })()}
                 </TabsTrigger>
                 <TabsTrigger 
                   value="declined" 
@@ -552,14 +600,19 @@ const TaggedDepartmentPage: React.FC = () => {
                 >
                   <XCircle className="h-3.5 w-3.5 flex-shrink-0" />
                   <span className="text-xs font-medium">Declined</span>
-                  <Badge variant="secondary" className="text-[10px] h-4 px-1.5 ml-auto">
-                    {events.filter(event => {
+                  {(() => {
+                    const declinedCount = events.filter(event => {
                       const userDeptReqs = event.departmentRequirements[currentUserDepartment] || [];
-                      const declinedCount = userDeptReqs.filter(r => getRequirementStatus(r) === 'declined').length;
+                      const declinedCountInner = userDeptReqs.filter(r => getRequirementStatus(r) === 'declined').length;
                       const totalCount = userDeptReqs.length;
-                      return totalCount > 0 && declinedCount === totalCount;
-                    }).length}
-                  </Badge>
+                      return totalCount > 0 && declinedCountInner === totalCount;
+                    }).length;
+                    return declinedCount > 0 ? (
+                      <Badge variant="secondary" className="text-[10px] h-4 px-1.5 ml-auto bg-red-500 text-white">
+                        {declinedCount}
+                      </Badge>
+                    ) : null;
+                  })()}
                 </TabsTrigger>
               </TabsList>
             </Tabs>
@@ -935,7 +988,7 @@ const TaggedDepartmentPage: React.FC = () => {
               className="flex flex-col"
             >
               {/* Event Header */}
-              <div className="bg-background/95 backdrop-blur-sm border-b p-3">
+              <div className="bg-background/95 backdrop-blur-sm border-b px-5 md:px-6 py-3">
                 <div className="flex items-center justify-between mb-3">
                   <h2 className="text-lg font-semibold">{selectedEvent.eventTitle}</h2>
                   <Badge variant="outline" className="text-sm px-2 py-0.5">
@@ -943,7 +996,7 @@ const TaggedDepartmentPage: React.FC = () => {
                   </Badge>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-x-2 gap-y-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-x-4 md:gap-x-6 gap-y-2">
                   <div className="space-y-0.5">
                     <Label className="text-[10px] text-muted-foreground">Requestor's Department</Label>
                     <div className="flex items-center gap-1.5">
@@ -1029,7 +1082,7 @@ const TaggedDepartmentPage: React.FC = () => {
               {/* Requirements List */}
               <div className="flex-1">
                 <Tabs defaultValue="all" className="flex flex-col">
-                  <div className="px-6 pt-4">
+                  <div className="px-6 md:px-8 pt-4">
                     <TabsList className="w-full grid grid-cols-4">
                       {(() => {
                         const counts = getRequirementCounts(selectedEvent);
@@ -1075,7 +1128,7 @@ const TaggedDepartmentPage: React.FC = () => {
                   </div>
 
                   <TabsContent value="all" className="flex-1">
-                  <div className="px-6 py-4 space-y-4">
+                  <div className="px-6 md:px-8 py-4 space-y-4">
                     <AnimatePresence>
                       {Object.entries(selectedEvent.departmentRequirements)
                         .filter(([department, requirements]) => department === currentUserDepartment)
@@ -1092,19 +1145,56 @@ const TaggedDepartmentPage: React.FC = () => {
                               {/* Requirement Header */}
                               <div className="flex items-start justify-between gap-4">
                                 <div className="flex-1">
-                                  <div className="flex items-center gap-2 mb-1">
+                                  <div className="flex flex-wrap items-center gap-2 mb-1">
                                     <Package className="h-4 w-4 text-gray-600" />
-                                    <h4 className="font-medium text-gray-900">{req.name}</h4>
-                                  </div>
-                                  <p className="text-sm text-gray-600">
-                                    {req.type === 'physical' ? (
-                                      <>Quantity: {req.quantity} of {req.totalQuantity} • Type: Physical</>
-                                    ) : req.type === 'yesno' ? (
-                                      <>Quantity: of 1 • Type: Service - Yes/No</>
-                                    ) : (
-                                      <>Type: Service</>
+                                    <h4 className="text-lg font-semibold text-gray-900 mr-1">{req.name}</h4>
+                                    <span className="text-lg font-semibold text-gray-900 mr-1">-</span>
+                                    <span className="text-base font-semibold text-gray-900">
+                                      {req.isCustom ? (
+                                        req.type === 'physical' ? (
+                                          <>
+                                            (Quantity: <span className="font-bold text-lg">{req.quantity || 'N/A'}</span>)
+                                          </>
+                                        ) : req.notes ? (
+                                          <>
+                                            Notes: <span className="font-medium">{req.notes}</span>
+                                          </>
+                                        ) : (
+                                          <>Custom requirement</>
+                                        )
+                                      ) : req.type === 'physical' ? (
+                                        (() => {
+                                          let displayTotal = req.totalQuantity;
+                                          if (req.availabilityNotes && req.availabilityNotes.startsWith('PAVILION_DEFAULT:')) {
+                                            const parts = req.availabilityNotes.split(':');
+                                            const parsed = parseInt(parts[1], 10);
+                                            if (!isNaN(parsed)) {
+                                              displayTotal = parsed;
+                                            }
+                                          }
+                                          return (
+                                            <>
+                                              (Quantity: <span className="font-bold text-lg">{req.quantity}</span> of {displayTotal})
+                                            </>
+                                          );
+                                        })()
+                                      ) : req.type === 'yesno' ? (
+                                        <>
+                                          (Quantity: <span className="font-bold text-lg">1</span> of 1)
+                                        </>
+                                      ) : null}
+                                    </span>
+                                    {req.isCustom && (
+                                      <Badge variant="outline" className="text-[11px] h-5 px-2 border-orange-300 text-orange-700 bg-orange-50">
+                                        Custom Requirement
+                                      </Badge>
                                     )}
-                                  </p>
+                                    <span className="text-sm text-gray-600">
+                                      {req.type === 'physical' && '• Type: Physical'}
+                                      {req.type === 'yesno' && '• Type: Service - Yes/No'}
+                                      {req.type !== 'physical' && req.type !== 'yesno' && '• Type: Service'}
+                                    </span>
+                                  </div>
                                 </div>
                                 <Select
                                   key={req.id}
@@ -1238,10 +1328,123 @@ const TaggedDepartmentPage: React.FC = () => {
                                     </div>
                                   </div>
                                 ) : (
-                                  <div className="bg-gray-50 rounded-md p-3 border">
-                                    <p className="text-sm text-gray-700">
-                                      {req.departmentNotes || notesMap[req.id] || 'No notes added yet'}
-                                    </p>
+                                  <div className="space-y-3">
+                                    <div className="bg-gray-50 rounded-md p-3 border">
+                                      <p className="text-sm text-gray-700">
+                                        {req.departmentNotes || notesMap[req.id] || 'No notes added yet'}
+                                      </p>
+                                    </div>
+
+                                    {/* Replies thread - chat style (only when there are department notes) */}
+                                    {(req.departmentNotes || notesMap[req.id]) && (
+                                      <div className="space-y-2">
+                                        <Label className="text-xs font-medium flex items-center gap-1 text-gray-700">
+                                          <MessageSquare className="h-3 w-3" />
+                                          Conversation
+                                        </Label>
+                                        <div className="bg-white rounded-md border min-h-[180px] max-h-60 flex flex-col px-2 py-2 text-xs">
+                                          {/* Scrollable messages */}
+                                          <div className="flex-1 overflow-y-auto space-y-1.5 pr-1">
+                                            {req.replies && req.replies.length > 0 ? (
+                                              req.replies.map((reply, idx) => (
+                                                <div
+                                                  key={idx}
+                                                  className={`flex ${reply.role === 'department' ? 'justify-end' : 'justify-start'}`}
+                                                >
+                                                  <div
+                                                    className={`max-w-[80%] rounded-lg px-2 py-1.5 shadow-sm border text-[11px] whitespace-pre-wrap ${
+                                                      reply.role === 'department'
+                                                        ? 'bg-blue-600 text-white border-blue-700'
+                                                        : 'bg-gray-100 text-gray-900 border-gray-200'
+                                                    }`}
+                                                  >
+                                                    <div className="flex items-center justify-between gap-2 mb-0.5">
+                                                      <span className="font-semibold truncate max-w-[120px]">
+                                                        {reply.role === 'department' ? 'You' : reply.userName || 'Requestor'}
+                                                      </span>
+                                                      <span className="text-[9px] opacity-80">
+                                                        {reply.createdAt ? new Date(reply.createdAt).toLocaleString() : ''}
+                                                      </span>
+                                                    </div>
+                                                    <p className="leading-snug">
+                                                      {reply.message}
+                                                    </p>
+                                                  </div>
+                                                </div>
+                                              ))
+                                            ) : (
+                                              <p className="text-[11px] text-gray-400 italic">
+                                                No replies yet.
+                                              </p>
+                                            )}
+                                          </div>
+
+                                          {/* Reply input inside card (match MyEventsPage style) */}
+                                          <div className="mt-2 border-t pt-2 space-y-1.5">
+                                            <Label className="text-[11px] text-gray-700">
+                                              Your reply as <span className="font-semibold">{currentUserDepartment}</span>
+                                            </Label>
+                                            <div className="flex items-center gap-2">
+                                              <Input
+                                                className="text-xs bg-white/90 border-blue-200 focus-visible:ring-blue-500 flex-1 h-8"
+                                                placeholder="Type your reply to this department..."
+                                                value={replyDrafts[req.id] || ''}
+                                                onChange={(e) =>
+                                                  setReplyDrafts(prev => ({
+                                                    ...prev,
+                                                    [req.id]: e.target.value
+                                                  }))
+                                                }
+                                              />
+                                              <Button
+                                                type="button"
+                                                size="sm"
+                                                className="h-8 px-3 text-[11px] bg-blue-600 hover:bg-blue-700 whitespace-nowrap"
+                                                disabled={!replyDrafts[req.id]?.trim()}
+                                                onClick={async () => {
+                                                  const message = replyDrafts[req.id]?.trim();
+                                                  if (!message || !selectedEvent) return;
+
+                                                  try {
+                                                    const token = localStorage.getItem('authToken');
+                                                    const response = await axios.patch(
+                                                      `${API_BASE_URL}/events/${selectedEvent._id}/requirements/${req.id}/replies`,
+                                                      {
+                                                        message,
+                                                        role: 'department'
+                                                      },
+                                                      {
+                                                        headers: {
+                                                          'Authorization': token ? `Bearer ${token}` : '',
+                                                          'Content-Type': 'application/json'
+                                                        }
+                                                      }
+                                                    );
+
+                                                    if (response.data?.success) {
+                                                      await fetchTaggedEvents(true);
+
+                                                      setReplyDrafts(prev => ({
+                                                        ...prev,
+                                                        [req.id]: ''
+                                                      }));
+
+                                                      toast.success('Reply sent');
+                                                    } else {
+                                                      toast.error('Failed to send reply');
+                                                    }
+                                                  } catch (error) {
+                                                    toast.error('Failed to send reply');
+                                                  }
+                                                }}
+                                              >
+                                                Send Reply
+                                              </Button>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
                                 )}
                               </div>
@@ -1303,19 +1506,56 @@ const TaggedDepartmentPage: React.FC = () => {
                                         {/* Requirement Header */}
                                         <div className="flex items-start justify-between gap-4">
                                           <div className="flex-1">
-                                            <div className="flex items-center gap-2 mb-1">
+                                            <div className="flex flex-wrap items-center gap-2 mb-1">
                                               <Package className="h-4 w-4 text-gray-600" />
-                                              <h4 className="font-medium text-gray-900">{req.name}</h4>
-                                            </div>
-                                            <p className="text-sm text-gray-600">
-                                              {req.type === 'physical' ? (
-                                                <>Quantity: {req.quantity} of {req.totalQuantity} • Type: Physical</>
-                                              ) : req.type === 'yesno' ? (
-                                                <>Quantity: of 1 • Type: Service - Yes/No</>
-                                              ) : (
-                                                <>Type: Service</>
+                                              <h4 className="text-lg font-semibold text-gray-900 mr-1">{req.name}</h4>
+                                              <span className="text-lg font-semibold text-gray-900 mr-1">-</span>
+                                              <span className="text-base font-semibold text-gray-900">
+                                                {req.isCustom ? (
+                                                  req.type === 'physical' ? (
+                                                    <>
+                                                      (Quantity: <span className="font-bold text-lg">{req.quantity || 'N/A'}</span>)
+                                                    </>
+                                                  ) : req.notes ? (
+                                                    <>
+                                                      Notes: <span className="font-medium">{req.notes}</span>
+                                                    </>
+                                                  ) : (
+                                                    <>Custom requirement</>
+                                                  )
+                                                ) : req.type === 'physical' ? (
+                                                  (() => {
+                                                    let displayTotal = req.totalQuantity;
+                                                    if (req.availabilityNotes && req.availabilityNotes.startsWith('PAVILION_DEFAULT:')) {
+                                                      const parts = req.availabilityNotes.split(':');
+                                                      const parsed = parseInt(parts[1], 10);
+                                                      if (!isNaN(parsed)) {
+                                                        displayTotal = parsed;
+                                                      }
+                                                    }
+                                                    return (
+                                                      <>
+                                                        (Quantity: <span className="font-bold text-lg">{req.quantity}</span> of {displayTotal})
+                                                      </>
+                                                    );
+                                                  })()
+                                                ) : req.type === 'yesno' ? (
+                                                  <>
+                                                    (Quantity: <span className="font-bold text-lg">1</span> of 1)
+                                                  </>
+                                                ) : null}
+                                              </span>
+                                              {req.isCustom && (
+                                                <Badge variant="outline" className="text-[11px] h-5 px-2 border-orange-300 text-orange-700 bg-orange-50">
+                                                  Custom Requirement
+                                                </Badge>
                                               )}
-                                            </p>
+                                              <span className="text-sm text-gray-600">
+                                                {req.type === 'physical' && '• Type: Physical'}
+                                                {req.type === 'yesno' && '• Type: Service - Yes/No'}
+                                                {req.type !== 'physical' && req.type !== 'yesno' && '• Type: Service'}
+                                              </span>
+                                            </div>
                                           </div>
                                           <Select 
                                             key={`${req.id}-${getRequirementStatus(req)}`}
@@ -1449,10 +1689,124 @@ const TaggedDepartmentPage: React.FC = () => {
                                               </div>
                                             </div>
                                           ) : (
-                                            <div className="bg-gray-50 rounded-md p-3 border">
-                                              <p className="text-sm text-gray-700">
-                                                {req.departmentNotes || notesMap[req.id] || 'No notes added yet'}
-                                              </p>
+                                            <div className="space-y-3">
+                                              <div className="bg-gray-50 rounded-md p-3 border">
+                                                <p className="text-sm text-gray-700">
+                                                  {(req.departmentNotes || notesMap[req.id]) ? (req.departmentNotes || notesMap[req.id]) : 'No notes added yet'}
+                                                </p>
+                                              </div>
+
+                                              {/* Replies thread - chat style (status tabs) */}
+                                              {(req.departmentNotes || notesMap[req.id]) && (
+                                                <div className="space-y-2">
+                                                  <Label className="text-xs font-medium flex items-center gap-1 text-gray-700">
+                                                    <MessageSquare className="h-3 w-3" />
+                                                    Conversation
+                                                  </Label>
+                                                  <div className="bg-white rounded-md border min-h-[180px] max-h-60 flex flex-col px-2 py-2 text-xs">
+                                                    {/* Scrollable messages */}
+                                                    <div className="flex-1 overflow-y-auto space-y-1.5 pr-1">
+                                                      {req.replies && req.replies.length > 0 ? (
+                                                        req.replies.map((reply, idx) => (
+                                                          <div
+                                                            key={idx}
+                                                            className={`flex ${reply.role === 'department' ? 'justify-end' : 'justify-start'}`}
+                                                          >
+                                                            <div
+                                                              className={`max-w-[80%] rounded-lg px-2 py-1.5 shadow-sm border text-[11px] whitespace-pre-wrap ${
+                                                                reply.role === 'department'
+                                                                  ? 'bg-blue-600 text-white border-blue-700'
+                                                                  : 'bg-gray-100 text-gray-900 border-gray-200'
+                                                              }`}
+                                                            >
+                                                              <div className="flex items-center justify-between gap-2 mb-0.5">
+                                                                <span className="font-semibold truncate max-w-[120px]">
+                                                                  {reply.role === 'department' ? 'You' : reply.userName || 'Requestor'}
+                                                                </span>
+                                                                <span className="text-[9px] opacity-80">
+                                                                  {reply.createdAt ? new Date(reply.createdAt).toLocaleString() : ''}
+                                                                </span>
+                                                              </div>
+                                                              <p className="leading-snug">
+                                                                {reply.message}
+                                                              </p>
+                                                            </div>
+                                                          </div>
+                                                        ))
+                                                      ) : (
+                                                        <p className="text-[11px] text-gray-400 italic">
+                                                          No replies yet.
+                                                        </p>
+                                                      )}
+                                                    </div>
+
+                                                    {/* Reply input inside card */}
+                                                    <div className="mt-2 border-t pt-2 space-y-1.5">
+                                                      <Label className="text-[11px] text-gray-700">
+                                                        Reply as <span className="font-semibold">{currentUserDepartment}</span>
+                                                      </Label>
+                                                      <div className="flex items-center gap-2">
+                                                        <Textarea
+                                                          rows={1}
+                                                          className="text-xs bg-white border-gray-200 focus-visible:ring-blue-500 flex-1 h-8 py-1 resize-none"
+                                                          placeholder="Type your reply to the requestor..."
+                                                          value={replyDrafts[req.id] || ''}
+                                                          onChange={(e) =>
+                                                            setReplyDrafts(prev => ({
+                                                              ...prev,
+                                                              [req.id]: e.target.value
+                                                            }))
+                                                          }
+                                                        />
+                                                        <Button
+                                                          type="button"
+                                                          size="sm"
+                                                          className="h-8 px-3 text-[11px] bg-blue-600 hover:bg-blue-700 whitespace-nowrap"
+                                                          disabled={!replyDrafts[req.id]?.trim()}
+                                                          onClick={async () => {
+                                                            const message = replyDrafts[req.id]?.trim();
+                                                            if (!message || !selectedEvent) return;
+
+                                                            try {
+                                                              const token = localStorage.getItem('authToken');
+                                                              const response = await axios.patch(
+                                                                `${API_BASE_URL}/events/${selectedEvent._id}/requirements/${req.id}/replies`,
+                                                                {
+                                                                  message,
+                                                                  role: 'department'
+                                                                },
+                                                                {
+                                                                  headers: {
+                                                                    'Authorization': token ? `Bearer ${token}` : '',
+                                                                    'Content-Type': 'application/json'
+                                                                  }
+                                                                }
+                                                              );
+
+                                                              if (response.data?.success) {
+                                                                await fetchTaggedEvents(true);
+
+                                                                setReplyDrafts(prev => ({
+                                                                  ...prev,
+                                                                  [req.id]: ''
+                                                                }));
+
+                                                                toast.success('Reply sent');
+                                                              } else {
+                                                                toast.error('Failed to send reply');
+                                                              }
+                                                            } catch (error) {
+                                                              toast.error('Failed to send reply');
+                                                            }
+                                                          }}
+                                                        >
+                                                          Send Reply
+                                                        </Button>
+                                                      </div>
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                              )}
                                             </div>
                                           )}
                                         </div>

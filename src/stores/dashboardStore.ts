@@ -155,7 +155,8 @@ export const useDashboardStore = create<DashboardState>()(
                       departmentNotes: req.departmentNotes || '',
                       lastUpdated: req.lastUpdated,
                       quantity: req.quantity,
-                      totalQuantity: req.totalQuantity
+                      totalQuantity: req.totalQuantity,
+                      availabilityNotes: req.availabilityNotes // Contains location-specific default quantity
                     });
                   });
                 });
