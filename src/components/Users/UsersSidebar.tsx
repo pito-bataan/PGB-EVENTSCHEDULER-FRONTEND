@@ -110,6 +110,14 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
   const [myEventsBadgeViewed, setMyEventsBadgeViewed] = useState(
     localStorage.getItem('myEventsBadgeViewed') === 'true'
   );
+
+  // Event Reports badge count (pending reports count)
+  const [eventReportsBadgeCount, setEventReportsBadgeCount] = useState(0);
+  
+  // Track if Event Reports badge has been viewed
+  const [eventReportsBadgeViewed, setEventReportsBadgeViewed] = useState(
+    localStorage.getItem('eventReportsBadgeViewed') === 'true'
+  );
   
   // Listen for My Events badge viewed event
   useEffect(() => {
@@ -121,6 +129,20 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
 
     return () => {
       window.removeEventListener('myEventsBadgeViewed', handleBadgeViewed);
+    };
+  }, []);
+
+  // Listen for Event Reports badge viewed event
+  useEffect(() => {
+    const handleEventReportsBadgeViewed = () => {
+      setEventReportsBadgeViewed(true);
+      localStorage.setItem('eventReportsBadgeViewed', 'true');
+    };
+
+    window.addEventListener('eventReportsBadgeViewed', handleEventReportsBadgeViewed);
+
+    return () => {
+      window.removeEventListener('eventReportsBadgeViewed', handleEventReportsBadgeViewed);
     };
   }, []);
 
@@ -311,6 +333,59 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
     
     if (currentUser.department && currentUser.department !== "Department") {
       fetchMyEventsBadgeCount();
+    }
+  }, [currentUser.department]);
+
+  // Fetch Event Reports badge count (pending reports count)
+  useEffect(() => {
+    const fetchEventReportsBadgeCount = async () => {
+      try {
+        const token = localStorage.getItem('authToken');
+        if (!token) return;
+        
+        const response = await axios.get(`${API_BASE_URL}/events/my`, {
+          headers: getAuthHeaders()
+        });
+        
+        if (response.data.success) {
+          const events = response.data.data || [];
+          // Filter for ongoing/approved events (not completed)
+          const ongoingEvents = events.filter((event: any) => {
+            const status = event.status?.toLowerCase();
+            return status === 'approved' || status === 'ongoing';
+          });
+          
+          // Count events with pending reports (not all reports completed)
+          let pendingCount = 0;
+          ongoingEvents.forEach((event: any) => {
+            const reports = event.eventReports;
+            if (reports) {
+              const completed = [
+                reports.completionReport?.uploaded,
+                reports.postActivityReport?.uploaded
+              ].filter(Boolean).length;
+              
+              // If not all 2 reports are completed, count as pending
+              if (completed < 2) {
+                pendingCount += 1;
+              }
+            } else {
+              // No reports at all, count as pending
+              pendingCount += 1;
+            }
+          });
+          
+          // Update badge count - badge will hide automatically when count reaches 0
+          setEventReportsBadgeCount(pendingCount);
+        }
+      } catch (error) {
+        // Keep default count if fetch fails
+        setEventReportsBadgeCount(0);
+      }
+    };
+    
+    if (currentUser.department && currentUser.department !== "Department") {
+      fetchEventReportsBadgeCount();
     }
   }, [currentUser.department]);
 
@@ -534,6 +609,45 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
                   setMyEventsBadgeViewed(false);
                   localStorage.removeItem('myEventsBadgeViewed');
                 }
+              }
+            })
+            .catch(error => {
+              // Failed to update badge
+            });
+
+            // Update Event Reports badge count (pending reports)
+            axios.get(`${API_BASE_URL}/events/my`, {
+              headers: getAuthHeaders()
+            })
+            .then(eventReportsResponse => {
+              if (eventReportsResponse.data.success) {
+                const events = eventReportsResponse.data.data || [];
+                // Filter for ongoing/approved events
+                const ongoingEvents = events.filter((event: any) => {
+                  const status = event.status?.toLowerCase();
+                  return status === 'approved' || status === 'ongoing';
+                });
+                
+                // Count events with pending reports
+                let pendingCount = 0;
+                ongoingEvents.forEach((event: any) => {
+                  const reports = event.eventReports;
+                  if (reports) {
+                    const completed = [
+                      reports.completionReport?.uploaded,
+                      reports.postActivityReport?.uploaded
+                    ].filter(Boolean).length;
+                    
+                    if (completed < 2) {
+                      pendingCount += 1;
+                    }
+                  } else {
+                    pendingCount += 1;
+                  }
+                });
+                
+                // Update badge count - badge will hide automatically when count reaches 0
+                setEventReportsBadgeCount(pendingCount);
               }
             })
             .catch(error => {
@@ -807,6 +921,7 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
               const isAllEvents = item.label === 'All Events';
               const isRequestEvent = item.label === 'Request Event';
               const isMyEvents = item.label === 'My Events';
+              const isEventReports = item.label === 'Event Reports';
               const totalEventCount = isMyCalendar ? eventCount : 0;
               const hasSubmenu = item.hasSubmenu && item.submenu;
               const isSubmenuOpen = isRequestEvent && requestEventOpen;
@@ -894,6 +1009,13 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
                   {isMyEvents && myEventsBadgeCount > 0 && !isCollapsed && !myEventsBadgeViewed && (
                     <div className="absolute -top-1 -right-1 bg-red-500 text-white text-xs px-1.5 py-0.5 min-w-[20px] h-5 flex items-center justify-center rounded-full">
                       {myEventsBadgeCount > 99 ? '99+' : myEventsBadgeCount}
+                    </div>
+                  )}
+
+                  {/* Event Reports Badge Count (pending reports count) */}
+                  {isEventReports && eventReportsBadgeCount > 0 && !isCollapsed && (
+                    <div className="absolute -top-1 -right-1 bg-red-500 text-white text-xs px-1.5 py-0.5 min-w-[20px] h-5 flex items-center justify-center rounded-full">
+                      {eventReportsBadgeCount > 99 ? '99+' : eventReportsBadgeCount}
                     </div>
                   )}
                   </div>
