@@ -3,9 +3,12 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Download, Eye, X } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
+import { Download, Eye, X, Calendar as CalendarIcon } from 'lucide-react';
 import jsPDF from 'jspdf';
 import { toast } from 'sonner';
+import { format } from 'date-fns';
 
 interface PostActivityReportData {
   activityTitle: string;
@@ -510,12 +513,35 @@ const PostActivityReportTemplate: React.FC<PostActivityReportTemplateProps> = ({
                       Date:
                     </td>
                     <td className="p-2">
-                      <Input
-                        type="date"
-                        value={templateData.preparedDate}
-                        onChange={(e) => setTemplateData(prev => ({ ...prev, preparedDate: e.target.value }))}
-                        className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0"
-                      />
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            className="w-full justify-start text-left font-normal"
+                          >
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {templateData.preparedDate ? format(new Date(templateData.preparedDate), 'MMM dd, yyyy') : 'Pick a date'}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar
+                            mode="single"
+                            selected={templateData.preparedDate ? new Date(templateData.preparedDate) : undefined}
+                            onSelect={(date) => {
+                              if (date) {
+                                setTemplateData(prev => ({
+                                  ...prev,
+                                  preparedDate: date.toISOString().split('T')[0]
+                                }));
+                              }
+                            }}
+                            disabled={(date) =>
+                              date > new Date() || date < new Date('1900-01-01')
+                            }
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
                     </td>
                   </tr>
                 </tbody>

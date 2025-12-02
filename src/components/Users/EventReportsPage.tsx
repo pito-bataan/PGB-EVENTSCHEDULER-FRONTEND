@@ -42,10 +42,17 @@ interface Event {
   eventTitle: string;
   location: string;
   locations?: string[];
+  multipleLocations?: boolean;
   startDate: string;
   startTime: string;
   endDate: string;
   endTime: string;
+  dateTimeSlots?: Array<{
+    startDate: string;
+    startTime: string;
+    endDate: string;
+    endTime: string;
+  }>;
   status: string;
   submittedAt: string;
   requestorDepartment: string;
@@ -120,19 +127,21 @@ const EventReportsPage: React.FC = () => {
 
       console.log('📊 All events:', response.data.data);
       
-      // Filter only completed events
-      const completed = response.data.data.filter(
-        (event: Event) => event.status?.toLowerCase() === 'completed'
-      );
+      // Filter only ongoing events
+      const ongoing = response.data.data.filter((event: Event) => {
+        const status = event.status?.toLowerCase();
+        // Show events that are approved or ongoing (not draft, submitted, rejected, or cancelled)
+        return status === 'approved' || status === 'ongoing';
+      });
       
-      console.log('✅ Completed events:', completed);
+      console.log('✅ Ongoing events:', ongoing);
       
-      setCompletedEvents(completed);
-      if (completed.length > 0 && !selectedEvent) {
-        setSelectedEvent(completed[0]);
+      setCompletedEvents(ongoing);
+      if (ongoing.length > 0 && !selectedEvent) {
+        setSelectedEvent(ongoing[0]);
       }
     } catch (error) {
-      console.error('Error fetching completed events:', error);
+      console.error('Error fetching ongoing events:', error);
     } finally {
       setLoading(false);
     }
@@ -238,16 +247,25 @@ const EventReportsPage: React.FC = () => {
     return (selectedEvent.eventReports as any)[reportKey] || { uploaded: false };
   };
 
+  // Convert 24-hour time to 12-hour format
+  const formatTime12Hour = (time: string): string => {
+    if (!time) return '';
+    const [hours, minutes] = time.split(':');
+    const hour = parseInt(hours, 10);
+    const ampm = hour >= 12 ? 'PM' : 'AM';
+    const displayHour = hour % 12 || 12;
+    return `${displayHour}:${minutes} ${ampm}`;
+  };
+
   const getCompletionStats = (event: Event) => {
-    if (!event.eventReports) return { completed: 0, total: 4 };
+    if (!event.eventReports) return { completed: 0, total: 2 };
     const reports = event.eventReports;
+    // Only count visible reports (completion and post-activity)
     const completed = [
       reports.completionReport?.uploaded,
-      reports.postActivityReport?.uploaded,
-      reports.assessmentReport?.uploaded,
-      reports.feedbackForm?.uploaded
+      reports.postActivityReport?.uploaded
     ].filter(Boolean).length;
-    return { completed, total: 4 };
+    return { completed, total: 2 };
   };
 
   // Filter events based on reports status
@@ -271,13 +289,13 @@ const EventReportsPage: React.FC = () => {
       >
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl md:text-3xl font-bold">Event Completion Reports</h1>
+            <h1 className="text-2xl md:text-3xl font-bold">Event Reports</h1>
             <p className="text-sm md:text-base text-muted-foreground mt-1">
-              Upload required reports for your completed events
+              Upload required reports for your ongoing events
             </p>
           </div>
           <Badge variant="outline" className="hidden sm:flex">
-            {completedEvents.length} Completed Events
+            {completedEvents.length} Ongoing Events
           </Badge>
         </div>
       </motion.div>
@@ -288,7 +306,7 @@ const EventReportsPage: React.FC = () => {
         <div className="lg:col-span-4 space-y-4">
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-lg">Your Completed Events</CardTitle>
+              <CardTitle className="text-lg">Your Ongoing Events</CardTitle>
               <CardDescription>Select an event to upload reports</CardDescription>
               
               {/* Status Tabs */}
@@ -352,53 +370,117 @@ const EventReportsPage: React.FC = () => {
                             exit={{ opacity: 0, y: -10 }}
                           >
                             <Card
-                              className={`cursor-pointer transition-all hover:shadow-md ${
-                                isSelected ? 'border-primary border-2 bg-primary/5' : ''
+                              className={`cursor-pointer transition-all duration-200 border-l-4 ${
+                                isSelected 
+                                  ? 'border-l-primary bg-gradient-to-r from-primary/5 to-transparent shadow-lg border border-primary/30' 
+                                  : 'border-l-gray-300 hover:shadow-md hover:border-l-primary/50 border border-gray-200'
                               }`}
                               onClick={() => setSelectedEvent(event)}
                             >
-                              <CardContent className="p-4 space-y-3">
-                                <div className="space-y-1">
-                                  <h3 className="font-semibold text-sm line-clamp-2">
-                                    {event.eventTitle}
-                                  </h3>
-                                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                    <MapPin className="w-3 h-3" />
-                                    <span className="line-clamp-1">
-                                      {event.locations && event.locations.length > 1
-                                        ? `${event.locations.length} locations`
-                                        : event.location}
-                                    </span>
+                              <CardContent className="p-5 space-y-4">
+                                {/* Header: Title + Status Badge */}
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="flex-1 min-w-0">
+                                    <h3 className="font-bold text-base line-clamp-2 text-gray-900">
+                                      {event.eventTitle}
+                                    </h3>
                                   </div>
-                                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                    <Calendar className="w-3 h-3" />
-                                    <span>
-                                      {format(new Date(event.startDate), 'MMM dd, yyyy')} at {event.startTime}
-                                    </span>
-                                  </div>
-                                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                    <Calendar className="w-3 h-3" />
-                                    <span className="font-medium">End:</span>
-                                    <span>
-                                      {format(new Date(event.endDate), 'MMM dd, yyyy')} at {event.endTime}
-                                    </span>
-                                  </div>
-                                </div>
-                                <Separator />
-                                <div className="flex items-center justify-between">
-                                  <span className="text-xs text-muted-foreground">
-                                    Reports: {stats.completed}/{stats.total}
-                                  </span>
                                   {stats.completed === stats.total ? (
-                                    <Badge variant="default" className="text-xs">
+                                    <Badge variant="default" className="text-xs whitespace-nowrap flex-shrink-0 bg-green-600 hover:bg-green-700">
                                       <CheckCircle2 className="w-3 h-3 mr-1" />
                                       Complete
                                     </Badge>
                                   ) : (
-                                    <Badge variant="secondary" className="text-xs">
+                                    <Badge variant="secondary" className="text-xs whitespace-nowrap flex-shrink-0 bg-yellow-100 text-yellow-800 hover:bg-yellow-200">
                                       {stats.completed}/{stats.total}
                                     </Badge>
                                   )}
+                                </div>
+
+                                {/* Locations Section */}
+                                {(event.locations?.length || event.location) && (
+                                  <div className="bg-blue-50 rounded-lg p-3 space-y-1.5">
+                                    <p className="text-xs font-semibold text-blue-900 uppercase tracking-wide">Location{event.locations?.length && event.locations.length > 1 ? 's' : ''}</p>
+                                    {event.locations && event.locations.length > 1 ? (
+                                      <div className="space-y-1">
+                                        {event.locations.map((loc, idx) => (
+                                          <div key={idx} className="flex items-center gap-2 text-sm text-blue-800">
+                                            <MapPin className="w-4 h-4 flex-shrink-0 text-blue-600" />
+                                            <span className="line-clamp-1">{loc}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <div className="flex items-center gap-2 text-sm text-blue-800">
+                                        <MapPin className="w-4 h-4 flex-shrink-0 text-blue-600" />
+                                        <span className="line-clamp-1">{event.location}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+
+                                {/* Schedule Section */}
+                                <div className="bg-purple-50 rounded-lg p-3 space-y-2">
+                                  <p className="text-xs font-semibold text-purple-900 uppercase tracking-wide">Schedule</p>
+                                  <div className="space-y-2">
+                                    {/* Day 1 - Check if it's a single day or multi-day event */}
+                                    {event.dateTimeSlots && event.dateTimeSlots.length > 0 ? (
+                                      // Multi-day event: Day 1 ends on same day
+                                      <>
+                                        <div className="flex items-start gap-2">
+                                          <Calendar className="w-4 h-4 text-purple-600 flex-shrink-0 mt-0.5" />
+                                          <div className="text-sm text-purple-800">
+                                            <p className="font-semibold">Day 1</p>
+                                            <p className="text-xs text-purple-700">
+                                              {format(new Date(event.startDate), 'MMM dd')} • {formatTime12Hour(event.startTime)} - {formatTime12Hour(event.endTime)}
+                                            </p>
+                                          </div>
+                                        </div>
+
+                                        {/* Additional Days */}
+                                        <div className="space-y-2 pt-1 border-t border-purple-200">
+                                          {event.dateTimeSlots.map((slot, idx) => (
+                                            <div key={idx} className="flex items-start gap-2">
+                                              <Calendar className="w-4 h-4 text-purple-600 flex-shrink-0 mt-0.5" />
+                                              <div className="text-sm text-purple-800">
+                                                <p className="font-semibold">Day {idx + 2}</p>
+                                                <p className="text-xs text-purple-700">
+                                                  {format(new Date(slot.startDate), 'MMM dd')} • {formatTime12Hour(slot.startTime)} - {formatTime12Hour(slot.endDate ? slot.endTime : event.endTime)}
+                                                </p>
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </>
+                                    ) : (
+                                      // Single day event
+                                      <div className="flex items-start gap-2">
+                                        <Calendar className="w-4 h-4 text-purple-600 flex-shrink-0 mt-0.5" />
+                                        <div className="text-sm text-purple-800">
+                                          <p className="font-semibold">Day 1</p>
+                                          <p className="text-xs text-purple-700">
+                                            {format(new Date(event.startDate), 'MMM dd, yyyy')} • {formatTime12Hour(event.startTime)} - {formatTime12Hour(event.endTime)}
+                                          </p>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* Progress Bar */}
+                                <div className="space-y-2">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-xs font-semibold text-gray-700">Reports Progress</span>
+                                    <span className="text-xs font-bold text-gray-900">{stats.completed}/{stats.total}</span>
+                                  </div>
+                                  <div className="w-full bg-gray-200 rounded-full h-2">
+                                    <div
+                                      className={`h-2 rounded-full transition-all duration-300 ${
+                                        stats.completed === stats.total ? 'bg-green-500' : 'bg-blue-500'
+                                      }`}
+                                      style={{ width: `${(stats.completed / stats.total) * 100}%` }}
+                                    />
+                                  </div>
                                 </div>
                               </CardContent>
                             </Card>
