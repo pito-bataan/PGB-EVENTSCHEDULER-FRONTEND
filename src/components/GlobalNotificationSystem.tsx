@@ -393,42 +393,67 @@ export default function GlobalNotificationSystem() {
         detail: { type: 'new', data: notificationData } 
       }));
       
-      // Create a custom toast with Framer Motion animation
+      // Create a custom toast with Framer Motion animation - Professional Design
       // Use unique ID to allow multiple toasts to stack
       toast.custom((t) => (
         <motion.div
-          initial={{ opacity: 0, x: 100, scale: 0.8 }}
-          animate={{ opacity: 1, x: 0, scale: 1 }}
-          exit={{ opacity: 0, x: 100, scale: 0.8 }}
+          initial={{ opacity: 0, y: 20, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 20, scale: 0.95 }}
           transition={{ duration: 0.3, ease: "easeOut" }}
-          className="bg-white border border-gray-200 rounded-lg shadow-lg p-4 max-w-sm cursor-pointer hover:shadow-xl transition-shadow"
+          className="bg-white rounded-xl shadow-2xl overflow-hidden w-80 cursor-pointer hover:shadow-3xl transition-all duration-200 border border-gray-100"
           onClick={() => {
             toast.dismiss(t);
             // Navigate to dashboard or open notification
             window.location.href = '/users/dashboard';
           }}
         >
-          <div className="flex items-start gap-3">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <Bell className="h-5 w-5 text-blue-600" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between mb-1">
-                <h4 className="font-semibold text-sm text-gray-900">{notificationTitle}</h4>
-                <span className="text-xs text-gray-500">Now</span>
+          {/* Header with gradient background */}
+          <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-white/20 rounded-lg">
+                <Bell className="h-5 w-5 text-white" />
               </div>
-              <p className="text-sm text-gray-600 leading-relaxed">
-                {notificationMessage}
-              </p>
-              <div className="mt-2">
-                <Badge variant="destructive" className="text-xs">New</Badge>
+              <div>
+                <h3 className="font-bold text-white text-sm">{notificationTitle}</h3>
+                <p className="text-blue-100 text-xs">Just now</p>
               </div>
             </div>
+          </div>
+
+          {/* Content section */}
+          <div className="px-6 py-4 space-y-3">
+            {/* Notification Message */}
+            <div>
+              <p className="text-gray-700 text-sm leading-relaxed font-medium">{notificationMessage}</p>
+            </div>
+
+            {/* Event Title if available */}
+            {notificationData.eventTitle && (
+              <div>
+                <p className="text-gray-500 text-xs font-semibold uppercase tracking-wide">Event</p>
+                <p className="text-gray-900 font-bold text-base mt-1">{notificationData.eventTitle}</p>
+              </div>
+            )}
+
+            {/* Additional Info */}
+            {notificationData.requestor && (
+              <div>
+                <p className="text-gray-500 text-xs font-semibold uppercase tracking-wide">Requestor</p>
+                <p className="text-gray-700 text-sm mt-1">{notificationData.requestor}</p>
+              </div>
+            )}
+          </div>
+
+          {/* Footer with action */}
+          <div className="bg-gray-50 px-6 py-3 border-t border-gray-100 flex items-center justify-between">
+            <span className="text-xs text-gray-500">Click to view details</span>
+            <Badge className="text-xs bg-blue-600 hover:bg-blue-700 text-white">View</Badge>
           </div>
         </motion.div>
       ), {
         id: notificationId, // Unique ID allows multiple toasts to stack
-        duration: 4000, // Reduced from 5s to 4s for faster clearing
+        duration: 5000, // 5 seconds for better readability
         position: 'bottom-right',
       });
     };

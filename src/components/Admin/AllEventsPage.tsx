@@ -4,7 +4,7 @@ import { format } from 'date-fns';
 import { motion } from 'framer-motion';
 import jsPDF from 'jspdf';
 import { toast } from 'sonner';
-import { useSocket } from '@/hooks/useSocket';
+import { useSocket, getGlobalSocket } from '@/hooks/useSocket';
 import { useAllEventsStore, type Event } from '@/stores/allEventsStore';
 import {
   Card,
@@ -121,6 +121,8 @@ const AllEventsPage: React.FC = () => {
     sortBy,
     selectedEvent: storeSelectedEvent,
     fetchAllEvents,
+    addNewEvent,
+    updateEventStatus,
     setSearchQuery,
     setStatusFilter,
     setDepartmentFilter,
@@ -150,6 +152,9 @@ const AllEventsPage: React.FC = () => {
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [pendingCancelReason, setPendingCancelReason] = useState<string>('');
   
+  // Track last submitted events count for notifications
+  const [lastSubmittedCount, setLastSubmittedCount] = useState(0);
+  
   // Use store's selected event or local state for status dialog
   const selectedEvent = storeSelectedEvent;
 
@@ -170,35 +175,221 @@ const AllEventsPage: React.FC = () => {
   const userRole = getUserRole();
   const isSuperAdmin = userRole === 'superadmin';
 
-  // Listen for real-time event updates via Socket.IO
+  // Request notification permission on mount
   useEffect(() => {
-    if (!socket) {
-      console.log('❌ AllEvents: Socket not available');
-      return;
+    if ('Notification' in window && Notification.permission === 'default') {
+      console.log('🔔 Requesting notification permission...');
+      Notification.requestPermission().then(permission => {
+        console.log('🔔 Notification permission:', permission);
+      });
     }
+  }, []);
 
-    console.log('✅ AllEvents: Setting up socket listener for event-updated');
+  // Set up Socket.IO listeners with retry logic
+  useEffect(() => {
+    let retryCount = 0;
+    const maxRetries = 5;
+    
+    const setupSocketListeners = () => {
+      const socket = getGlobalSocket();
+      
+      if (!socket) {
+        console.log(`❌ AllEvents: Socket not available (retry ${retryCount}/${maxRetries})`);
+        if (retryCount < maxRetries) {
+          retryCount++;
+          setTimeout(setupSocketListeners, 1000);
+        }
+        return;
+      }
 
-    const handleEventUpdated = (data: any) => {
-      console.log('📋 AllEvents: Received event-updated:', data);
-      // Force refresh to get the latest data
-      fetchAllEvents(true);
-    };
+      console.log('✅ AllEvents: Setting up socket listener for event-created, event-updated, event-status-updated');
 
-    const handleEventStatusUpdated = (data: any) => {
-      console.log('📋 AllEvents: Received event-status-updated:', data);
-      // Also refresh on status updates
-      fetchAllEvents(true);
-    };
+      const handleEventCreated = (data: any) => {
+        console.log('📋 AllEvents: Received event-created:', data);
+        
+        // Add new event to store immediately for real-time display
+        addNewEvent(data);
+        
+        // Show push notification for new submitted events
+        if (data.status?.toLowerCase() === 'submitted') {
+          const eventTitle = data.title || data.eventTitle || 'New Event';
+          const requestor = data.requestor || data.createdBy || 'Unknown';
+          const department = data.requestorDepartment || data.department || data.departmentName || 'Unknown Department';
+          
+          // Format date and time properly
+          let eventDate = 'TBD';
+          let eventTime = '';
+          if (data.startDate) {
+            try {
+              const dateObj = new Date(data.startDate);
+              // Extract just the date part (YYYY-MM-DD)
+              const dateStr = dateObj.toISOString().split('T')[0];
+              const [year, month, day] = dateStr.split('-');
+              const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+              eventDate = `${monthNames[parseInt(month) - 1]} ${parseInt(day)}, ${year}`;
+            } catch (e) {
+              eventDate = 'TBD';
+            }
+          }
+          if (data.startTime) {
+            eventTime = data.startTime;
+          }
+          
+          const formattedDateTime = eventTime ? `${eventDate} at ${eventTime}` : eventDate;
+          console.log('📅 Formatted date/time:', formattedDateTime);
+          
+          console.log('🔔 Showing notification for submitted event:', eventTitle);
+          
+          // Show browser notification
+          if ('Notification' in window && Notification.permission === 'granted') {
+            try {
+              const notification = new Notification('📋 New Event Submitted', {
+                body: `${eventTitle}\nBy: ${requestor}\nDepartment: ${department}\n${formattedDateTime}`,
+                icon: `${window.location.origin}/images/bataanlogo.png`,
+                badge: `${window.location.origin}/images/bataanlogo.png`,
+                tag: 'new-event-' + data._id,
+                requireInteraction: false
+              });
+              
+              console.log('✅ Browser notification shown');
+              setTimeout(() => notification.close(), 5000);
+            } catch (e) {
+              console.error('❌ Notification failed:', e);
+            }
+          } else {
+            console.warn('⚠️ Notification permission not granted or not available');
+          }
+          
+          // Dispatch custom event for toast notification
+          window.dispatchEvent(new CustomEvent('newEventSubmitted', {
+            detail: {
+              eventId: data._id,
+              eventTitle: eventTitle,
+              requestor: requestor,
+              department: department,
+              eventDate: formattedDateTime
+            }
+          }));
+        }
+      };
 
-    socket.on('event-updated', handleEventUpdated);
-    socket.on('event-status-updated', handleEventStatusUpdated);
+      const handleEventUpdated = (data: any) => {
+        console.log('📋 AllEvents: Received event-updated:', data);
+        // Update event in store immediately
+        addNewEvent(data);
+      };
 
-    return () => {
+      const handleEventStatusUpdated = (data: any) => {
+        console.log('📋 AllEvents: Received event-status-updated:', data);
+        // Update event status in store immediately
+        if (data._id && data.status) {
+          updateEventStatus(data._id, data.status);
+        }
+      };
+
+      // Remove any existing listeners first to prevent duplicates
+      socket.off('event-created', handleEventCreated);
       socket.off('event-updated', handleEventUpdated);
       socket.off('event-status-updated', handleEventStatusUpdated);
+
+      // Add listeners
+      socket.on('event-created', handleEventCreated);
+      socket.on('event-updated', handleEventUpdated);
+      socket.on('event-status-updated', handleEventStatusUpdated);
+
+      console.log('✅ AllEvents: Socket listeners attached successfully');
     };
-  }, [socket, fetchAllEvents]);
+
+    setupSocketListeners();
+
+    return () => {
+      const socket = getGlobalSocket();
+      if (socket) {
+        socket.off('event-created');
+        socket.off('event-updated');
+        socket.off('event-status-updated');
+      }
+    };
+  }, [addNewEvent, updateEventStatus]);
+
+  // Listen for new event submitted custom event and show toast
+  useEffect(() => {
+    const handleNewEventSubmitted = (event: any) => {
+      const detail = event.detail;
+      console.log('🔔 New event submitted notification:', detail);
+      
+      // Show toast notification with professional design
+      toast.custom((t) => (
+        <motion.div
+          initial={{ opacity: 0, y: 20, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 20, scale: 0.95 }}
+          transition={{ duration: 0.3, ease: "easeOut" }}
+          className="bg-white rounded-xl shadow-2xl overflow-hidden w-80 cursor-pointer hover:shadow-3xl transition-all duration-200 border border-gray-100"
+          onClick={() => {
+            toast.dismiss(t);
+            window.location.href = '/admin/all-events';
+          }}
+        >
+          {/* Header with gradient background */}
+          <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-white/20 rounded-lg">
+                <FileText className="h-5 w-5 text-white" />
+              </div>
+              <div>
+                <h3 className="font-bold text-white text-sm">New Event Submitted</h3>
+                <p className="text-blue-100 text-xs">Just now</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Content section */}
+          <div className="px-6 py-4 space-y-3">
+            {/* Event Title */}
+            <div>
+              <p className="text-gray-500 text-xs font-semibold uppercase tracking-wide">Event</p>
+              <p className="text-gray-900 font-bold text-base mt-1">{detail.eventTitle}</p>
+            </div>
+
+            {/* Requestor and Department */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-gray-500 text-xs font-semibold uppercase tracking-wide">Requestor</p>
+                <p className="text-gray-700 text-sm mt-1">{detail.requestor}</p>
+              </div>
+              <div>
+                <p className="text-gray-500 text-xs font-semibold uppercase tracking-wide">Department</p>
+                <p className="text-gray-700 text-sm mt-1">{detail.department}</p>
+              </div>
+            </div>
+
+            {/* Date and Time */}
+            <div>
+              <p className="text-gray-500 text-xs font-semibold uppercase tracking-wide">Scheduled</p>
+              <p className="text-gray-700 text-sm mt-1">{detail.eventDate}</p>
+            </div>
+          </div>
+
+          {/* Footer with action */}
+          <div className="bg-gray-50 px-6 py-3 border-t border-gray-100 flex items-center justify-between">
+            <span className="text-xs text-gray-500">Click to view details</span>
+            <Badge className="text-xs bg-blue-600 hover:bg-blue-700 text-white">View Event</Badge>
+          </div>
+        </motion.div>
+      ), {
+        id: 'new-event-' + detail.eventId,
+        duration: 6000,
+        position: 'bottom-right',
+      });
+    };
+
+    window.addEventListener('newEventSubmitted', handleNewEventSubmitted);
+    
+    return () => {
+      window.removeEventListener('newEventSubmitted', handleNewEventSubmitted);
+    };
+  }, []);
 
   // Check and auto-complete expired events (optimized - no API calls unless needed)
   const checkAndCompleteExpiredEvents = async () => {

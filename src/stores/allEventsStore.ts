@@ -91,6 +91,8 @@ interface AllEventsState {
   
   // Actions
   fetchAllEvents: (force?: boolean) => Promise<void>;
+  addNewEvent: (event: Event) => void;
+  updateEventStatus: (eventId: string, newStatus: string) => void;
   setSelectedEvent: (event: Event | null) => void;
   setSearchQuery: (query: string) => void;
   setLocationFilter: (location: string) => void;
@@ -175,6 +177,31 @@ export const useAllEventsStore = create<AllEventsState>()(
         } catch (error) {
           set({ loading: false });
         }
+      },
+      
+      // Add new event to the store in real-time
+      addNewEvent: (event: Event) => {
+        const state = get();
+        // Check if event already exists
+        const exists = state.events.some(e => e._id === event._id);
+        if (!exists) {
+          set({
+            events: [event, ...state.events],
+            lastFetched: Date.now() // Update cache time
+          });
+        }
+      },
+      
+      // Update event status in real-time
+      updateEventStatus: (eventId: string, newStatus: string) => {
+        const state = get();
+        const updatedEvents = state.events.map(event =>
+          event._id === eventId ? { ...event, status: newStatus as any } : event
+        );
+        set({
+          events: updatedEvents,
+          lastFetched: Date.now()
+        });
       },
       
       setSelectedEvent: (event: Event | null) => {

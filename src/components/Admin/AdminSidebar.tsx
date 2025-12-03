@@ -40,6 +40,7 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ user }) => {
   };
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [calendarEventCount, setCalendarEventCount] = useState(0);
+  const [submittedEventsCount, setSubmittedEventsCount] = useState(0);
   const navigate = useNavigate();
   const location = useLocation();
   
@@ -114,12 +115,39 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ user }) => {
     }
   };
 
+  // Fetch submitted events count (for All Events badge)
+  const fetchSubmittedEventsCount = async () => {
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await axios.get(`${API_BASE_URL}/events`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (response.data.success) {
+        const events = response.data.data || [];
+        // Count only submitted events
+        const count = events.filter((event: any) => 
+          event.status?.toLowerCase() === 'submitted'
+        ).length;
+        setSubmittedEventsCount(count);
+      }
+    } catch (error) {
+      console.error('Error fetching submitted events count:', error);
+    }
+  };
+
   // Fetch count on mount and when location changes
   useEffect(() => {
     fetchCalendarEventCount();
+    fetchSubmittedEventsCount();
     
     // Refresh every 30 seconds as fallback
-    const interval = setInterval(fetchCalendarEventCount, 30000);
+    const interval = setInterval(() => {
+      fetchCalendarEventCount();
+      fetchSubmittedEventsCount();
+    }, 30000);
     
     return () => clearInterval(interval);
   }, [location.pathname]);
@@ -134,18 +162,22 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ user }) => {
 
     const handleEventCreated = (data: any) => {
       fetchCalendarEventCount();
+      fetchSubmittedEventsCount();
     };
 
     const handleEventUpdated = (data: any) => {
       fetchCalendarEventCount();
+      fetchSubmittedEventsCount();
     };
 
     const handleEventDeleted = (data: any) => {
       fetchCalendarEventCount();
+      fetchSubmittedEventsCount();
     };
 
     const handleEventStatusUpdated = (data: any) => {
       fetchCalendarEventCount();
+      fetchSubmittedEventsCount();
     };
 
     // Remove existing listeners to prevent duplicates
@@ -221,7 +253,9 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ user }) => {
           const Icon = item.icon;
           const isActive = location.pathname === item.href;
           const isCalendar = item.href === '/admin/calendar';
-          const showBadge = isCalendar && calendarEventCount > 0;
+          const isAllEvents = item.href === '/admin/all-events';
+          const showCalendarBadge = isCalendar && calendarEventCount > 0;
+          const showAllEventsBadge = isAllEvents && submittedEventsCount > 0;
           
           return (
             <Button
@@ -243,9 +277,16 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ user }) => {
               {!isCollapsed && <span className="font-medium">{item.label}</span>}
               
               {/* Badge for Calendar */}
-              {showBadge && !isCollapsed && (
+              {showCalendarBadge && !isCollapsed && (
                 <div className="absolute right-3 top-1/2 -translate-y-1/2 bg-red-500 text-white text-xs font-semibold rounded-full min-w-[20px] h-5 flex items-center justify-center px-1.5">
                   {calendarEventCount > 99 ? '99+' : calendarEventCount}
+                </div>
+              )}
+
+              {/* Badge for All Events (submitted events count) */}
+              {showAllEventsBadge && !isCollapsed && (
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 bg-red-500 text-white text-xs font-semibold rounded-full min-w-[20px] h-5 flex items-center justify-center px-1.5">
+                  {submittedEventsCount > 99 ? '99+' : submittedEventsCount}
                 </div>
               )}
             </Button>
