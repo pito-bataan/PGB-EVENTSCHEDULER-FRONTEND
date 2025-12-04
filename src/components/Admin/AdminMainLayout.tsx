@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import AdminSidebar from './AdminSidebar';
+import AdminNotificationSystem from './AdminNotificationSystem';
 
 interface AdminMainLayoutProps {
   children: React.ReactNode;
@@ -29,6 +30,7 @@ const AdminMainLayout: React.FC<AdminMainLayoutProps> = ({ children }) => {
 
   return (
     <div className="flex h-screen bg-gray-50">
+      <AdminNotificationSystem />
       <AdminSidebar user={currentUser} />
       <main className="flex-1 overflow-auto">
         {children}
