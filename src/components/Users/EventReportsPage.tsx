@@ -127,14 +127,14 @@ const EventReportsPage: React.FC = () => {
 
       console.log('📊 All events:', response.data.data);
       
-      // Filter only ongoing events
+      // Filter events: approved, ongoing, and completed
       const ongoing = response.data.data.filter((event: Event) => {
         const status = event.status?.toLowerCase();
-        // Show events that are approved or ongoing (not draft, submitted, rejected, or cancelled)
-        return status === 'approved' || status === 'ongoing';
+        // Show events that are approved, ongoing, or completed (not draft, submitted, rejected, or cancelled)
+        return status === 'approved' || status === 'ongoing' || status === 'completed';
       });
       
-      console.log('✅ Ongoing events:', ongoing);
+      console.log('✅ Ongoing/Completed events:', ongoing);
       
       setCompletedEvents(ongoing);
       if (ongoing.length > 0 && !selectedEvent) {
@@ -295,7 +295,7 @@ const EventReportsPage: React.FC = () => {
             </p>
           </div>
           <Badge variant="outline" className="hidden sm:flex">
-            {completedEvents.length} Ongoing Events
+            {completedEvents.length} Events
           </Badge>
         </div>
       </motion.div>
@@ -303,7 +303,7 @@ const EventReportsPage: React.FC = () => {
       {/* Main Content */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left: Events List */}
-        <div className="lg:col-span-4 space-y-4">
+        <div className="lg:col-span-5 space-y-4">
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-lg">Your Ongoing Events</CardTitle>
@@ -496,7 +496,7 @@ const EventReportsPage: React.FC = () => {
         </div>
 
         {/* Right: Report Forms */}
-        <div className="lg:col-span-8">
+        <div className="lg:col-span-7">
           <Card className="h-full">
             <CardContent className="p-6">
               {!selectedEvent ? (

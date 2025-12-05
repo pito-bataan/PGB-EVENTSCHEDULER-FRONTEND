@@ -841,9 +841,35 @@ const MyEventsPage: React.FC = () => {
       return matchesSearch && matchesStatus;
     })
     .sort((a, b) => {
-      switch (sortBy) {
-        case 'newest':
+      // Smart default sorting: incoming first, then ongoing, then completed last
+      if (sortBy === 'newest') {
+        // First sort by status priority
+        const statusPriority: { [key: string]: number } = {
+          'incoming': 0,
+          'ongoing': 1,
+          'approved': 2,
+          'submitted': 3,
+          'draft': 4,
+          'completed': 5,
+          'rejected': 6,
+          'cancelled': 7
+        };
+        
+        const priorityA = statusPriority[a.dynamicStatus] ?? 99;
+        const priorityB = statusPriority[b.dynamicStatus] ?? 99;
+        
+        if (priorityA !== priorityB) {
+          return priorityA - priorityB;
+        }
+        
+        // Then sort by date (earliest first for incoming/ongoing, latest first for completed)
+        if (a.dynamicStatus === 'completed' && b.dynamicStatus === 'completed') {
           return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        }
+        return new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
+      }
+      
+      switch (sortBy) {
         case 'oldest':
           return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
         case 'date-asc':
@@ -1927,96 +1953,102 @@ const MyEventsPage: React.FC = () => {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2 }}
       >
-        <Card>
-          <CardContent className="p-3 md:p-4">
-            <div className="flex flex-col gap-3 md:gap-4">
-              <div className="w-full">
+        <Card className="bg-white border border-gray-200">
+          <CardContent className="p-4 md:p-6">
+            <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-4 justify-between">
+              {/* Search Input - Left Side */}
+              <div className="w-full lg:w-96">
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                  <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                   <Input
-                    placeholder="Search events..."
+                    placeholder="Search events, location, requestor..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10 text-sm"
+                    className="pl-12 pr-4 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
               </div>
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 md:gap-4">
-                <div className="flex items-center gap-2 flex-1 sm:flex-none">
-                  <Filter className="w-4 h-4 text-gray-500 flex-shrink-0" />
+              
+              {/* Filter and Sort - Right Side */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 lg:gap-4">
+                {/* Status Filter */}
+                <div className="flex items-center gap-2 lg:gap-3">
+                  <Filter className="w-5 h-5 text-gray-600 flex-shrink-0 hidden sm:block" />
                   <Select value={statusFilter} onValueChange={setStatusFilter}>
-                    <SelectTrigger className="w-full sm:w-40 text-sm">
+                    <SelectTrigger className="w-full sm:w-44 text-sm border border-gray-300 rounded-lg">
                       <SelectValue placeholder="Filter by status" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">
-                        <div className="flex items-center justify-between w-full gap-4">
-                          <span>All Status</span>
-                          <Badge variant="secondary" className="ml-auto">{events.length}</Badge>
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="draft">
-                        <div className="flex items-center justify-between w-full gap-4">
-                          <span>Draft</span>
-                          <Badge variant="secondary" className="ml-auto">{events.filter(e => e.status === 'draft').length}</Badge>
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="submitted">
-                        <div className="flex items-center justify-between w-full gap-4">
-                          <span>Submitted</span>
-                          <Badge variant="secondary" className="ml-auto">{events.filter(e => e.status === 'submitted').length}</Badge>
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="approved">
-                        <div className="flex items-center justify-between w-full gap-4">
-                          <span>Approved</span>
-                          <Badge variant="secondary" className="ml-auto">{events.filter(e => e.status === 'approved').length}</Badge>
+                        <div className="flex items-center gap-3">
+                          <span className="font-medium">All Status</span>
+                          <Badge variant="secondary" className="text-xs">{events.length}</Badge>
                         </div>
                       </SelectItem>
                       <SelectItem value="incoming">
-                        <div className="flex items-center justify-between w-full gap-4">
+                        <div className="flex items-center gap-3">
                           <span>Incoming</span>
-                          <Badge variant="secondary" className="ml-auto">{events.filter(e => getDynamicStatus(e) === 'incoming').length}</Badge>
+                          <Badge variant="secondary" className="text-xs">{events.filter(e => getDynamicStatus(e) === 'incoming').length}</Badge>
                         </div>
                       </SelectItem>
                       <SelectItem value="ongoing">
-                        <div className="flex items-center justify-between w-full gap-4">
+                        <div className="flex items-center gap-3">
                           <span>Ongoing</span>
-                          <Badge variant="secondary" className="ml-auto">{events.filter(e => getDynamicStatus(e) === 'ongoing').length}</Badge>
+                          <Badge variant="secondary" className="text-xs">{events.filter(e => getDynamicStatus(e) === 'ongoing').length}</Badge>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="approved">
+                        <div className="flex items-center gap-3">
+                          <span>Approved</span>
+                          <Badge variant="secondary" className="text-xs">{events.filter(e => e.status === 'approved').length}</Badge>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="submitted">
+                        <div className="flex items-center gap-3">
+                          <span>Submitted</span>
+                          <Badge variant="secondary" className="text-xs">{events.filter(e => e.status === 'submitted').length}</Badge>
                         </div>
                       </SelectItem>
                       <SelectItem value="completed">
-                        <div className="flex items-center justify-between w-full gap-4">
+                        <div className="flex items-center gap-3">
                           <span>Completed</span>
-                          <Badge variant="secondary" className="ml-auto">{events.filter(e => getDynamicStatus(e) === 'completed').length}</Badge>
+                          <Badge variant="secondary" className="text-xs">{events.filter(e => getDynamicStatus(e) === 'completed').length}</Badge>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="draft">
+                        <div className="flex items-center gap-3">
+                          <span>Draft</span>
+                          <Badge variant="secondary" className="text-xs">{events.filter(e => e.status === 'draft').length}</Badge>
                         </div>
                       </SelectItem>
                       <SelectItem value="rejected">
-                        <div className="flex items-center justify-between w-full gap-4">
+                        <div className="flex items-center gap-3">
                           <span>Rejected</span>
-                          <Badge variant="secondary" className="ml-auto">{events.filter(e => e.status === 'rejected').length}</Badge>
+                          <Badge variant="secondary" className="text-xs">{events.filter(e => e.status === 'rejected').length}</Badge>
                         </div>
                       </SelectItem>
                       <SelectItem value="cancelled">
-                        <div className="flex items-center justify-between w-full gap-4">
+                        <div className="flex items-center gap-3">
                           <span>Cancelled</span>
-                          <Badge variant="secondary" className="ml-auto">{events.filter(e => e.status === 'cancelled').length}</Badge>
+                          <Badge variant="secondary" className="text-xs">{events.filter(e => e.status === 'cancelled').length}</Badge>
                         </div>
                       </SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="flex items-center gap-2 flex-1 sm:flex-none">
-                  <span className="text-xs md:text-sm text-gray-500 whitespace-nowrap">Sort by:</span>
+                
+                {/* Sort By */}
+                <div className="flex items-center gap-2 lg:gap-3">
+                  <span className="text-sm font-medium text-gray-700 whitespace-nowrap hidden sm:inline">Sort:</span>
                   <Select value={sortBy} onValueChange={setSortBy}>
-                    <SelectTrigger className="w-full sm:w-44 text-sm">
+                    <SelectTrigger className="w-full sm:w-44 text-sm border border-gray-300 rounded-lg">
                       <SelectValue placeholder="Sort by" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="newest">Newest First</SelectItem>
-                      <SelectItem value="oldest">Oldest First</SelectItem>
-                      <SelectItem value="date-asc">Event Date (Earliest)</SelectItem>
-                      <SelectItem value="date-desc">Event Date (Latest)</SelectItem>
+                      <SelectItem value="newest">Smart (Incoming → Ongoing → Completed)</SelectItem>
+                      <SelectItem value="date-asc">Event Date (Earliest First)</SelectItem>
+                      <SelectItem value="date-desc">Event Date (Latest First)</SelectItem>
+                      <SelectItem value="oldest">Created Date (Oldest First)</SelectItem>
                       <SelectItem value="title">Title (A-Z)</SelectItem>
                     </SelectContent>
                   </Select>
@@ -2064,7 +2096,7 @@ const MyEventsPage: React.FC = () => {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+          <div className="grid grid-cols-1 gap-4 md:gap-5">
             {filteredAndSortedEvents.map((event, index) => {
             const statusInfo = getStatusInfo(event.dynamicStatus);
             

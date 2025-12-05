@@ -794,12 +794,13 @@ const TaggedDepartmentPage: React.FC = () => {
                                         event.status === 'submitted' ? 'bg-blue-500 text-white' :
                                         event.status === 'rejected' ? 'bg-red-500 text-white' :
                                         event.status === 'cancelled' ? 'bg-yellow-600 text-white' :
+                                        event.status === 'ended' ? 'bg-blue-600 text-white' :
                                         'bg-gray-500 text-white'
                                       }`}>
                                         {event.status}
                                       </Badge>
                                       <Badge className="text-[10px] h-4 bg-green-500 text-white flex-shrink-0">
-                                        ✓ Complete
+                                        ✓ Confirmed
                                       </Badge>
                                     </div>
                                     <div className="space-y-1">

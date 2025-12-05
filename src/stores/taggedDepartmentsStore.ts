@@ -176,12 +176,12 @@ export const useTaggedDepartmentsStore = create<TaggedDepartmentsState>()(
           const data = await response.json();
           console.log('📦 Fetched events data:', data.data?.length, 'events');
           if (data.success && Array.isArray(data.data)) {
-            // Filter events to only show APPROVED events with RELEASED requirements
+            // Filter events to only show APPROVED or COMPLETED events with RELEASED requirements
             const filteredEvents = data.data
               .filter((event: Event) => {
-                // CRITICAL: Only show events that are APPROVED (not submitted/pending)
-                if (event.status !== 'approved') {
-                  console.log(`🚫 Hiding event "${event.eventTitle}" - status: ${event.status} (not approved)`);
+                // CRITICAL: Only show events that are APPROVED or COMPLETED (keep completed events for records)
+                if (event.status !== 'approved' && event.status !== 'completed') {
+                  console.log(`🚫 Hiding event "${event.eventTitle}" - status: ${event.status} (not approved or completed)`);
                   return false;
                 }
                 return true;
