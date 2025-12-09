@@ -64,6 +64,7 @@ interface Event {
   location: string;
   locations?: string[]; // Array for multiple conference rooms
   multipleLocations?: boolean;
+  roomType?: string; // Room type for the location
   description?: string;
   participants: number;
   vip?: number;
@@ -2358,6 +2359,12 @@ const MyEventsPage: React.FC = () => {
                       <p className="text-xs md:text-sm text-gray-900 mt-1">{selectedEvent.location}</p>
                     )}
                   </div>
+                  {selectedEvent.roomType && (
+                    <div>
+                      <label className="text-xs md:text-sm font-medium text-gray-700">Room Type</label>
+                      <p className="text-xs md:text-sm text-gray-900 mt-1">{selectedEvent.roomType}</p>
+                    </div>
+                  )}
                 </div>
                 
                 <div className="space-y-4">

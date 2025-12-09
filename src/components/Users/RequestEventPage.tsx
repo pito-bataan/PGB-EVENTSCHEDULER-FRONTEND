@@ -4082,7 +4082,7 @@ const RequestEventPage: React.FC = () => {
                 </p>
               )}
               {formData.startDate && conflictingEvents.length > 0 && (
-                <div className="mt-2 space-y-1">
+                <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
                   {(() => {
                     // Filter events that actually booked THIS venue/location
                     const currentLocation = formData.location || selectedLocation;
@@ -4101,14 +4101,24 @@ const RequestEventPage: React.FC = () => {
                       .filter((v, i, a) => a.indexOf(v) === i);
                     
                     return venueBookers.length > 0 && (
-                      <p className="text-xs text-orange-600">
-                        <strong>VENUE:</strong> {venueBookers.join(', ')} also booked this venue - please check the available start time and end time
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <Badge className="bg-orange-600 text-white text-xs px-2 py-0.5 h-5 flex-shrink-0 whitespace-nowrap">
+                          VENUE
+                        </Badge>
+                        <p className="text-xs text-amber-900">
+                          <strong>{venueBookers.join(', ')}</strong> has booked this venue. Select a different time.
+                        </p>
+                      </div>
                     );
                   })()}
-                  <p className="text-xs text-blue-600">
-                    <strong>REQ:</strong> Requirements already booked by existing events
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <Badge className="bg-blue-600 text-white text-xs px-2 py-0.5 h-5 flex-shrink-0 whitespace-nowrap">
+                      REQ
+                    </Badge>
+                    <p className="text-xs text-blue-900">
+                      Requirements already booked by existing events.
+                    </p>
+                  </div>
                 </div>
               )}
             </div>
@@ -4142,6 +4152,8 @@ const RequestEventPage: React.FC = () => {
                         if (date) {
                           handleInputChange('endDate', date);
                         }
+                        // Clear conflicting events when date changes so alert disappears
+                        setConflictingEvents([]);
                       }}
                       disabled={isDateDisabled}
                       initialFocus
@@ -4234,7 +4246,11 @@ const RequestEventPage: React.FC = () => {
                     <Calendar
                       mode="single"
                       selected={formData.endDate}
-                      onSelect={(date) => handleInputChange('endDate', date)}
+                      onSelect={(date) => {
+                        handleInputChange('endDate', date);
+                        // Clear conflicting events when date changes so alert disappears
+                        setConflictingEvents([]);
+                      }}
                       disabled={isDateDisabled}
                       initialFocus
                     />

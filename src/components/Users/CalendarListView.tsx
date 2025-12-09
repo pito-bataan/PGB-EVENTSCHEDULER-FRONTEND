@@ -46,6 +46,7 @@ interface CalendarEvent {
   location: string;
   locations?: string[];
   multipleLocations?: boolean;
+  roomType?: string; // Room type for the location
   startDate: string;
   endDate: string;
   startTime: string;
@@ -608,7 +609,7 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
 
                                 <div className="flex items-start gap-3">
                                   <MapPin className="w-7 h-7 text-gray-700 flex-shrink-0 mt-0.5" />
-                                  <div>
+                                  <div className="flex-1">
                                     <p className="text-base font-medium text-muted-foreground mb-1">
                                       {event.multipleLocations && event.locations && event.locations.length > 1 ? 'Locations' : 'Location'}
                                     </p>
@@ -622,6 +623,11 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
                                       </div>
                                     ) : (
                                       <p className="text-lg font-semibold">{event.location}</p>
+                                    )}
+                                    {event.roomType && (
+                                      <p className="text-sm text-gray-600 mt-1">
+                                        <span className="font-medium">Room Type:</span> {event.roomType}
+                                      </p>
                                     )}
                                   </div>
                                 </div>

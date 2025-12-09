@@ -47,6 +47,7 @@ interface Event {
   location: string;
   locations?: string[];
   multipleLocations?: boolean;
+  roomType?: string; // Room type for the location
   status: string; // Event status: submitted, approved, rejected, etc.
   numberOfParticipants: number;
   numberOfVIP: number;
