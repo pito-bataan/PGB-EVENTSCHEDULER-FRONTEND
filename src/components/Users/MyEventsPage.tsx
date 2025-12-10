@@ -187,6 +187,11 @@ const MyEventsPage: React.FC = () => {
     new Set(JSON.parse(localStorage.getItem('viewedTaggedRequirementsEvents') || '[]'))
   );
 
+  // Track when each event was last viewed (timestamp)
+  const [lastViewedTimestamps, setLastViewedTimestamps] = useState<{ [eventId: string]: number }>(
+    JSON.parse(localStorage.getItem('lastViewedTimestamps') || '{}')
+  );
+
   // Socket helpers for status updates
   const { onStatusUpdate, offStatusUpdate } = useSocket(userId);
 
@@ -221,8 +226,16 @@ const MyEventsPage: React.FC = () => {
         if (response.data?.success && response.data.data) {
           const updatedEvent = response.data.data as Event;
 
-          // Update main events list
-          setEvents(prev => prev.map(ev => (ev._id === updatedEvent._id ? updatedEvent : ev)));
+          // Reset viewed status FIRST so badge shows again with new updates
+          setViewedTaggedRequirementsEvents(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(data.eventId);
+            localStorage.setItem('viewedTaggedRequirementsEvents', JSON.stringify(Array.from(newSet)));
+            return newSet;
+          });
+
+          // Update main events list with new object reference
+          setEvents(prev => prev.map(ev => (ev._id === updatedEvent._id ? {...updatedEvent} : ev)));
 
           // Update currently open Tagged Departments modal event, if matches
           setSelectedEventDepartments(prev => (prev && prev._id === updatedEvent._id ? updatedEvent : prev));
@@ -231,18 +244,55 @@ const MyEventsPage: React.FC = () => {
       }
     };
 
+    const handleRequirementNoteUpdate = async (data: any) => {
+      if (!data || !data.eventId) return;
+
+      try {
+        const token = localStorage.getItem('authToken');
+        const response = await axios.get(`${API_BASE_URL}/events/${data.eventId}`, {
+          headers: {
+            'Authorization': token ? `Bearer ${token}` : '',
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (response.data?.success && response.data.data) {
+          const updatedEvent = response.data.data as Event;
+
+          // Reset viewed status FIRST so badge shows again with new updates
+          setViewedTaggedRequirementsEvents(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(data.eventId);
+            localStorage.setItem('viewedTaggedRequirementsEvents', JSON.stringify(Array.from(newSet)));
+            return newSet;
+          });
+
+          // Update main events list with new object reference - this will trigger re-render and update badge
+          setEvents(prev => prev.map(ev => (ev._id === updatedEvent._id ? {...updatedEvent} : ev)));
+
+          // IMPORTANT: Always update the modal with fresh data
+          // This ensures the modal shows the latest department notes in real-time
+          setSelectedEventDepartments(prev => (prev && prev._id === updatedEvent._id ? {...updatedEvent} : prev));
+        }
+      } catch (error) {
+      }
+    };
+
     if (socket.connected) {
       socket.on('reply-update', handleReplyUpdate);
+      socket.on('requirement-note-update', handleRequirementNoteUpdate);
     } else {
       socket.once('connect', () => {
         socket.on('reply-update', handleReplyUpdate);
+        socket.on('requirement-note-update', handleRequirementNoteUpdate);
       });
     }
 
     return () => {
       socket.off('reply-update', handleReplyUpdate);
+      socket.off('requirement-note-update', handleRequirementNoteUpdate);
     };
-  }, []);
+  }, [selectedEventDepartments]);
 
   // Realtime requirement status updates via Socket.IO
   useEffect(() => {
@@ -329,19 +379,36 @@ const MyEventsPage: React.FC = () => {
   const getTaggedUpdatesCount = (event: Event): number => {
     if (!event.departmentRequirements) return 0;
 
+    const lastViewedTime = lastViewedTimestamps[event._id] || 0;
     let count = 0;
+
     Object.values(event.departmentRequirements).forEach((reqs: any) => {
       if (!Array.isArray(reqs)) return;
       reqs.forEach((req: any) => {
-        const status = (req.status || 'pending').toLowerCase();
-        const hasStatusChange = status !== 'pending';
-        const hasDeptNotes = !!req.departmentNotes;
-        const hasDeptReplies = Array.isArray(req.replies)
-          ? req.replies.some((r: any) => r.role === 'department')
-          : false;
+        // Get the last update time for this requirement
+        const lastUpdated = req.lastUpdated ? new Date(req.lastUpdated).getTime() : 0;
 
-        if (hasStatusChange || hasDeptNotes || hasDeptReplies) {
-          count += 1;
+        // Only count if there are updates after last view
+        if (lastUpdated > lastViewedTime) {
+          // Count status change as 1
+          const status = (req.status || 'pending').toLowerCase();
+          if (status !== 'pending') {
+            count += 1;
+          }
+
+          // Count department note as 1 (if it exists and was updated after last view)
+          if (req.departmentNotes) {
+            count += 1;
+          }
+
+          // Count each unread department reply as 1
+          if (Array.isArray(req.replies)) {
+            const unreadDeptReplies = req.replies.filter((r: any) => {
+              if (r.role !== 'department') return false;
+              return !r.isRead; // Only count unread replies
+            });
+            count += unreadDeptReplies.length;
+          }
         }
       });
     });
@@ -1156,6 +1223,52 @@ const MyEventsPage: React.FC = () => {
     newViewedSet.add(event._id);
     setViewedTaggedRequirementsEvents(newViewedSet);
     localStorage.setItem('viewedTaggedRequirementsEvents', JSON.stringify(Array.from(newViewedSet)));
+
+    // Record the timestamp when this event was last viewed
+    const newTimestamps = { ...lastViewedTimestamps };
+    newTimestamps[event._id] = Date.now();
+    setLastViewedTimestamps(newTimestamps);
+    localStorage.setItem('lastViewedTimestamps', JSON.stringify(newTimestamps));
+
+    // Mark all unread replies as read for this event
+    markAllRepliesAsRead(event._id);
+  };
+
+  // Mark all unread replies as read for an event
+  const markAllRepliesAsRead = async (eventId: string) => {
+    try {
+      const token = localStorage.getItem('authToken');
+      await axios.put(
+        `${API_BASE_URL}/events/${eventId}/mark-replies-read`,
+        {},
+        {
+          headers: {
+            'Authorization': token ? `Bearer ${token}` : '',
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      // Update local state to reflect the changes
+      setEvents(prev => prev.map(ev => {
+        if (ev._id === eventId && ev.departmentRequirements) {
+          const updatedEvent = { ...ev };
+          Object.keys(updatedEvent.departmentRequirements).forEach(dept => {
+            updatedEvent.departmentRequirements[dept] = updatedEvent.departmentRequirements[dept].map((req: any) => ({
+              ...req,
+              replies: req.replies?.map((r: any) => ({
+                ...r,
+                isRead: true
+              })) || []
+            }));
+          });
+          return updatedEvent;
+        }
+        return ev;
+      }));
+    } catch (error) {
+      // Silently fail - not critical if marking as read fails
+    }
   };
 
   // Check if a time slot has requirement conflicts
@@ -2542,7 +2655,7 @@ const MyEventsPage: React.FC = () => {
             {/* Scrollable Content */}
             <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0" style={{ WebkitOverflowScrolling: 'touch' }}>
               {selectedEventDepartments && (
-                <div className="p-3 md:p-4 lg:p-6 space-y-4 md:space-y-6 lg:space-y-8">
+                <div key={selectedEventDepartments._id} className="p-3 md:p-4 lg:p-6 space-y-4 md:space-y-6 lg:space-y-8">
                   {/* Quick Status Overview */}
                   <div className="bg-white rounded-xl border shadow-sm p-4 md:p-6">
                     <h3 className="text-base md:text-lg font-semibold text-gray-900 mb-3 md:mb-4 flex items-center gap-2">
@@ -2683,7 +2796,7 @@ const MyEventsPage: React.FC = () => {
                                       {filteredRequirements.map((req: any, reqIndex: number) => {
                                         const statusBadge = getRequirementStatusBadge(req.status);
                                         return (
-                                          <div key={reqIndex} className="bg-gray-50 rounded-lg border p-3 md:p-4 hover:shadow-md transition-all">
+                                          <div key={`${dept}-${req.id}-${req.name}`} className="bg-gray-50 rounded-lg border p-3 md:p-4 hover:shadow-md transition-all">
                                             {/* Requirement Header */}
                                             <div className="flex flex-col gap-3 mb-3">
                                               <div className="flex-1">

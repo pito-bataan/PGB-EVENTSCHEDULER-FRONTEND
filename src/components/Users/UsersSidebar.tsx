@@ -146,6 +146,59 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
     };
   }, []);
 
+  // Listen for real-time Event Reports updates
+  useEffect(() => {
+    const handleEventReportsUpdated = async (event: any) => {
+      // Refetch the event reports badge count when a report is uploaded
+      try {
+        const token = localStorage.getItem('authToken');
+        if (!token) return;
+        
+        const response = await axios.get(`${API_BASE_URL}/events/my`, {
+          headers: getAuthHeaders()
+        });
+        
+        if (response.data.success) {
+          const events = response.data.data || [];
+          // Filter for approved, ongoing, and completed events (match EventReportsPage logic)
+          const reportableEvents = events.filter((evt: any) => {
+            const status = evt.status?.toLowerCase();
+            return status === 'approved' || status === 'ongoing' || status === 'completed';
+          });
+          
+          // Count events with pending reports
+          let pendingCount = 0;
+          reportableEvents.forEach((evt: any) => {
+            const reports = evt.eventReports;
+            if (reports) {
+              const completed = [
+                reports.completionReport?.uploaded,
+                reports.postActivityReport?.uploaded
+              ].filter(Boolean).length;
+              
+              if (completed < 2) {
+                pendingCount += 1;
+              }
+            } else {
+              pendingCount += 1;
+            }
+          });
+          
+          // Update badge count in real-time
+          setEventReportsBadgeCount(pendingCount);
+        }
+      } catch (error) {
+        // Failed to update badge
+      }
+    };
+
+    window.addEventListener('eventReportsUpdated', handleEventReportsUpdated);
+
+    return () => {
+      window.removeEventListener('eventReportsUpdated', handleEventReportsUpdated);
+    };
+  }, []);
+
   // Fetch event count for My Calendar badge
   useEffect(() => {
     const fetchEventCount = async () => {
@@ -272,7 +325,7 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
     }
   }, [currentUser.department, permissions.allEvents]);
 
-  // Fetch My Events badge count (tagged requirements count - same logic as MyEventsPage)
+  // Fetch My Events badge count (total count of all events with tagged requirements)
   useEffect(() => {
     const fetchMyEventsBadgeCount = async () => {
       try {
@@ -285,41 +338,17 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
         
         if (response.data.success) {
           const events = response.data.data || [];
-          const viewedEvents = new Set(JSON.parse(localStorage.getItem('viewedTaggedRequirementsEvents') || '[]'));
           
-          // Count only UNVIEWED events that have updates
+          // Count ALL events that have department requirements (tagged requirements)
           let count = 0;
           events.forEach((event: any) => {
-            // Skip if this event has already been viewed
-            if (viewedEvents.has(event._id)) {
-              return;
-            }
-            
-            if (event.departmentRequirements) {
-              let hasUpdates = false;
-              Object.entries(event.departmentRequirements).forEach(([dept, reqs]: [string, any]) => {
-                (reqs as any[]).forEach((req: any) => {
-                  const status = (req.status || 'pending').toLowerCase();
-                  const hasStatusChange = status !== 'pending';
-                  const hasDeptNotes = !!req.departmentNotes;
-                  const hasDeptReplies = Array.isArray(req.replies)
-                    ? req.replies.some((r: any) => r.role === 'department')
-                    : false;
-
-                  if (hasStatusChange || hasDeptNotes || hasDeptReplies) {
-                    hasUpdates = true;
-                  }
-                });
-              });
-              
-              if (hasUpdates) {
-                count += 1;
-              }
+            if (event.departmentRequirements && Object.keys(event.departmentRequirements).length > 0) {
+              count += 1;
             }
           });
           
           setMyEventsBadgeCount(count);
-          // Reset viewed flag when there are unviewed events with updates
+          // Show badge if there are any events with tagged requirements
           if (count > 0) {
             setMyEventsBadgeViewed(false);
             localStorage.removeItem('myEventsBadgeViewed');
@@ -349,15 +378,15 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
         
         if (response.data.success) {
           const events = response.data.data || [];
-          // Filter for ongoing/approved events (not completed)
-          const ongoingEvents = events.filter((event: any) => {
+          // Filter for approved, ongoing, and completed events (match EventReportsPage logic)
+          const reportableEvents = events.filter((event: any) => {
             const status = event.status?.toLowerCase();
-            return status === 'approved' || status === 'ongoing';
+            return status === 'approved' || status === 'ongoing' || status === 'completed';
           });
           
           // Count events with pending reports (not all reports completed)
           let pendingCount = 0;
-          ongoingEvents.forEach((event: any) => {
+          reportableEvents.forEach((event: any) => {
             const reports = event.eventReports;
             if (reports) {
               const completed = [
@@ -562,50 +591,25 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
               });
             }
 
-            // Update My Events badge count
+            // Update My Events badge count (total count of all events with tagged requirements)
             axios.get(`${API_BASE_URL}/events/my`, {
               headers: getAuthHeaders()
             })
             .then(myEventsResponse => {
               if (myEventsResponse.data.success) {
                 const myEvents = myEventsResponse.data.data || [];
-                const viewedEvents = new Set(JSON.parse(localStorage.getItem('viewedTaggedRequirementsEvents') || '[]'));
                 
-                // Count only UNVIEWED events that have updates
+                // Count ALL events that have department requirements (tagged requirements)
                 let count = 0;
                 myEvents.forEach((event: any) => {
-                  // Skip if this event has already been viewed
-                  if (viewedEvents.has(event._id)) {
-                    return;
-                  }
-                  
-                  if (event.departmentRequirements) {
-                    let hasUpdates = false;
-                    Object.entries(event.departmentRequirements).forEach(([dept, reqs]: [string, any]) => {
-                      (reqs as any[]).forEach((req: any) => {
-                        const status = (req.status || 'pending').toLowerCase();
-                        const hasStatusChange = status !== 'pending';
-                        const hasDeptNotes = !!req.departmentNotes;
-                        const hasDeptReplies = Array.isArray(req.replies)
-                          ? req.replies.some((r: any) => r.role === 'department')
-                          : false;
-
-                        if (hasStatusChange || hasDeptNotes || hasDeptReplies) {
-                          hasUpdates = true;
-                        }
-                      });
-                    });
-                    
-                    if (hasUpdates) {
-                      count += 1;
-                    }
+                  if (event.departmentRequirements && Object.keys(event.departmentRequirements).length > 0) {
+                    count += 1;
                   }
                 });
-                // Only update if count changed
-                const previousCount = myEventsBadgeCount;
+                
                 setMyEventsBadgeCount(count);
-                // Reset viewed flag ONLY if count increased (new updates)
-                if (count > previousCount && count > 0) {
+                // Show badge if there are any events with tagged requirements
+                if (count > 0) {
                   setMyEventsBadgeViewed(false);
                   localStorage.removeItem('myEventsBadgeViewed');
                 }

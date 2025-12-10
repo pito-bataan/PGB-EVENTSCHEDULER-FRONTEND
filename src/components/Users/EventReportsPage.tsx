@@ -191,6 +191,11 @@ const EventReportsPage: React.FC = () => {
         // Refresh events to get updated status in sidebar
         await fetchCompletedEvents();
 
+        // Dispatch event to update sidebar badge count in real-time
+        window.dispatchEvent(new CustomEvent('eventReportsUpdated', {
+          detail: { eventId: selectedEvent._id, reportsStatus: response.data.data.reportsStatus }
+        }));
+
         // If all reports are now completed, automatically switch to completed tab
         if (response.data.data.reportsStatus === 'completed') {
           toast.success('🎉 All reports completed! Event moved to Completed tab.');
@@ -303,47 +308,51 @@ const EventReportsPage: React.FC = () => {
       {/* Main Content */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left: Events List */}
-        <div className="lg:col-span-5 space-y-4">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg">Your Ongoing Events</CardTitle>
-              <CardDescription>Select an event to upload reports</CardDescription>
-              
-              {/* Status Tabs */}
-              <Tabs value={eventStatusTab} onValueChange={(value) => setEventStatusTab(value as 'pending' | 'completed')} className="w-full mt-4">
-                <TabsList className="grid w-full grid-cols-2 gap-2 bg-transparent p-0">
-                  <TabsTrigger 
-                    value="pending" 
-                    className="flex items-center justify-center gap-2 px-3 py-2 bg-yellow-50 text-yellow-800 data-[state=active]:bg-yellow-100 data-[state=active]:text-yellow-900 hover:bg-yellow-100 border data-[state=active]:border-yellow-400"
-                  >
-                    <Construction className="h-4 w-4 flex-shrink-0" />
-                    <span className="text-xs font-medium">Pending</span>
-                    <Badge variant="secondary" className="text-[10px] h-5 px-1.5 ml-auto">
-                      {completedEvents.filter(e => {
-                        const stats = getCompletionStats(e);
-                        return stats.completed < stats.total;
-                      }).length}
-                    </Badge>
-                  </TabsTrigger>
-                  <TabsTrigger 
-                    value="completed" 
-                    className="flex items-center justify-center gap-2 px-3 py-2 bg-green-50 text-green-800 data-[state=active]:bg-green-100 data-[state=active]:text-green-900 hover:bg-green-100 border data-[state=active]:border-green-400"
-                  >
-                    <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
-                    <span className="text-xs font-medium">Completed</span>
-                    <Badge variant="secondary" className="text-[10px] h-5 px-1.5 ml-auto">
-                      {completedEvents.filter(e => {
-                        const stats = getCompletionStats(e);
-                        return stats.completed === stats.total;
-                      }).length}
-                    </Badge>
-                  </TabsTrigger>
-                </TabsList>
-              </Tabs>
+        <div className="lg:col-span-4 flex flex-col">
+          <Card className="border-gray-200 shadow-sm flex flex-col">
+            <CardHeader className="pb-4 border-b border-gray-200 flex-shrink-0">
+              <div className="space-y-3">
+                <div>
+                  <CardTitle className="text-lg font-semibold text-gray-900">Your Ongoing Events</CardTitle>
+                  <CardDescription className="text-sm text-gray-600 mt-1">Select an event to upload reports</CardDescription>
+                </div>
+                
+                {/* Status Tabs - With Colors */}
+                <Tabs value={eventStatusTab} onValueChange={(value) => setEventStatusTab(value as 'pending' | 'completed')} className="w-full">
+                  <TabsList className="grid w-full grid-cols-2 bg-transparent rounded-lg p-0 h-auto gap-2">
+                    <TabsTrigger 
+                      value="pending" 
+                      className="flex items-center justify-center gap-2 px-3 py-2 bg-yellow-50 text-yellow-800 data-[state=active]:bg-yellow-500 data-[state=active]:text-white hover:bg-yellow-100 data-[state=active]:hover:bg-yellow-600 rounded-md transition-all text-sm font-medium border border-yellow-200 data-[state=active]:border-yellow-500"
+                    >
+                      <Construction className="h-4 w-4" />
+                      <span className="hidden sm:inline">Pending</span>
+                      <Badge className="ml-1 bg-yellow-200 text-yellow-900 hover:bg-yellow-200 text-xs">
+                        {completedEvents.filter(e => {
+                          const stats = getCompletionStats(e);
+                          return stats.completed < stats.total;
+                        }).length}
+                      </Badge>
+                    </TabsTrigger>
+                    <TabsTrigger 
+                      value="completed" 
+                      className="flex items-center justify-center gap-2 px-3 py-2 bg-green-50 text-green-800 data-[state=active]:bg-green-500 data-[state=active]:text-white hover:bg-green-100 data-[state=active]:hover:bg-green-600 rounded-md transition-all text-sm font-medium border border-green-200 data-[state=active]:border-green-500"
+                    >
+                      <CheckCircle2 className="h-4 w-4" />
+                      <span className="hidden sm:inline">Completed</span>
+                      <Badge className="ml-1 bg-green-200 text-green-900 hover:bg-green-200 text-xs">
+                        {completedEvents.filter(e => {
+                          const stats = getCompletionStats(e);
+                          return stats.completed === stats.total;
+                        }).length}
+                      </Badge>
+                    </TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              </div>
             </CardHeader>
-            <CardContent className="p-0">
-              <ScrollArea className="h-[600px]">
-                <div className="space-y-2 p-4 pt-0">
+            <CardContent className="p-0 overflow-hidden flex flex-col" style={{ height: 'calc(100vh - 200px)' }}>
+              <ScrollArea className="w-full h-full">
+                <div className="space-y-2 p-4 pt-0 pr-3">
                   {loading ? (
                     <div className="text-center py-8 text-muted-foreground">
                       Loading events...
@@ -372,111 +381,90 @@ const EventReportsPage: React.FC = () => {
                             <Card
                               className={`cursor-pointer transition-all duration-200 border-l-4 ${
                                 isSelected 
-                                  ? 'border-l-primary bg-gradient-to-r from-primary/5 to-transparent shadow-lg border border-primary/30' 
-                                  : 'border-l-gray-300 hover:shadow-md hover:border-l-primary/50 border border-gray-200'
+                                  ? 'border-l-white bg-gray-900 shadow-lg border border-gray-800' 
+                                  : 'border-l-gray-300 hover:shadow-md hover:border-l-gray-500 hover:bg-gray-50 border border-gray-200'
                               }`}
                               onClick={() => setSelectedEvent(event)}
                             >
-                              <CardContent className="p-5 space-y-4">
-                                {/* Header: Title + Status Badge */}
-                                <div className="flex items-start justify-between gap-3">
-                                  <div className="flex-1 min-w-0">
-                                    <h3 className="font-bold text-base line-clamp-2 text-gray-900">
-                                      {event.eventTitle}
-                                    </h3>
-                                  </div>
+                              <CardContent className="p-4 space-y-3">
+                                {/* Title + Status */}
+                                <div className="flex items-start justify-between gap-2">
+                                  <h3 className={`font-semibold text-sm line-clamp-2 flex-1 ${
+                                    isSelected ? 'text-white' : 'text-gray-900'
+                                  }`}>
+                                    {event.eventTitle}
+                                  </h3>
                                   {stats.completed === stats.total ? (
-                                    <Badge variant="default" className="text-xs whitespace-nowrap flex-shrink-0 bg-green-600 hover:bg-green-700">
+                                    <Badge className={`text-xs whitespace-nowrap flex-shrink-0 ${
+                                      isSelected 
+                                        ? 'bg-green-500 text-white hover:bg-green-600' 
+                                        : 'bg-gray-900 text-white hover:bg-gray-800'
+                                    }`}>
                                       <CheckCircle2 className="w-3 h-3 mr-1" />
-                                      Complete
+                                      Done
                                     </Badge>
                                   ) : (
-                                    <Badge variant="secondary" className="text-xs whitespace-nowrap flex-shrink-0 bg-yellow-100 text-yellow-800 hover:bg-yellow-200">
+                                    <Badge className={`text-xs whitespace-nowrap flex-shrink-0 ${
+                                      isSelected 
+                                        ? 'bg-yellow-400 text-gray-900 hover:bg-yellow-500' 
+                                        : 'bg-gray-200 text-gray-900 hover:bg-gray-300'
+                                    }`}>
                                       {stats.completed}/{stats.total}
                                     </Badge>
                                   )}
                                 </div>
 
-                                {/* Locations Section */}
+                                {/* Location */}
                                 {(event.locations?.length || event.location) && (
-                                  <div className="bg-blue-50 rounded-lg p-3 space-y-1.5">
-                                    <p className="text-xs font-semibold text-blue-900 uppercase tracking-wide">Location{event.locations?.length && event.locations.length > 1 ? 's' : ''}</p>
-                                    {event.locations && event.locations.length > 1 ? (
-                                      <div className="space-y-1">
-                                        {event.locations.map((loc, idx) => (
-                                          <div key={idx} className="flex items-center gap-2 text-sm text-blue-800">
-                                            <MapPin className="w-4 h-4 flex-shrink-0 text-blue-600" />
-                                            <span className="line-clamp-1">{loc}</span>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    ) : (
-                                      <div className="flex items-center gap-2 text-sm text-blue-800">
-                                        <MapPin className="w-4 h-4 flex-shrink-0 text-blue-600" />
-                                        <span className="line-clamp-1">{event.location}</span>
-                                      </div>
-                                    )}
+                                  <div className="flex items-start gap-2">
+                                    <MapPin className={`w-4 h-4 flex-shrink-0 mt-0.5 ${
+                                      isSelected ? 'text-gray-400' : 'text-gray-500'
+                                    }`} />
+                                    <div className={`text-xs flex-1 min-w-0 ${
+                                      isSelected ? 'text-gray-300' : 'text-gray-600'
+                                    }`}>
+                                      {event.locations && event.locations.length > 1 ? (
+                                        <div className="space-y-0.5">
+                                          {event.locations.slice(0, 2).map((loc, idx) => (
+                                            <p key={idx} className="line-clamp-1">{loc}</p>
+                                          ))}
+                                          {event.locations.length > 2 && <p className={isSelected ? 'text-gray-400' : 'text-gray-500'} >+{event.locations.length - 2} more</p>}
+                                        </div>
+                                      ) : (
+                                        <p className="line-clamp-1">{event.location}</p>
+                                      )}
+                                    </div>
                                   </div>
                                 )}
 
-                                {/* Schedule Section */}
-                                <div className="bg-purple-50 rounded-lg p-3 space-y-2">
-                                  <p className="text-xs font-semibold text-purple-900 uppercase tracking-wide">Schedule</p>
-                                  <div className="space-y-2">
-                                    {/* Day 1 - Check if it's a single day or multi-day event */}
-                                    {event.dateTimeSlots && event.dateTimeSlots.length > 0 ? (
-                                      // Multi-day event: Day 1 ends on same day
-                                      <>
-                                        <div className="flex items-start gap-2">
-                                          <Calendar className="w-4 h-4 text-purple-600 flex-shrink-0 mt-0.5" />
-                                          <div className="text-sm text-purple-800">
-                                            <p className="font-semibold">Day 1</p>
-                                            <p className="text-xs text-purple-700">
-                                              {format(new Date(event.startDate), 'MMM dd')} • {formatTime12Hour(event.startTime)} - {formatTime12Hour(event.endTime)}
-                                            </p>
-                                          </div>
-                                        </div>
-
-                                        {/* Additional Days */}
-                                        <div className="space-y-2 pt-1 border-t border-purple-200">
-                                          {event.dateTimeSlots.map((slot, idx) => (
-                                            <div key={idx} className="flex items-start gap-2">
-                                              <Calendar className="w-4 h-4 text-purple-600 flex-shrink-0 mt-0.5" />
-                                              <div className="text-sm text-purple-800">
-                                                <p className="font-semibold">Day {idx + 2}</p>
-                                                <p className="text-xs text-purple-700">
-                                                  {format(new Date(slot.startDate), 'MMM dd')} • {formatTime12Hour(slot.startTime)} - {formatTime12Hour(slot.endDate ? slot.endTime : event.endTime)}
-                                                </p>
-                                              </div>
-                                            </div>
-                                          ))}
-                                        </div>
-                                      </>
-                                    ) : (
-                                      // Single day event
-                                      <div className="flex items-start gap-2">
-                                        <Calendar className="w-4 h-4 text-purple-600 flex-shrink-0 mt-0.5" />
-                                        <div className="text-sm text-purple-800">
-                                          <p className="font-semibold">Day 1</p>
-                                          <p className="text-xs text-purple-700">
-                                            {format(new Date(event.startDate), 'MMM dd, yyyy')} • {formatTime12Hour(event.startTime)} - {formatTime12Hour(event.endTime)}
-                                          </p>
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
+                                {/* Date & Time */}
+                                <div className="flex items-center gap-2">
+                                  <Calendar className={`w-4 h-4 flex-shrink-0 ${
+                                    isSelected ? 'text-gray-400' : 'text-gray-500'
+                                  }`} />
+                                  <p className={`text-xs ${
+                                    isSelected ? 'text-gray-300' : 'text-gray-600'
+                                  }`}>
+                                    {format(new Date(event.startDate), 'MMM dd, yyyy')}
+                                  </p>
                                 </div>
 
                                 {/* Progress Bar */}
-                                <div className="space-y-2">
+                                <div className="space-y-1.5 pt-1">
                                   <div className="flex items-center justify-between">
-                                    <span className="text-xs font-semibold text-gray-700">Reports Progress</span>
-                                    <span className="text-xs font-bold text-gray-900">{stats.completed}/{stats.total}</span>
+                                    <span className={`text-xs font-medium ${
+                                      isSelected ? 'text-gray-400' : 'text-gray-700'
+                                    }`}>Progress</span>
+                                    <span className={`text-xs font-semibold ${
+                                      isSelected ? 'text-white' : 'text-gray-900'
+                                    }`}>{Math.round((stats.completed / stats.total) * 100)}%</span>
                                   </div>
-                                  <div className="w-full bg-gray-200 rounded-full h-2">
+                                  <div className={`w-full rounded-full h-1.5 ${
+                                    isSelected ? 'bg-gray-700' : 'bg-gray-200'
+                                  }`}>
                                     <div
-                                      className={`h-2 rounded-full transition-all duration-300 ${
-                                        stats.completed === stats.total ? 'bg-green-500' : 'bg-blue-500'
+                                      className={`h-1.5 rounded-full transition-all duration-300 ${
+                                        isSelected ? 'bg-white' : 'bg-gray-900'
                                       }`}
                                       style={{ width: `${(stats.completed / stats.total) * 100}%` }}
                                     />
@@ -496,7 +484,7 @@ const EventReportsPage: React.FC = () => {
         </div>
 
         {/* Right: Report Forms */}
-        <div className="lg:col-span-7">
+        <div className="lg:col-span-8">
           <Card className="h-full">
             <CardContent className="p-6">
               {!selectedEvent ? (
