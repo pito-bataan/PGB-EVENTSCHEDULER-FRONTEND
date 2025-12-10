@@ -33,11 +33,17 @@ const LoginForm = () => {
       if (response.data.success) {
         const { user, token } = response.data.data;
         
+        console.log('✅ Login successful, storing token and user data');
+        console.log('🔑 Token:', token?.substring(0, 20) + '...');
+        console.log('👤 User:', user);
+        
         // Store token in localStorage
         localStorage.setItem('authToken', token);
+        console.log('✅ Token stored in localStorage');
         
         // Store user data for reference
         localStorage.setItem('userData', JSON.stringify(user));
+        console.log('✅ User data stored in localStorage');
         
         // Normalize role to lowercase for consistent checking
         const userRole = user.role?.toLowerCase();

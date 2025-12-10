@@ -253,22 +253,15 @@ export default function GlobalNotificationSystem() {
   
   // Global real-time notification popup system
   useEffect(() => {
-    console.log('🔧 [GLOBAL NOTIFICATION] Setting up listener. userId:', userId, 'onNewNotification:', typeof onNewNotification);
-    
     if (typeof onNewNotification !== 'function') {
-      console.warn('⚠️ [GLOBAL NOTIFICATION] onNewNotification is not a function!');
       return;
     }
     
     if (userId === 'unknown') {
-      console.warn('⚠️ [GLOBAL NOTIFICATION] userId is unknown, skipping listener setup');
       return;
     }
     
-    console.log('✅ [GLOBAL NOTIFICATION] Listener setup complete for user:', userId);
-    
     const handleGlobalNewNotification = (notificationData: any) => {
-      console.log('🔔 [GLOBAL NOTIFICATION] Received notification:', notificationData);
       const now = Date.now();
       
       // Create unique ID based on notification type and content
@@ -276,8 +269,6 @@ export default function GlobalNotificationSystem() {
       const eventId = notificationData.eventId || notificationData.id;
       const notificationType = notificationData.type || notificationData.notificationType || 'event';
       const timestamp = notificationData.timestamp || now;
-      
-      console.log('🔔 [GLOBAL NOTIFICATION] Type:', notificationType, 'Event:', eventTitle);
       
       // Generate unique notification ID based on type
       let notificationId;
@@ -382,8 +373,6 @@ export default function GlobalNotificationSystem() {
         notificationMessage = `New event "${eventTitle}" has tagged your department`;
       }
       
-      console.log('✅ [NOTIFICATION] Showing notification:', notificationTitle);
-      
       // Play notification sound immediately with dynamic title and message
       playGlobalNotificationSound(notificationTitle, notificationMessage).catch(e => {});
       
@@ -477,12 +466,11 @@ export default function GlobalNotificationSystem() {
       const tenMinutesAgo = now - (10 * 60 * 1000);
       
       setShownNotifications(prev => {
-        const filtered = Array.from(prev).filter(id => {
+        const filtered = Array.from(shownNotificationsRef.current).filter(id => {
           const parts = id.split('-');
           const idTimestamp = parseInt(parts[parts.length - 1]);
           return !isNaN(idTimestamp) && idTimestamp > tenMinutesAgo;
         });
-        console.log('🧹 [NOTIFICATION] Cleaned old notifications. Remaining:', filtered.length);
         return new Set(filtered);
       });
     }, 10 * 60 * 1000); // 10 minutes

@@ -1,5 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'sonner'
+import { useEffect, useState } from 'react'
 import GlobalNotificationSystem from './components/GlobalNotificationSystem'
 import LoginForm from './components/LoginForm'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -26,18 +27,91 @@ import DepartmentsManagement from './components/Admin/DepartmentsManagement'
 import EventReportsManagement from './components/Admin/EventReportsManagement'
 import './App.css'
 
+const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api`;
+
 function App() {
-  const user = {
-    name: "John Doe",
-    email: "john.doe@bataan.gov.ph",
-    department: "Information Technology"
-  };
+  const [isInitialized, setIsInitialized] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [user, setUser] = useState<any>(null);
 
   const adminUser = {
     name: "Admin User",
     email: "admin@bataan.gov.ph",
     department: "Administration"
   };
+
+  // Auto-login on app load if token exists
+  useEffect(() => {
+    const initializeAuth = async () => {
+      const token = localStorage.getItem('authToken');
+      const storedUser = localStorage.getItem('userData');
+
+      if (token && storedUser) {
+        try {
+          // Validate token by making a request to /me endpoint
+          const response = await fetch(`${API_BASE_URL}/users/me`, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            credentials: 'include' // Include cookies in request
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            if (data.success && data.data) {
+              // Token is valid, update user data
+              setUser(data.data);
+              setIsLoggedIn(true);
+              localStorage.setItem('userData', JSON.stringify(data.data));
+            }
+          } else if (response.status === 401) {
+            // Token expired or invalid, clear storage
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('userData');
+            setIsLoggedIn(false);
+            setUser(null);
+          } else {
+            setIsLoggedIn(false);
+            setUser(null);
+          }
+        } catch (error) {
+          // Don't clear storage on network error, let user stay logged in
+          // Try to use stored user data
+          if (storedUser) {
+            try {
+              const parsedUser = JSON.parse(storedUser);
+              setUser(parsedUser);
+              setIsLoggedIn(true);
+            } catch {
+              setIsLoggedIn(false);
+              setUser(null);
+            }
+          }
+        }
+      } else {
+        setIsLoggedIn(false);
+        setUser(null);
+      }
+
+      setIsInitialized(true);
+    };
+
+    initializeAuth();
+  }, []);
+
+  // Show loading state while initializing auth
+  if (!isInitialized) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -49,7 +123,7 @@ function App() {
           
           {/* Users Routes */}
           <Route path="/users/*" element={
-            <ProtectedRoute>
+            <ProtectedRoute isLoggedIn={isLoggedIn}>
               <MainLayout user={user}>
                 <Routes>
                   <Route path="dashboard" element={<Dashboard />} />
@@ -72,7 +146,7 @@ function App() {
           
           {/* Admin Routes */}
           <Route path="/admin/*" element={
-            <ProtectedRoute>
+            <ProtectedRoute isLoggedIn={isLoggedIn}>
               <AdminMainLayout user={adminUser}>
                 <Routes>
                   <Route path="dashboard" element={<AdminDashboard />} />
@@ -116,8 +190,27 @@ function App() {
             </ProtectedRoute>
           } />
           
-          {/* Default redirect */}
-          <Route path="/" element={<Navigate to="/login" replace />} />
+          {/* Default redirect - route based on login status and user role */}
+          <Route path="/" element={
+            (() => {
+              if (!isLoggedIn) {
+                return <Navigate to="/login" replace />;
+              }
+              
+              // User is logged in, redirect to appropriate dashboard
+              if (user) {
+                const userRole = (user.role || '').toLowerCase();
+                if (userRole === 'admin' || userRole === 'superadmin') {
+                  return <Navigate to="/admin/dashboard" replace />;
+                } else {
+                  return <Navigate to="/users/dashboard" replace />;
+                }
+              }
+              
+              // Default fallback
+              return <Navigate to="/login" replace />;
+            })()
+          } />
         </Routes>
       </Router>
       <Toaster position="top-right" />
