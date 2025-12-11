@@ -45,6 +45,11 @@ const LoginForm = () => {
         localStorage.setItem('userData', JSON.stringify(user));
         console.log('✅ User data stored in localStorage');
         
+        // Dispatch custom event to notify App component of login
+        window.dispatchEvent(new CustomEvent('authStateChanged', { 
+          detail: { isLoggedIn: true, user } 
+        }));
+        
         // Normalize role to lowercase for consistent checking
         const userRole = user.role?.toLowerCase();
         

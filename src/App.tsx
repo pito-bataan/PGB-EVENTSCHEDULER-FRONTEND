@@ -101,6 +101,21 @@ function App() {
     initializeAuth();
   }, []);
 
+  // Listen for auth state changes (e.g., when login happens in LoginForm)
+  useEffect(() => {
+    const handleAuthStateChange = (event: any) => {
+      const { isLoggedIn: loggedIn, user: userData } = event.detail;
+      setIsLoggedIn(loggedIn);
+      setUser(userData);
+    };
+
+    window.addEventListener('authStateChanged', handleAuthStateChange);
+    
+    return () => {
+      window.removeEventListener('authStateChanged', handleAuthStateChange);
+    };
+  }, []);
+
   // Show loading state while initializing auth
   if (!isInitialized) {
     return (
