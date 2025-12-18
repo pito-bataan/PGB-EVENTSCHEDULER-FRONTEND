@@ -103,7 +103,7 @@ import {
   UserCheck
 } from 'lucide-react';
 
-const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api`;
+const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api`;
 
 const AllEventsPage: React.FC = () => {
   // Socket.IO for real-time updates
@@ -328,7 +328,7 @@ const AllEventsPage: React.FC = () => {
           variant: 'secondary' as const, 
           icon: <XCircle className="w-3 h-3" />, 
           label: 'Cancelled',
-          className: 'bg-gray-100 text-gray-700'
+          className: 'bg-red-600 text-white'
         };
       default:
         return { 

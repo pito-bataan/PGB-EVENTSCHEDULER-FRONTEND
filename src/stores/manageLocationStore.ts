@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 
-const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api`;
+const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api`;
 
 interface LocationAvailability {
   _id?: string;
@@ -424,10 +424,28 @@ export const useManageLocationStore = create<ManageLocationState>((set, get) => 
     try {
       const futureDates = get().getCurrentAndFutureDates(calendarCurrentMonth);
       const defaultLocationNames = [
-        'Atrium', 'Grand Lobby Entrance', 'Main Entrance Lobby', 'Main Entrance Leasable Area',
-        '4th Flr. Conference Room 1', '4th Flr. Conference Room 2', '4th Flr. Conference Room 3',
-        '5th Flr. Training Room 1 (BAC)', '5th Flr. Training Room 2', '6th Flr. Meeting Room 7',
-        '6th Flr. DPOD', 'Bataan People\'s Center', '1BOSSCO', 'Emiliana Hall', 'Pavillion'
+        'Atrium',
+        'Grand Lobby Entrance',
+        'Main Entrance Lobby',
+        'Main Entrance Leasable Area',
+        '4th Flr. Conference Room 1',
+        '4th Flr. Conference Room 2',
+        '4th Flr. Conference Room 3',
+        '5th Flr. Training Room 1 (BAC)',
+        '5th Flr. Training Room 2',
+        '6th Flr. Meeting Room 7',
+        '6th Flr. DPOD',
+        'Bataan People\'s Center',
+        '1BOSSCO',
+        'Emiliana Hall',
+        'Pavilion - Kagitingan Hall (Entire)',
+        'Pavilion - Kagitingan Hall - Section A',
+        'Pavilion - Kagitingan Hall - Section B',
+        'Pavilion - Kagitingan Hall - Section C',
+        'Pavilion - Kalayaan Ballroom (Entire)',
+        'Pavilion - Kalayaan Ballroom - Section A',
+        'Pavilion - Kalayaan Ballroom - Section B',
+        'Pavilion - Kalayaan Ballroom - Section C'
       ];
       
       // Pre-filter existing locations to avoid duplicates
@@ -475,45 +493,34 @@ export const useManageLocationStore = create<ManageLocationState>((set, get) => 
 
       setProgressModal(true, 'add', 20, `Prepared ${locationsToCreate.length} location entries...`);
 
-      // Process in batches
-      const BATCH_SIZE = 20;
-      const batches = [];
-      for (let i = 0; i < locationsToCreate.length; i += BATCH_SIZE) {
-        batches.push(locationsToCreate.slice(i, i + BATCH_SIZE));
-      }
-
+      // Use optimized bulk create endpoint - single API call instead of hundreds
+      setProgressModal(true, 'add', 40, 'Sending bulk create request...');
+      
       let totalAdded = 0;
       let totalFailed = 0;
 
-      for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
-        const batch = batches[batchIndex];
-        const progressPercent = 20 + ((batchIndex / batches.length) * 70);
-        
-        setProgressModal(true, 'add', progressPercent, `Processing batch ${batchIndex + 1}/${batches.length}...`);
-        
-        const batchPromises = batch.map(async (locationData) => {
-          try {
-            const response = await fetch(`${API_BASE_URL}/location-availability`, {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify(locationData)
-            });
-
-            return { success: response.ok };
-          } catch (error) {
-            return { success: false };
-          }
+      try {
+        const response = await fetch(`${API_BASE_URL}/location-availability/bulk-create`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ locations: locationsToCreate })
         });
 
-        const batchResults = await Promise.all(batchPromises);
-        const batchSuccessCount = batchResults.filter(r => r.success).length;
-        const batchFailCount = batchResults.filter(r => !r.success).length;
+        const result = await response.json();
         
-        totalAdded += batchSuccessCount;
-        totalFailed += batchFailCount;
+        if (response.ok && result.success) {
+          totalAdded = result.insertedCount || 0;
+          totalFailed = (result.requestedCount || locationsToCreate.length) - totalAdded;
+          setProgressModal(true, 'add', 80, `Created ${totalAdded} locations...`);
+        } else {
+          throw new Error(result.message || 'Bulk create failed');
+        }
+      } catch (error) {
+        console.error('Bulk create error:', error);
+        totalFailed = locationsToCreate.length;
       }
 
       setProgressModal(true, 'add', 90, 'Updating interface...');
@@ -640,7 +647,7 @@ export const useManageLocationStore = create<ManageLocationState>((set, get) => 
 
       for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
         const batch = batches[batchIndex];
-        const progressPercent = 30 + ((batchIndex / batches.length) * 60);
+        const progressPercent = Math.round(30 + ((batchIndex / batches.length) * 60));
         
         setProgressModal(true, 'delete', progressPercent, `Deleting batch ${batchIndex + 1}/${batches.length}...`);
         

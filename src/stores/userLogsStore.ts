@@ -3,7 +3,7 @@ import { devtools } from 'zustand/middleware';
 import axios from 'axios';
 import { io, Socket } from 'socket.io-client';
 
-const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api`;
+const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api`;
 let socket: Socket | null = null;
 
 interface ActivityLog {
@@ -316,7 +316,7 @@ export const useUserLogsStore = create<UserLogsState>()(
       initializeSocketListeners: () => {
         if (socket) return; // Already initialized
         
-        socket = io(import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000', {
+        socket = io(import.meta.env.VITE_SOCKET_URL || 'http://localhost:3000', {
           transports: ['websocket', 'polling']
         });
         

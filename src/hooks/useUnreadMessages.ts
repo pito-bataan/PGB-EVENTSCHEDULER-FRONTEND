@@ -46,7 +46,7 @@ export const useUnreadMessages = (currentUserId?: string): UseUnreadMessagesRetu
 
 
       // 1. Fetch events relevant to user
-      const eventsResponse = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/events`, {
+      const eventsResponse = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/events`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -78,7 +78,7 @@ export const useUnreadMessages = (currentUserId?: string): UseUnreadMessagesRetu
           if (event.taggedDepartments) {
             for (const deptName of event.taggedDepartments) {
               try {
-                const usersResponse = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/users/department/${deptName}`, {
+                const usersResponse = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/users/department/${deptName}`, {
                   headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json'
@@ -103,7 +103,7 @@ export const useUnreadMessages = (currentUserId?: string): UseUnreadMessagesRetu
 
           // Also get colleagues from same department
           try {
-            const usersResponse = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/users/department/${userDepartment}`, {
+            const usersResponse = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/users/department/${userDepartment}`, {
               headers: {
                 'Authorization': `Bearer ${token}`,
                 'Content-Type': 'application/json'
@@ -136,7 +136,7 @@ export const useUnreadMessages = (currentUserId?: string): UseUnreadMessagesRetu
           
           if (participantId && participantId !== currentUserId) {
             try {
-              const unreadResponse = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/messages/unread-count/${event._id}/${participantId}`, {
+              const unreadResponse = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/messages/unread-count/${event._id}/${participantId}`, {
                 headers: {
                   'Authorization': `Bearer ${token}`,
                   'Content-Type': 'application/json'

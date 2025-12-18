@@ -50,7 +50,7 @@ import {
   Package
 } from 'lucide-react';
 
-const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api`;
+const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api`;
 
 interface LocationAvailability {
   _id?: string;
@@ -1386,6 +1386,8 @@ const ManageLocationPage: React.FC = () => {
       
       if (failedSaves.length === 0) {
         console.log('All locations saved successfully, closing modal...');
+        toast.success(`All ${allNewLocations.length} locations saved successfully!`);
+      } else {
         toast.error(`${failedSaves.length} out of ${allNewLocations.length} locations failed to save`);
       }
     } catch (error) {
@@ -1444,9 +1446,132 @@ const ManageLocationPage: React.FC = () => {
   // Handle selective date deletion
   const handleSelectiveDateDelete = async () => {
     setShowSelectiveDateDeleteDialog(false);
-    // The actual deletion logic is handled by the Zustand store
-    // This is just a placeholder for the UI
-    toast.info('Selective date deletion feature coming soon!');
+    
+    if (selectedDatesForDeletion.length === 0) {
+      toast.error('No dates selected for deletion');
+      return;
+    }
+
+    try {
+      startProgressModal('delete', 'Preparing to delete selected dates...');
+      
+      // Get all locations for the selected dates
+      const locationsToDelete = locationAvailabilities.filter(loc => 
+        selectedDatesForDeletion.includes(loc.date)
+      );
+
+      if (locationsToDelete.length === 0) {
+        closeProgressModal();
+        toast.info('No location data found for selected dates');
+        return;
+      }
+
+      updateProgress(20, 'Checking for active bookings...');
+
+      // Check for active bookings on selected dates
+      const activeEventsLookup = new Map();
+      allEvents
+        .filter(event => event.status === 'submitted' || event.status === 'approved')
+        .forEach(event => {
+          if (event.startDate) {
+            const eventDateStr = event.startDate.includes('T') 
+              ? event.startDate.split('T')[0] 
+              : event.startDate;
+            
+            if (selectedDatesForDeletion.includes(eventDateStr)) {
+              if (!activeEventsLookup.has(eventDateStr)) {
+                activeEventsLookup.set(eventDateStr, []);
+              }
+              activeEventsLookup.get(eventDateStr).push({
+                location: event.location,
+                title: event.eventTitle
+              });
+            }
+          }
+        });
+
+      updateProgress(40, 'Separating protected locations...');
+
+      // Separate deletable and protected locations
+      const deletable: any[] = [];
+      const protected_: any[] = [];
+
+      for (const location of locationsToDelete) {
+        const dateEvents = activeEventsLookup.get(location.date) || [];
+        const hasActiveEvents = dateEvents.some((event: any) => event.location === location.locationName);
+        
+        if (hasActiveEvents) {
+          protected_.push(location);
+        } else {
+          deletable.push(location);
+        }
+      }
+
+      if (deletable.length === 0) {
+        closeProgressModal();
+        toast.info(`All ${protected_.length} location entries are protected due to active bookings!`);
+        setSelectedDatesForDeletion([]);
+        setIsSelectingDatesMode(false);
+        return;
+      }
+
+      updateProgress(60, `Deleting ${deletable.length} location entries...`);
+
+      // Bulk delete locations using optimized backend endpoint
+      let deleted = 0;
+      try {
+        const token = localStorage.getItem('authToken');
+        const idsToDelete = deletable.map(loc => loc._id).filter(Boolean);
+        
+        const response = await fetch(`${API_BASE_URL}/location-availability/bulk-delete`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ ids: idsToDelete })
+        });
+
+        const result = await response.json();
+        
+        if (!response.ok || !result.success) {
+          throw new Error(result.message || 'Bulk delete failed');
+        }
+
+        deleted = result.deletedCount || 0;
+        const failed = idsToDelete.length - deleted;
+        
+        console.log(`Bulk delete completed: ${deleted} deleted, ${failed} failed`);
+      } catch (error) {
+        console.error('Bulk delete error:', error);
+        throw error;
+      }
+
+      updateProgress(90, 'Refreshing location data...');
+      await loadLocationData(true);
+      
+      updateProgress(100, 'Operation completed!');
+
+      if (protected_.length > 0) {
+        toast.success(
+          `Deleted ${deleted} location entries! ${protected_.length} entries were protected due to active bookings.`,
+          { duration: 6000 }
+        );
+      } else {
+        toast.success(`Successfully deleted all ${deleted} location entries!`);
+      }
+
+      setTimeout(() => {
+        closeProgressModal();
+        setSelectedDatesForDeletion([]);
+        setIsSelectingDatesMode(false);
+      }, 1500);
+
+    } catch (error) {
+      console.error('Error in selective date deletion:', error);
+      toast.error(`Error deleting locations: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      closeProgressModal();
+    }
   };
 
   // Handle date click for selection

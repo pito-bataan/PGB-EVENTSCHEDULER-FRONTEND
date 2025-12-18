@@ -111,7 +111,7 @@ interface Event {
   updatedAt: string;
 }
 
-const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api`;
+const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api`;
 
 const locations = [
   'Add Custom Location',
@@ -2277,7 +2277,8 @@ const MyEventsPage: React.FC = () => {
                               variant="outline"
                               size="sm"
                               onClick={() => handleEditEvent(event)}
-                              className="gap-1 h-7 px-2 text-[10px] md:text-xs whitespace-nowrap"
+                              disabled={event.status === 'completed' || event.dynamicStatus === 'completed'}
+                              className="gap-1 h-7 px-2 text-[10px] md:text-xs whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               <Edit className="w-3 h-3" />
                               <span className="hidden sm:inline">Edit Schedule</span>
@@ -2405,7 +2406,8 @@ const MyEventsPage: React.FC = () => {
                             variant="default"
                             size="sm"
                             onClick={() => handleOpenAddDepartments(event)}
-                            className="gap-1 h-7 px-2 text-[10px] md:text-xs bg-blue-600 hover:bg-blue-700 whitespace-nowrap"
+                            disabled={event.status === 'completed' || event.dynamicStatus === 'completed'}
+                            className="gap-1 h-7 px-2 text-[10px] md:text-xs bg-blue-600 hover:bg-blue-700 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             <Plus className="w-3 h-3" />
                             <span className="hidden sm:inline">Tag More Departments</span>
