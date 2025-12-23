@@ -60,6 +60,7 @@ interface DashboardState {
   notifications: Notification[];
   requirementsOverview: any[];
   readNotifications: Set<string>;
+  deletedNotifications: Set<string>;
   
   // Counts
   totalUserEvents: number;
@@ -73,7 +74,9 @@ interface DashboardState {
   // Actions
   fetchDashboardData: (userId: string, force?: boolean) => Promise<void>;
   fetchReadNotifications: (userId: string) => Promise<void>;
+  fetchDeletedNotifications: (userId: string) => Promise<void>;
   markNotificationAsRead: (notificationId: string, notification: Notification) => Promise<void>;
+  deleteNotifications: (notificationIds: string[]) => Promise<void>;
   clearCache: () => void;
   refreshNotifications: (userId: string) => Promise<void>;
   
@@ -92,6 +95,7 @@ export const useDashboardStore = create<DashboardState>()(
       notifications: [],
       requirementsOverview: [],
       readNotifications: new Set<string>(),
+      deletedNotifications: new Set<string>(),
       totalUserEvents: 0,
       totalSystemEvents: 0,
       loading: false,
@@ -116,6 +120,12 @@ export const useDashboardStore = create<DashboardState>()(
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
           };
+
+          // Ensure deleted notifications are loaded before building notification list
+          // so filtering works even on first page load.
+          if (get().deletedNotifications.size === 0) {
+            await get().fetchDeletedNotifications(userId);
+          }
 
           // Fetch user's events and all events for notifications
           const [userResponse, allEventsResponse] = await Promise.all([
@@ -268,7 +278,7 @@ export const useDashboardStore = create<DashboardState>()(
                 message: event.status === 'approved' ? `Your event "${event.eventTitle}" has been approved` :
                          event.status === 'rejected' ? `Your event "${event.eventTitle}" has been rejected` :
                          `Your event "${event.eventTitle}" has been cancelled`,
-                type: "event_status",
+                type: "status",
                 category: "status",
                 time: event.submittedAt ? new Date(event.submittedAt).toLocaleString() : 'Recently',
                 read: false,
@@ -283,12 +293,16 @@ export const useDashboardStore = create<DashboardState>()(
               }));
             
             const allNotifications = [...upcomingNotifications, ...statusNotifications, ...eventStatusNotifications];
+
+            // Filter out deleted notifications (dismissed by user)
+            const deletedSet = get().deletedNotifications;
+            const filteredNotifications = allNotifications.filter(n => !deletedSet.has(n.id));
             
             set({
               userEvents,
               upcomingEvents: upcoming,
               requirementsOverview: allRequirements,
-              notifications: allNotifications,
+              notifications: filteredNotifications,
               totalUserEvents: userEvents.length,
               totalSystemEvents: allEvents.length,
               lastFetched: now,
@@ -319,6 +333,25 @@ export const useDashboardStore = create<DashboardState>()(
           }
         }
       },
+
+      fetchDeletedNotifications: async (userId: string) => {
+        try {
+          const token = localStorage.getItem('authToken');
+          const response = await axios.get(`${API_BASE_URL}/notifications/deleted-status`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+
+          if (response.data.success) {
+            set({ deletedNotifications: new Set(response.data.data) });
+          }
+        } catch (error) {
+          // Fallback to localStorage
+          const savedDeletedNotifications = localStorage.getItem(`deletedNotifications_${userId}`);
+          if (savedDeletedNotifications) {
+            set({ deletedNotifications: new Set(JSON.parse(savedDeletedNotifications)) });
+          }
+        }
+      },
       
       markNotificationAsRead: async (notificationId: string, notification: Notification) => {
         const state = get();
@@ -330,10 +363,18 @@ export const useDashboardStore = create<DashboardState>()(
 
         try {
           const token = localStorage.getItem('authToken');
+
+          // Backend expects notificationType enum: upcoming | tagged | status
+          // Some UI notifications can have custom type strings, so normalize here.
+          const safeNotificationType =
+            notification.type === 'upcoming' || notification.type === 'tagged' || notification.type === 'status'
+              ? notification.type
+              : (notification.category as 'upcoming' | 'tagged' | 'status');
+
           const response = await axios.post(`${API_BASE_URL}/notifications/mark-read`, {
             notificationId,
             eventId: notification.eventId,
-            notificationType: notification.type,
+            notificationType: safeNotificationType,
             category: notification.category
           }, {
             headers: { 'Authorization': `Bearer ${token}` }
@@ -350,6 +391,40 @@ export const useDashboardStore = create<DashboardState>()(
           const rollbackSet = new Set(state.readNotifications);
           rollbackSet.delete(notificationId);
           set({ readNotifications: rollbackSet });
+        }
+      },
+
+      deleteNotifications: async (notificationIds: string[]) => {
+        const state = get();
+        if (!notificationIds || notificationIds.length === 0) return;
+
+        // Optimistically update UI
+        const newDeletedSet = new Set(state.deletedNotifications);
+        notificationIds.forEach((id) => newDeletedSet.add(id));
+        set({
+          deletedNotifications: newDeletedSet,
+          notifications: state.notifications.filter((n) => !notificationIds.includes(n.id))
+        });
+
+        try {
+          const token = localStorage.getItem('authToken');
+          const response = await axios.post(`${API_BASE_URL}/notifications/delete-multiple`, {
+            notificationIds
+          }, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+
+          if (!response.data.success) {
+            // Rollback on failure
+            const rollbackDeleted = new Set(state.deletedNotifications);
+            notificationIds.forEach((id) => rollbackDeleted.delete(id));
+            set({ deletedNotifications: rollbackDeleted });
+          }
+        } catch (error) {
+          // Rollback on error
+          const rollbackDeleted = new Set(state.deletedNotifications);
+          notificationIds.forEach((id) => rollbackDeleted.delete(id));
+          set({ deletedNotifications: rollbackDeleted });
         }
       },
       

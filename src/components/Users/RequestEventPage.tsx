@@ -783,6 +783,15 @@ const RequestEventPage: React.FC = () => {
         });
         return; // Don't close modal if there are conflicts
       }
+
+      // Extra guard: prevent bridging over booked venue intervals (e.g., 7AM -> 6PM when 8AM-5PM is booked)
+      if (formData.startTime && formData.endTime && isVenueRangeBooked(formData.startTime, formData.endTime, formData.startDate || undefined)) {
+        toast.error('Venue conflict detected!', {
+          description: `Selected time overlaps an already booked venue time. Please pick a continuous available time range.`,
+          duration: 8000,
+        });
+        return;
+      }
     }
     
     // Refresh resource availabilities for selected department or all tagged departments
@@ -1847,6 +1856,70 @@ const RequestEventPage: React.FC = () => {
     return times;
   };
 
+  const timeToMinutes = (time: string) => {
+    const [hours, minutes] = time.split(':').map(Number);
+    return hours * 60 + minutes;
+  };
+
+  const getBookedVenueIntervals = (checkDate?: Date) => {
+    const dateToCheck = checkDate || formData.startDate;
+    if (!dateToCheck || !formData.location || conflictingEvents.length === 0) {
+      return [] as Array<[number, number]>;
+    }
+
+    const checkDateStr = dateToCheck.toDateString();
+
+    const intervals: Array<[number, number]> = [];
+
+    conflictingEvents.forEach((event) => {
+      // Check location conflict
+      const eventLocations = event.locations && Array.isArray(event.locations) && event.locations.length > 0
+        ? event.locations
+        : [event.location];
+
+      const hasLocationConflict = eventLocations.some((eventLoc: string) =>
+        locationsConflict(eventLoc, formData.location)
+      );
+
+      if (!hasLocationConflict) return;
+
+      // Main event date
+      const eventDate = new Date(event.startDate);
+      if (eventDate.toDateString() === checkDateStr && event.startTime && event.endTime) {
+        intervals.push([timeToMinutes(event.startTime), timeToMinutes(event.endTime)]);
+      }
+
+      // Multi-day slots
+      if (event.dateTimeSlots && Array.isArray(event.dateTimeSlots)) {
+        event.dateTimeSlots.forEach((slot: any) => {
+          if (!slot.startDate || !slot.startTime || !slot.endTime) return;
+          const slotDate = new Date(slot.startDate);
+          if (slotDate.toDateString() === checkDateStr) {
+            intervals.push([timeToMinutes(slot.startTime), timeToMinutes(slot.endTime)]);
+          }
+        });
+      }
+    });
+
+    // Sort for stability
+    intervals.sort((a, b) => a[0] - b[0]);
+    return intervals;
+  };
+
+  const isVenueRangeBooked = (startTime: string, endTime: string, checkDate?: Date) => {
+    if (!startTime || !endTime) return false;
+    const startMinutes = timeToMinutes(startTime);
+    const endMinutes = timeToMinutes(endTime);
+    if (endMinutes <= startMinutes) return true;
+
+    const bookedIntervals = getBookedVenueIntervals(checkDate);
+
+    // Overlap check (treat intervals as [start, end) so end==start is allowed)
+    return bookedIntervals.some(([blockedStart, blockedEnd]) => {
+      return startMinutes < blockedEnd && endMinutes > blockedStart;
+    });
+  };
+
 
   // Check if a specific time slot is booked for the selected location and date
   const isTimeSlotBooked = (timeSlot: string, checkDate?: Date) => {
@@ -2011,18 +2084,15 @@ const RequestEventPage: React.FC = () => {
   // Get available end times based on selected start time
   const getAvailableEndTimes = () => {
     if (!formData.startTime) return generateTimeOptions();
-    
-    const timeToMinutes = (time: string) => {
-      const [hours, minutes] = time.split(':').map(Number);
-      return hours * 60 + minutes;
-    };
-    
+
     const startMinutes = timeToMinutes(formData.startTime);
-    
-    return generateTimeOptions().filter(timeOption => {
+
+    return generateTimeOptions().filter((timeOption) => {
       const optionMinutes = timeToMinutes(timeOption.value);
       // End time must be after start time
-      return optionMinutes > startMinutes;
+      if (optionMinutes <= startMinutes) return false;
+      // Must not overlap/bridge across any booked venue interval
+      return !isVenueRangeBooked(formData.startTime, timeOption.value, formData.startDate || undefined);
     });
   };
 
@@ -4404,6 +4474,17 @@ const RequestEventPage: React.FC = () => {
                                           startTime: value,
                                           endTime: currentSlot?.endTime || ''
                                         };
+
+                                        // Clear end time if it becomes invalid (end <= start or overlaps booked venue)
+                                        if (newSlot.endTime) {
+                                          const invalidEnd =
+                                            timeToMinutes(newSlot.endTime) <= timeToMinutes(newSlot.startTime) ||
+                                            isVenueRangeBooked(newSlot.startTime, newSlot.endTime, date);
+                                          if (invalidEnd) {
+                                            newSlot.endTime = '';
+                                          }
+                                        }
+
                                         const updatedSlots = formData.dateTimeSlots.filter(s => 
                                           s.date.toDateString() !== date.toDateString()
                                         );
@@ -4483,11 +4564,11 @@ const RequestEventPage: React.FC = () => {
                                         {generateTimeOptions().filter(t => {
                                           const slot = formData.dateTimeSlots.find(s => s.date.toDateString() === date.toDateString());
                                           if (!slot?.startTime) return true;
-                                          const timeToMinutes = (time: string) => {
-                                            const [hours, minutes] = time.split(':').map(Number);
-                                            return hours * 60 + minutes;
-                                          };
-                                          return timeToMinutes(t.value) > timeToMinutes(slot.startTime);
+                                          // must be after start time
+                                          if (timeToMinutes(t.value) <= timeToMinutes(slot.startTime)) return false;
+
+                                          // must not overlap/bridge across booked venue intervals
+                                          return !isVenueRangeBooked(slot.startTime, t.value, date);
                                         }).map((timeOption) => {
                                           console.log('🎯 END TIME - date variable:', date?.toDateString(), 'timeOption:', timeOption.value);
                                           const isBooked = isTimeSlotBooked(timeOption.value, date);

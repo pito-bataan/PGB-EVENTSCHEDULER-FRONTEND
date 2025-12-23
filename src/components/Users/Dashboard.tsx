@@ -67,6 +67,8 @@ interface Notification {
   departmentNotes?: string;
 }
 
+import { NotificationModal } from './NotificationModal';
+
 const Dashboard: React.FC = () => {
   // Zustand store - replaces all useState calls above!
   const {
@@ -76,9 +78,11 @@ const Dashboard: React.FC = () => {
     totalSystemEvents,
     requirementsOverview,
     readNotifications,
+    deleteNotifications,
     loading,
     fetchDashboardData,
     fetchReadNotifications,
+    fetchDeletedNotifications,
     markNotificationAsRead,
     getFilteredRequirements,
     getUniqueEvents,
@@ -89,6 +93,9 @@ const Dashboard: React.FC = () => {
   // Only keep local UI state
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [selectedEventFilter, setSelectedEventFilter] = useState<string>('all');
+  const [showAllNotifications, setShowAllNotifications] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [markingRead, setMarkingRead] = useState(false);
   
   // Get current user data (memoized to prevent re-renders)
   const currentUser = useMemo(() => {
@@ -302,6 +309,7 @@ const Dashboard: React.FC = () => {
   useEffect(() => {
     fetchDashboardData(userId);
     fetchReadNotifications(userId);
+    fetchDeletedNotifications(userId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]); // REMOVED fetchDashboardData and fetchReadNotifications to prevent infinite loop
 
@@ -376,8 +384,35 @@ const Dashboard: React.FC = () => {
   //   };
   // }, [onStatusUpdate, offStatusUpdate, fetchEventsAndNotifications]);
 
+  // Handler for deleting notifications
+  const handleDeleteNotifications = async (ids: string[]) => {
+    setDeleting(true);
+    await deleteNotifications(ids);
+    setDeleting(false);
+    setShowAllNotifications(false);
+  };
+
+  // Handler for marking as read
+  const handleMarkAsRead = async (ids: string[]) => {
+    setMarkingRead(true);
+    for (const id of ids) {
+      const notif = notifications.find((n) => n.id === id);
+      if (notif) await markNotificationAsRead(id, notif);
+    }
+    setMarkingRead(false);
+    setShowAllNotifications(false);
+  };
+
   return (
   <div className="space-y-4 md:space-y-6 relative">
+    <NotificationModal
+      open={showAllNotifications}
+      notifications={notifications}
+      readNotifications={readNotifications}
+      onClose={() => setShowAllNotifications(false)}
+      onDelete={handleDeleteNotifications}
+      onMarkRead={handleMarkAsRead}
+    />
     {/* Notification Button - Fixed Top Right */}
     <div className="absolute top-0 right-0 z-10">
       <DropdownMenu open={notificationOpen} onOpenChange={setNotificationOpen}>
@@ -626,7 +661,7 @@ const Dashboard: React.FC = () => {
               </div>
               
               <div className="p-2 border-t">
-                <Button variant="outline" className="w-full h-8 text-xs">
+                <Button variant="outline" className="w-full h-8 text-xs" onClick={() => setShowAllNotifications(true)}>
                   View All Notifications
                 </Button>
               </div>
