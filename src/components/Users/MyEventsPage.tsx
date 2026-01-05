@@ -375,6 +375,118 @@ const MyEventsPage: React.FC = () => {
   const [departmentRequirements, setDepartmentRequirements] = useState<any[]>([]);
   const [addDepartmentSearchQuery, setAddDepartmentSearchQuery] = useState('');
 
+  const [customRequirement, setCustomRequirement] = useState<string>('');
+  const [customRequirementType, setCustomRequirementType] = useState<'physical' | 'service'>('service');
+  const [pendingCustomQuantity, setPendingCustomQuantity] = useState<string>('1');
+  const [showCustomInput, setShowCustomInput] = useState(false);
+
+  const fetchLocationRequirementsForEvent = async (event: any) => {
+    try {
+      const token = localStorage.getItem('authToken');
+      if (!token) return [] as Array<{ name: string; quantity: number }>;
+
+      const response = await fetch(`${API_BASE_URL}/location-requirements`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!response.ok) return [];
+
+      const raw = await response.json();
+
+      const unwrapArray = (value: any): any[] => {
+        if (Array.isArray(value)) return value;
+        if (value && typeof value === 'object') {
+          if (Array.isArray(value.data)) return value.data;
+          if (value.data && typeof value.data === 'object' && Array.isArray(value.data.data)) return value.data.data;
+          if (Array.isArray(value.requirements)) return value.requirements;
+        }
+        return [];
+      };
+
+      const allDocs: any[] = unwrapArray(raw);
+
+      const normalizeLocation = (s: any) =>
+        String(s || '')
+          .toLowerCase()
+          .trim()
+          .replace(/\s+/g, ' ')
+          .replace(/[’']/g, "'");
+
+      const selectedLocationsRaw: string[] = Array.isArray(event?.locations) && event.locations.length > 0
+        ? event.locations
+        : (event?.location ? [event.location] : []);
+
+      const selectedLocations = selectedLocationsRaw
+        .map((l) => String(l))
+        .filter((l) => l.trim().length > 0);
+
+      const selectedLocationsNorm = selectedLocations.map(normalizeLocation);
+
+      if (selectedLocations.length === 0) return [];
+
+      // Same matching strategy as RequestEventPage:
+      // - exact doc for single location
+      // - include group/hierarchy docs containing the location
+      // - pick MOST SPECIFIC doc (smallest locationNames length)
+      const exactMatch = selectedLocations.length === 1
+        ? allDocs.find((doc: any) => {
+            const docLocations: string[] = doc.locationNames && Array.isArray(doc.locationNames)
+              ? doc.locationNames
+              : (doc.locationName ? [doc.locationName] : []);
+            const docNorm = docLocations.map(normalizeLocation);
+            return docNorm.length === 1 && docNorm[0] === selectedLocationsNorm[0];
+          })
+        : null;
+
+      const groupMatches = selectedLocations.length === 1
+        ? allDocs.filter((doc: any) => {
+            if (doc.locationNames && Array.isArray(doc.locationNames)) {
+              const docNorm = doc.locationNames.map(normalizeLocation);
+              return docNorm.length > 1 && docNorm.includes(selectedLocationsNorm[0]);
+            }
+            return false;
+          })
+        : allDocs.filter((doc: any) => {
+            if (doc.locationNames && Array.isArray(doc.locationNames)) {
+              const docNorm = doc.locationNames.map(normalizeLocation);
+              return docNorm.length > 1 && selectedLocationsNorm.every((loc) => docNorm.includes(loc));
+            }
+            return false;
+          });
+
+      const candidateDocs: any[] = [];
+      if (exactMatch) candidateDocs.push(exactMatch);
+      candidateDocs.push(...groupMatches);
+
+      if (candidateDocs.length === 0) return [];
+
+      const pickMostSpecific = (docs: any[]) => {
+        if (!docs.length) return null;
+        return docs.reduce((best, doc) => {
+          if (!best) return doc;
+          const bestLen = best.locationNames && Array.isArray(best.locationNames) && best.locationNames.length > 0
+            ? best.locationNames.length
+            : 1;
+          const len = doc.locationNames && Array.isArray(doc.locationNames) && doc.locationNames.length > 0
+            ? doc.locationNames.length
+            : 1;
+          return len < bestLen ? doc : best;
+        }, null as any);
+      };
+
+      const requirementDocs = candidateDocs.filter((doc) => Array.isArray(doc.requirements) && doc.requirements.length > 0);
+      const requirementsSource = requirementDocs.length > 0
+        ? pickMostSpecific(requirementDocs)
+        : exactMatch || groupMatches[0] || null;
+
+      const reqs = requirementsSource && Array.isArray(requirementsSource.requirements)
+        ? requirementsSource.requirements
+        : [];
+      return Array.isArray(reqs) ? reqs : [];
+    } catch (error) {
+      return [];
+    }
+  };
+
   // Compute real-time badge count for Tagged/Requirements button
   const getTaggedUpdatesCount = (event: Event): number => {
     if (!event.departmentRequirements) return 0;
@@ -1659,6 +1771,100 @@ const MyEventsPage: React.FC = () => {
         const dept = response.data.data.find((d: any) => d.name === deptName);
         if (dept && addingToEvent) {
           setSelectedDepartmentData(dept);
+
+          // PGSO special: show default requirements for the event's selected location
+          // (matches Request Event page behavior).
+          const isPgso = deptName.toLowerCase() === 'pgso' || deptName.toLowerCase().includes('pgso');
+          if (isPgso) {
+            const locationReqs = await fetchLocationRequirementsForEvent(addingToEvent);
+
+            if (Array.isArray(locationReqs) && locationReqs.length > 0) {
+              const basePoolByName = new Map<string, number>();
+              locationReqs.forEach((lr: any) => {
+                const name = lr?.name;
+                const qty = typeof lr?.quantity === 'number' ? lr.quantity : 0;
+                if (typeof name === 'string' && name.trim().length > 0) {
+                  basePoolByName.set(name, qty);
+                }
+              });
+
+              // Fetch conflicting events (same logic already used below)
+              const eventDate = new Date(addingToEvent.startDate);
+              const eventsResponse = await axios.get(`${API_BASE_URL}/events`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+              });
+              const allEvents = Array.isArray(eventsResponse.data)
+                ? eventsResponse.data
+                : Array.isArray(eventsResponse.data?.data)
+                  ? eventsResponse.data.data
+                  : [];
+
+              const conflictingEvents = allEvents.filter((event: any) => {
+                if (event._id === addingToEvent._id) return false;
+                if (!event.startDate || !event.startTime || !event.endTime) return false;
+
+                const eventStartDate = new Date(event.startDate);
+                const isSameDate = eventStartDate.toDateString() === eventDate.toDateString();
+                if (!isSameDate) return false;
+
+                const hasTimeOverlap = (
+                  (addingToEvent.startTime >= event.startTime && addingToEvent.startTime < event.endTime) ||
+                  (addingToEvent.endTime > event.startTime && addingToEvent.endTime <= event.endTime) ||
+                  (addingToEvent.startTime <= event.startTime && addingToEvent.endTime >= event.endTime)
+                );
+
+                return hasTimeOverlap;
+              });
+
+              const selectedLocationLabel = Array.isArray(addingToEvent?.locations) && addingToEvent.locations.length > 0
+                ? addingToEvent.locations.join(' + ')
+                : (addingToEvent.location || 'selected location');
+
+              const reqs = Array.from(basePoolByName.entries()).map(([name, baseQuantity]) => {
+                let bookedQuantity = 0;
+
+                // Booked in current event already
+                if (addingToEvent.departmentRequirements && addingToEvent.departmentRequirements[deptName]) {
+                  const currentEventReqs = addingToEvent.departmentRequirements[deptName];
+                  const alreadyBooked = currentEventReqs.find((r: any) => r.name === name);
+                  if (alreadyBooked && alreadyBooked.quantity) {
+                    bookedQuantity += alreadyBooked.quantity;
+                  }
+                }
+
+                // Booked in other overlapping events
+                conflictingEvents.forEach((event: any) => {
+                  if (event.departmentRequirements && event.departmentRequirements[deptName]) {
+                    const deptReqs = event.departmentRequirements[deptName];
+                    const matchingReq = deptReqs.find((r: any) => r.name === name);
+                    if (matchingReq && matchingReq.quantity) {
+                      bookedQuantity += matchingReq.quantity;
+                    }
+                  }
+                });
+
+                const actualAvailable = Math.max(0, (baseQuantity || 0) - bookedQuantity);
+
+                return {
+                  id: `pgso-location-${name}`,
+                  name,
+                  type: 'physical',
+                  selected: false,
+                  quantity: 1,
+                  notes: '',
+                  totalQuantity: actualAvailable,
+                  baseQuantity,
+                  bookedQuantity,
+                  isAvailable: actualAvailable > 0,
+                  availabilityNotes: `PAVILION_DEFAULT:${baseQuantity}:${selectedLocationLabel}`
+                };
+              });
+
+              setDepartmentRequirements(reqs);
+              setShowDepartmentRequirementsModal(true);
+              return;
+            }
+          }
           
           // Fetch availability for the event date
           const eventDate = new Date(addingToEvent.startDate);
@@ -1674,14 +1880,22 @@ const MyEventsPage: React.FC = () => {
             { headers: { 'Authorization': `Bearer ${token}` } }
           );
           
-          const availabilities = availResponse.data || [];
+          const availabilities = Array.isArray(availResponse.data)
+            ? availResponse.data
+            : Array.isArray(availResponse.data?.data)
+              ? availResponse.data.data
+              : [];
           
           // Fetch conflicting events to calculate actual available quantity
           const eventsResponse = await axios.get(`${API_BASE_URL}/events`, {
             headers: { 'Authorization': `Bearer ${token}` }
           });
           
-          const allEvents = eventsResponse.data.data || [];
+          const allEvents = Array.isArray(eventsResponse.data)
+            ? eventsResponse.data
+            : Array.isArray(eventsResponse.data?.data)
+              ? eventsResponse.data.data
+              : [];
           
           
           const conflictingEvents = allEvents.filter((event: any) => {
@@ -1706,20 +1920,12 @@ const MyEventsPage: React.FC = () => {
           });
           
           
-          // Map requirements with availability data and calculate actual available quantity
-          const reqs = dept.requirements
-            .filter((req: any) => {
-              // Only show requirements that have availability for this date
-              const avail = availabilities.find((a: any) => a.requirementId === req._id);
-              return avail !== undefined;
-            })
-            .map((req: any) => {
+          // Map department default requirements (do NOT require availability records to exist).
+          // Availability, if present, only affects the badges and remaining qty.
+          const reqs = (dept.requirements || []).map((req: any) => {
               const avail = availabilities.find((a: any) => a.requirementId === req._id);
 
-              // Determine base quantity, respecting pavilion/location defaults when present.
-              // For PGSO, if availability notes contain a PAVILION_DEFAULT marker, use that
-              // quantity as the base pool (e.g. 30 for chairs in a specific pavilion/location)
-              // instead of the global department total (e.g. 600).
+              // Determine base quantity.
               let baseQuantity: number = 0;
               if (dept.name === 'PGSO' && avail?.notes && typeof avail.notes === 'string' && avail.notes.startsWith('PAVILION_DEFAULT:')) {
                 const parts = avail.notes.split(':');
@@ -1730,7 +1936,7 @@ const MyEventsPage: React.FC = () => {
                   baseQuantity = (avail?.quantity || req.totalQuantity || 0);
                 }
               } else {
-                baseQuantity = avail?.quantity || req.totalQuantity || 0;
+                baseQuantity = (avail?.quantity ?? req.totalQuantity ?? 0);
               }
               
               // Calculate how much is already booked by conflicting events AND current event
@@ -1769,7 +1975,8 @@ const MyEventsPage: React.FC = () => {
                 totalQuantity: actualAvailable, // Use actual available quantity
                 baseQuantity: baseQuantity, // Keep base for reference
                 bookedQuantity: bookedQuantity,
-                isAvailable: avail?.isAvailable && actualAvailable > 0,
+                // If no availability record exists, still show as available based on remaining qty.
+                isAvailable: (avail?.isAvailable ?? true) && actualAvailable > 0,
                 availabilityNotes: avail?.notes || ''
               };
             });
@@ -1785,9 +1992,14 @@ const MyEventsPage: React.FC = () => {
 
   // Toggle requirement selection
   const toggleRequirementSelection = (reqId: string) => {
-    setDepartmentRequirements(prev => 
-      prev.map(req => req.id === reqId ? { ...req, selected: !req.selected } : req)
-    );
+    setDepartmentRequirements(prev => {
+      const target = prev.find((r) => r.id === reqId);
+      if (target?.isCustom && target.selected) {
+        // For custom requirements, unchecking removes it (matches Request Event behavior)
+        return prev.filter((r) => r.id !== reqId);
+      }
+      return prev.map(req => req.id === reqId ? { ...req, selected: !req.selected } : req);
+    });
   };
 
   // Update requirement quantity
@@ -1802,6 +2014,46 @@ const MyEventsPage: React.FC = () => {
     setDepartmentRequirements(prev =>
       prev.map(req => req.id === reqId ? { ...req, notes } : req)
     );
+  };
+
+  const handleAddCustomRequirement = () => {
+    if (!selectedDepartmentData?.name) return;
+    if (!customRequirement.trim()) {
+      toast.error('Please enter a custom requirement name');
+      return;
+    }
+
+    const isPhysical = customRequirementType === 'physical';
+    const quantityValue = isPhysical ? parseInt(pendingCustomQuantity, 10) : undefined;
+
+    if (isPhysical && (!quantityValue || quantityValue <= 0)) {
+      toast.error('Please enter a valid quantity greater than 0');
+      return;
+    }
+
+    const deptName = selectedDepartmentData.name;
+    const newId = `${deptName.toLowerCase().replace(/\s+/g, '-')}-custom-${Date.now()}`;
+
+    const newRequirement = {
+      id: newId,
+      name: customRequirement.trim(),
+      selected: true,
+      type: customRequirementType,
+      quantity: isPhysical ? quantityValue : undefined,
+      totalQuantity: isPhysical ? quantityValue : undefined,
+      isAvailable: true,
+      isCustom: true,
+      notes: ''
+    };
+
+    setDepartmentRequirements((prev) => [...prev, newRequirement]);
+
+    setCustomRequirement('');
+    setCustomRequirementType('service');
+    setPendingCustomQuantity('1');
+    setShowCustomInput(false);
+
+    toast.success(`Custom ${isPhysical ? 'quantity-based' : 'service'} requirement added`);
   };
 
   // Save department with requirements
@@ -1835,6 +2087,10 @@ const MyEventsPage: React.FC = () => {
         setShowAddDepartmentsModal(false);
         setSelectedDepartmentData(null);
         setDepartmentRequirements([]);
+        setCustomRequirement('');
+        setCustomRequirementType('service');
+        setPendingCustomQuantity('1');
+        setShowCustomInput(false);
         setAddingToEvent(null);
         fetchMyEvents();
       }
@@ -4540,6 +4796,70 @@ const MyEventsPage: React.FC = () => {
           </DialogHeader>
 
           <div className="space-y-4 py-4">
+            <div className="border rounded-lg p-3 bg-gray-50">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-medium text-gray-900">Add Custom Requirement</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowCustomInput((v) => !v)}
+                >
+                  {showCustomInput ? 'Hide' : 'Add'}
+                </Button>
+              </div>
+
+              {showCustomInput && (
+                <div className="mt-3 space-y-3">
+                  <div>
+                    <Label className="text-xs">Requirement Name</Label>
+                    <Input
+                      value={customRequirement}
+                      onChange={(e) => setCustomRequirement(e.target.value)}
+                      className="mt-1"
+                      placeholder="e.g., Extra Extension Cord"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <Label className="text-xs">Type</Label>
+                      <Select
+                        value={customRequirementType}
+                        onValueChange={(v) => setCustomRequirementType(v as 'physical' | 'service')}
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue placeholder="Select type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="service">Service</SelectItem>
+                          <SelectItem value="physical">Physical</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {customRequirementType === 'physical' && (
+                      <div>
+                        <Label className="text-xs">Quantity</Label>
+                        <Input
+                          type="number"
+                          min={1}
+                          value={pendingCustomQuantity}
+                          onChange={(e) => setPendingCustomQuantity(e.target.value)}
+                          className="mt-1"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex justify-end">
+                    <Button size="sm" onClick={handleAddCustomRequirement}>
+                      Add Custom Requirement
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {departmentRequirements.length > 0 ? (
               <div className="space-y-3">
                 {departmentRequirements.map((req) => (
@@ -4566,48 +4886,22 @@ const MyEventsPage: React.FC = () => {
                           )}
                         </div>
                         
-                        {/* Show availability info ALWAYS */}
-                        {req.type === 'physical' && req.totalQuantity !== undefined && (
-                          <p className="text-xs text-gray-600 mb-2">
-                            Available: <span className="font-medium">{req.totalQuantity}</span>
-                          </p>
-                        )}
-                        {req.availabilityNotes && (
-                          <p className="text-xs text-gray-600 mb-2">
-                            Note: {req.availabilityNotes}
-                          </p>
-                        )}
-
-                        {req.selected && (
-                          <div className="space-y-2 mt-3">
-                            {req.type === 'physical' ? (
-                              <div>
-                                <Label className="text-xs">Quantity Needed</Label>
-                                <Input
-                                  type="number"
-                                  min="1"
-                                  max={req.totalQuantity}
-                                  value={req.quantity || ''}
-                                  onChange={(e) => updateRequirementQuantity(req.id, parseInt(e.target.value) || 0)}
-                                  className="mt-1"
-                                  placeholder="Enter quantity"
-                                />
-                                <p className="text-xs text-gray-500 mt-1">
-                                  Available: {req.totalQuantity || 'N/A'}
-                                </p>
-                              </div>
-                            ) : (
-                              <div>
-                                <Label className="text-xs">Notes</Label>
-                                <Textarea
-                                  value={req.notes}
-                                  onChange={(e) => updateRequirementNotes(req.id, e.target.value)}
-                                  className="mt-1"
-                                  placeholder="Add specific notes or requirements..."
-                                  rows={3}
-                                />
-                              </div>
-                            )}
+                        {/* Quantity only (no notes) */}
+                        {req.type === 'physical' && (
+                          <div>
+                            <Label className="text-xs">Quantity</Label>
+                            <Input
+                              type="number"
+                              min={0}
+                              max={req.totalQuantity}
+                              value={req.quantity || ''}
+                              onChange={(e) => updateRequirementQuantity(req.id, parseInt(e.target.value) || 0)}
+                              className="mt-1"
+                              placeholder="Enter quantity"
+                            />
+                            <p className="text-xs text-gray-500 mt-1">
+                              Available: <span className="font-medium">{req.totalQuantity || 'N/A'}</span>
+                            </p>
                           </div>
                         )}
                       </div>
