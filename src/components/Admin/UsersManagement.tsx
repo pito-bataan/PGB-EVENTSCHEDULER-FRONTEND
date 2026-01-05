@@ -110,6 +110,13 @@ interface EditUser {
   confirmPassword: string;
 }
 
+interface DepartmentItem {
+  _id: string;
+  name: string;
+  isVisible: boolean;
+  createdAt?: string;
+}
+
 const UsersManagement: React.FC = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -155,55 +162,8 @@ const UsersManagement: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const departments = [
-    'ACCOUNTING',
-    'ADMINISTRATOR',
-    'ASSESSOR',
-    'BAC',
-    'BCMH',
-    'BHSO',
-    'BUDGET',
-    'DOLE',
-    'INB',
-    'JCPJMH',
-    'LEGAL',
-    'MBDA',
-    'MDH',
-    'ODH',
-    'OMSP',
-    'OPA',
-    'OPAgriculturist',
-    'OPG',
-    'OPPDC',
-    'OSM',
-    'OSSP',
-    'OVG',
-    'PCEDO',
-    'PDRRMO',
-    'PEO',
-    'PESO',
-    'PG-ENRO',
-    'PGO',
-    'PGO-BAC',
-    'PGO-IAS',
-    'PGO-ISKOLAR',
-    'PGSO',
-    'PHO',
-    'PHRMO',
-    'PIO',
-    'PITO',
-    'PLO',
-    'PMO',
-    'PPDO',
-    'PPO',
-    'PPP',
-    'PSWDO',
-    'SAP',
-    'SP',
-    'TOURISM',
-    'TREASURY',
-    'VET'
-  ];
+  const [departments, setDepartments] = useState<DepartmentItem[]>([]);
+  const [loadingDepartments, setLoadingDepartments] = useState(false);
 
   const roles = ['User', 'Admin'];
 
@@ -215,6 +175,27 @@ const UsersManagement: React.FC = () => {
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json'
     };
+  };
+
+  const fetchDepartments = async () => {
+    try {
+      setLoadingDepartments(true);
+      const response = await axios.get(`${API_BASE_URL}/departments?limit=1000`, {
+        headers: getAuthHeaders()
+      });
+
+      if (response.data?.success) {
+        const list: DepartmentItem[] = response.data.data || [];
+        const sorted = [...list].sort((a, b) => a.name.localeCompare(b.name));
+        setDepartments(sorted);
+      }
+    } catch (error: any) {
+      console.error('Error fetching departments:', error);
+      toast.error(error.response?.data?.message || 'Failed to fetch departments');
+      setDepartments([]);
+    } finally {
+      setLoadingDepartments(false);
+    }
   };
 
   // Fetch users from API
@@ -240,6 +221,7 @@ const UsersManagement: React.FC = () => {
   // Load users on component mount
   useEffect(() => {
     fetchUsers();
+    fetchDepartments();
   }, []);
 
   // Reset to page 1 when search term changes
@@ -578,6 +560,9 @@ const UsersManagement: React.FC = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-gray-900">{departments.length}</div>
+            {loadingDepartments && (
+              <p className="text-xs text-gray-500 mt-1">Loading...</p>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -737,11 +722,17 @@ const UsersManagement: React.FC = () => {
                     <SelectValue placeholder="Select department" />
                   </SelectTrigger>
                   <SelectContent>
-                    {departments.map((dept) => (
-                      <SelectItem key={dept} value={dept}>
-                        {dept}
+                    {departments.length === 0 ? (
+                      <SelectItem value="__none" disabled>
+                        No departments found
                       </SelectItem>
-                    ))}
+                    ) : (
+                      departments.map((dept) => (
+                        <SelectItem key={dept._id} value={dept.name}>
+                          {dept.name}{dept.isVisible ? '' : ' (Hidden)'}
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
               </div>

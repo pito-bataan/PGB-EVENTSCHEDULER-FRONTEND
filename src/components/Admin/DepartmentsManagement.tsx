@@ -166,7 +166,7 @@ const DepartmentsManagement: React.FC = () => {
     }
   };
 
-  const handleAddDepartment = () => {
+  const handleAddDepartment = async () => {
     if (!newDepartmentName.trim()) {
       toast.error('Please enter a department name');
       return;
@@ -182,18 +182,54 @@ const DepartmentsManagement: React.FC = () => {
       return;
     }
 
-    const newDepartment: Department = {
-      id: Date.now().toString(),
-      name: newDepartmentName.trim(),
-      isVisible: true,
-      createdAt: new Date().toISOString().split('T')[0],
-      userCount: 0
-    };
+    try {
+      setLoading(true);
 
-    setDepartments(prev => [...prev, newDepartment]);
-    setNewDepartmentName('');
-    setShowAddModal(false);
-    toast.success('Department added successfully!');
+      const token = localStorage.getItem('authToken');
+      const headers = {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      };
+
+      const response = await axios.post(
+        `${API_BASE_URL}/departments`,
+        {
+          name: newDepartmentName.trim(),
+          isVisible: true,
+          requirements: []
+        },
+        { headers }
+      );
+
+      if (!response.data?.success) {
+        throw new Error(response.data?.message || 'Failed to add department');
+      }
+
+      const dept = response.data.data;
+      const mappedDepartment: Department = {
+        id: dept._id,
+        name: dept.name,
+        isVisible: dept.isVisible,
+        createdAt: dept.createdAt ? dept.createdAt.split('T')[0] : new Date().toISOString().split('T')[0],
+        userCount: 0,
+        requirements: dept.requirements
+      };
+
+      setDepartments(prev => {
+        const next = [...prev, mappedDepartment];
+        next.sort((a, b) => a.name.localeCompare(b.name));
+        return next;
+      });
+
+      setNewDepartmentName('');
+      setShowAddModal(false);
+      toast.success('Department added successfully!');
+    } catch (error: any) {
+      console.error('Error adding department:', error);
+      toast.error(error.response?.data?.message || error?.message || 'Failed to add department');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleDeleteDepartment = (id: string, name: string) => {
