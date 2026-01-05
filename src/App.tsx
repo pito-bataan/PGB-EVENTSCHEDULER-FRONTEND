@@ -16,6 +16,7 @@ import TaggedDepartmentPage from './components/Users/TaggedDepartmentPage'
 import UserAllEventsPage from './components/Users/AllEventsPage'
 import EventReportsPage from './components/Users/EventReportsPage'
 import RequestEventGuidePage from './components/Users/RequestEventGuidePage'
+import LocationAvailabilityCalendarPage from './components/Users/LocationAvailabilityCalendarPage'
 import AdminMainLayout from './components/Admin/AdminMainLayout'
 import AdminDashboard from './components/Admin/AdminDashboard'
 import AllEventsPage from './components/Admin/AllEventsPage'
@@ -147,7 +148,7 @@ function App() {
                   <Route path="my-calendar" element={<MyCalendarPage />} />
                   <Route path="my-requirements" element={<MyRequirementsPage />} />
                   <Route path="manage-location" element={<ManageLocationPage />} />
-                  <Route path="calendar" element={<div className="p-6"><h1 className="text-2xl font-bold">Calendar</h1><p>Coming soon...</p></div>} />
+                  <Route path="calendar" element={<LocationAvailabilityCalendarPage />} />
                   <Route path="all-events" element={<UserAllEventsPage />} />
                   <Route path="messages" element={<MessagesPage />} />
                   <Route path="tagged-departments" element={<TaggedDepartmentPage />} />

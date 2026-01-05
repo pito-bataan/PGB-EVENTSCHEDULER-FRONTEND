@@ -788,6 +788,7 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
         { icon: CalendarPlus, label: 'Request Event', href: '/users/request-event', hasSubmenu: true, submenu: [
           { icon: BookOpen, label: 'Request Event Guide', href: '/users/request-event-guide' }
         ]},
+        { icon: CalendarDays, label: 'Calendar', href: '/users/calendar' },
         { icon: Calendar, label: 'My Events', href: '/users/my-events' },
         { icon: MessageSquare, label: 'Messages', href: '/users/messages' },
         { icon: FileText, label: 'Event Reports', href: '/users/event-reports' },

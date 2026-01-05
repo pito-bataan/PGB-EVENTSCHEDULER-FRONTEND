@@ -160,6 +160,7 @@ const CustomCalendar: React.FC<CustomCalendarProps> = ({
   const parseEventNotes = (notes?: string) => {
     if (!notes) return { 
       location: 'N/A', 
+      department: 'N/A',
       status: 'N/A',
       startDate: 'N/A',
       endDate: 'N/A',
@@ -169,6 +170,7 @@ const CustomCalendar: React.FC<CustomCalendarProps> = ({
     };
     
     const locationMatch = notes.match(/Location: ([^|]+)/);
+    const departmentMatch = notes.match(/Department: ([^|]+)/);
     const statusMatch = notes.match(/Status: ([^|]+)/);
     const startDateMatch = notes.match(/StartDate: ([^|]+)/);
     const endDateMatch = notes.match(/EndDate: ([^|]+)/);
@@ -192,6 +194,7 @@ const CustomCalendar: React.FC<CustomCalendarProps> = ({
     
     return {
       location: locationMatch ? locationMatch[1].trim() : 'N/A',
+      department: departmentMatch ? departmentMatch[1].trim() : 'N/A',
       status: statusMatch ? statusMatch[1].trim() : 'N/A',
       startDate: startDateMatch ? startDateMatch[1].trim() : 'N/A',
       endDate: endDateMatch ? endDateMatch[1].trim() : 'N/A',
@@ -301,6 +304,12 @@ const CustomCalendar: React.FC<CustomCalendarProps> = ({
                   <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
                     <MapPin className="w-3 h-3 flex-shrink-0" />
                     <span className="truncate max-w-[11rem]">{eventDetails.location}</span>
+                  </div>
+                )}
+                {eventDetails.department && eventDetails.department !== 'N/A' && (
+                  <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
+                    <span className="font-medium">Department:</span>
+                    <span className="truncate max-w-[11rem]">{eventDetails.department}</span>
                   </div>
                 )}
               </div>
