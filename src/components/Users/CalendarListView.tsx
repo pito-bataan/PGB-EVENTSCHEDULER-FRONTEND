@@ -61,6 +61,7 @@ interface CalendarEvent {
   numberOfVIP?: number;
   numberOfVVIP?: number;
   taggedDepartments?: string[];
+  departmentRequirements?: Record<string, any[]>;
   status: 'pending' | 'approved' | 'rejected' | 'completed' | 'on-hold';
 }
 
@@ -85,6 +86,12 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
   
   // Initialize WebSocket
   const { onStatusUpdate, offStatusUpdate } = useSocket(currentUser?._id);
+
+  const formatRequirementLabel = (req: any) => {
+    const name = req?.name ?? req?.text ?? req?.requirementText ?? req?.requirementName ?? 'Requirement';
+    const qty = req?.quantity ?? req?.requestedQuantity ?? req?.qty;
+    return typeof qty === 'number' && qty > 0 ? `${name} (${qty})` : `${name}`;
+  };
 
   // Set up real-time event updates via WebSocket
   useEffect(() => {
@@ -262,21 +269,21 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
         yPos += 4;
       }
 
-      pdf.setFontSize(13);
+      pdf.setFontSize(15);
       pdf.setFont('helvetica', 'bold');
       pdf.text('PROVINCIAL GOVERNMENT OF BATAAN', pageWidth / 2, yPos, { align: 'center' });
       yPos += 6;
-      pdf.setFontSize(10);
+      pdf.setFontSize(12);
       pdf.setFont('helvetica', 'normal');
       pdf.text('My Calendar - Event Summary', pageWidth / 2, yPos, { align: 'center' });
       yPos += 7;
-      pdf.setFontSize(9);
+      pdf.setFontSize(10);
       pdf.text(`Generated on ${format(new Date(), 'MMMM dd, yyyy')} at ${format(new Date(), 'h:mm a')}`, pageWidth / 2, yPos, { align: 'center' });
       yPos += 8;
 
       // Date label (top-left) above the card image
       const eventDateLabel = format(new Date(event.startDate), 'EEEE, MMMM d, yyyy');
-      pdf.setFontSize(10);
+      pdf.setFontSize(11);
       pdf.setFont('helvetica', 'bold');
       pdf.text(eventDateLabel, margin, yPos);
       yPos += 7;
@@ -337,15 +344,15 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
           yPos += 4;
         }
 
-        pdf.setFontSize(13);
+        pdf.setFontSize(15);
         pdf.setFont('helvetica', 'bold');
         pdf.text('PROVINCIAL GOVERNMENT OF BATAAN', pageWidth / 2, yPos, { align: 'center' });
         yPos += 6;
-        pdf.setFontSize(10);
+        pdf.setFontSize(12);
         pdf.setFont('helvetica', 'normal');
         pdf.text('My Calendar - Events List', pageWidth / 2, yPos, { align: 'center' });
         yPos += 7;
-        pdf.setFontSize(9);
+        pdf.setFontSize(10);
         const rangeText = dateRange.to
           ? `${format(dateRange.from, 'MMM dd, yyyy')} - ${format(dateRange.to, 'MMM dd, yyyy')}`
           : format(dateRange.from, 'MMM dd, yyyy');
@@ -402,7 +409,7 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
 
           // Date label (top-left) for this event card
           const eventDateLabel = format(new Date(event.startDate), 'EEEE, MMMM d, yyyy');
-          pdf.setFontSize(10);
+          pdf.setFontSize(11);
           pdf.setFont('helvetica', 'bold');
           pdf.text(eventDateLabel, margin, yPos);
           yPos += 6;
@@ -590,27 +597,27 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
                             <div className="space-y-4 pr-6">
                               <div className="space-y-3">
                                 <div className="flex items-start gap-3">
-                                  <User className="w-7 h-7 text-gray-700 flex-shrink-0 mt-0.5" />
+                                  <User className="w-6 h-6 text-gray-700 flex-shrink-0 mt-0.5" />
                                   <div>
-                                    <p className="text-base font-medium text-muted-foreground mb-1">Requestor</p>
+                                    <p className="text-sm font-medium text-muted-foreground mb-1">Requestor</p>
                                     <p className="text-lg font-semibold">{event.requestor}</p>
                                   </div>
                                 </div>
 
                                 {event.requestorDepartment && (
                                   <div className="flex items-start gap-3">
-                                    <Building2 className="w-7 h-7 text-gray-700 flex-shrink-0 mt-0.5" />
+                                    <Building2 className="w-6 h-6 text-gray-700 flex-shrink-0 mt-0.5" />
                                     <div>
-                                      <p className="text-base font-medium text-muted-foreground mb-1">Requestor Department</p>
+                                      <p className="text-sm font-medium text-muted-foreground mb-1">Requestor Department</p>
                                       <p className="text-lg font-semibold">{event.requestorDepartment}</p>
                                     </div>
                                   </div>
                                 )}
 
                                 <div className="flex items-start gap-3">
-                                  <MapPin className="w-7 h-7 text-gray-700 flex-shrink-0 mt-0.5" />
+                                  <MapPin className="w-6 h-6 text-gray-700 flex-shrink-0 mt-0.5" />
                                   <div className="flex-1">
-                                    <p className="text-base font-medium text-muted-foreground mb-1">
+                                    <p className="text-sm font-medium text-muted-foreground mb-1">
                                       {event.multipleLocations && event.locations && event.locations.length > 1 ? 'Locations' : 'Location'}
                                     </p>
                                     {event.multipleLocations && event.locations && event.locations.length > 0 ? (
@@ -625,18 +632,20 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
                                       <p className="text-lg font-semibold">{event.location}</p>
                                     )}
                                     {event.roomType && (
-                                      <p className="text-sm text-gray-600 mt-1">
-                                        <span className="font-medium">Room Type:</span> {event.roomType}
-                                      </p>
+                                      <div className="mt-2">
+                                        <Badge variant="outline" className="text-sm bg-white">
+                                          Room Type: {event.roomType}
+                                        </Badge>
+                                      </div>
                                     )}
                                   </div>
                                 </div>
 
                                 {event.contactNumber && (
                                   <div className="flex items-start gap-3">
-                                    <Phone className="w-7 h-7 text-gray-700 flex-shrink-0 mt-0.5" />
+                                    <Phone className="w-6 h-6 text-gray-700 flex-shrink-0 mt-0.5" />
                                     <div>
-                                      <p className="text-base font-medium text-muted-foreground mb-1">Contact Number</p>
+                                      <p className="text-sm font-medium text-muted-foreground mb-1">Contact Number</p>
                                       <p className="text-lg font-semibold">{event.contactNumber}</p>
                                     </div>
                                   </div>
@@ -644,9 +653,9 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
 
                                 {event.contactEmail && (
                                   <div className="flex items-start gap-3">
-                                    <Mail className="w-7 h-7 text-gray-700 flex-shrink-0 mt-0.5" />
+                                    <Mail className="w-6 h-6 text-gray-700 flex-shrink-0 mt-0.5" />
                                     <div>
-                                      <p className="text-base font-medium text-muted-foreground mb-1">Contact Email</p>
+                                      <p className="text-sm font-medium text-muted-foreground mb-1">Contact Email</p>
                                       <p className="text-lg font-semibold break-all">{event.contactEmail}</p>
                                     </div>
                                   </div>
@@ -662,16 +671,16 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
                                   <>
                                     {/* Day 1 */}
                                     <div className="flex items-start gap-3">
-                                      <Clock className="w-7 h-7 text-gray-700 flex-shrink-0 mt-0.5" />
+                                      <Clock className="w-6 h-6 text-gray-700 flex-shrink-0 mt-0.5" />
                                       <div className="flex-1 grid grid-cols-2 gap-4">
                                         <div>
-                                          <p className="text-base font-medium text-muted-foreground mb-1">Day 1 - Start</p>
+                                          <p className="text-sm font-medium text-muted-foreground mb-1">Day 1 - Start</p>
                                           <p className="text-lg font-semibold">
                                             {format(new Date(event.startDate), 'MMM d, yyyy')} at {formatTime(event.startTime)}
                                           </p>
                                         </div>
                                         <div>
-                                          <p className="text-base font-medium text-muted-foreground mb-1">Day 1 - End</p>
+                                          <p className="text-sm font-medium text-muted-foreground mb-1">Day 1 - End</p>
                                           <p className="text-lg font-semibold">
                                             {format(new Date(event.startDate), 'MMM d, yyyy')} at {formatTime(event.endTime)}
                                           </p>
@@ -682,16 +691,16 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
                                     {/* Additional days from dateTimeSlots */}
                                     {event.dateTimeSlots.map((slot, idx) => (
                                       <div key={idx} className="flex items-start gap-3">
-                                        <Clock className="w-7 h-7 text-gray-700 flex-shrink-0 mt-0.5" />
+                                        <Clock className="w-6 h-6 text-gray-700 flex-shrink-0 mt-0.5" />
                                         <div className="flex-1 grid grid-cols-2 gap-4">
                                           <div>
-                                            <p className="text-base font-medium text-muted-foreground mb-1">Day {idx + 2} - Start</p>
+                                            <p className="text-sm font-medium text-muted-foreground mb-1">Day {idx + 2} - Start</p>
                                             <p className="text-lg font-semibold">
                                               {format(new Date(slot.startDate), 'MMM d, yyyy')} at {formatTime(slot.startTime)}
                                             </p>
                                           </div>
                                           <div>
-                                            <p className="text-base font-medium text-muted-foreground mb-1">Day {idx + 2} - End</p>
+                                            <p className="text-sm font-medium text-muted-foreground mb-1">Day {idx + 2} - End</p>
                                             <p className="text-lg font-semibold">
                                               {format(new Date(slot.endDate), 'MMM d, yyyy')} at {formatTime(slot.endTime)}
                                             </p>
@@ -702,16 +711,16 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
                                   </>
                                 ) : (
                                   <div className="flex items-start gap-3">
-                                    <Clock className="w-7 h-7 text-gray-700 flex-shrink-0 mt-0.5" />
+                                    <Clock className="w-6 h-6 text-gray-700 flex-shrink-0 mt-0.5" />
                                     <div className="flex-1 grid grid-cols-2 gap-4">
                                       <div>
-                                        <p className="text-base font-medium text-muted-foreground mb-1">Start</p>
+                                        <p className="text-sm font-medium text-muted-foreground mb-1">Start</p>
                                         <p className="text-lg font-semibold">
                                           {format(new Date(event.startDate), 'MMM d, yyyy')} at {formatTime(event.startTime)}
                                         </p>
                                       </div>
                                       <div>
-                                        <p className="text-base font-medium text-muted-foreground mb-1">End</p>
+                                        <p className="text-sm font-medium text-muted-foreground mb-1">End</p>
                                         <p className="text-lg font-semibold">
                                           {format(new Date(event.endDate), 'MMM d, yyyy')} at {formatTime(event.endTime)}
                                         </p>
@@ -721,9 +730,9 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
                                 )}
 
                                 <div className="flex items-start gap-3">
-                                  <Users className="w-7 h-7 text-gray-700 flex-shrink-0 mt-0.5" />
+                                  <Users className="w-6 h-6 text-gray-700 flex-shrink-0 mt-0.5" />
                                   <div className="flex-1">
-                                    <p className="text-base font-medium text-muted-foreground mb-1">Participants</p>
+                                    <p className="text-sm font-medium text-muted-foreground mb-1">Participants</p>
                                     <div className="space-y-1">
                                       <p className="text-lg font-semibold">
                                         Total: {(event as any).numberOfParticipants || (event as any).participants || 0}
@@ -744,25 +753,45 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
 
                                 {event.taggedDepartments && event.taggedDepartments.length > 0 && (
                                   <div className="flex items-start gap-3">
-                                    <Building2 className="w-7 h-7 text-gray-700 flex-shrink-0 mt-0.5" />
+                                    <Building2 className="w-6 h-6 text-gray-700 flex-shrink-0 mt-0.5" />
                                     <div className="flex-1">
-                                      <p className="text-base font-medium text-muted-foreground mb-2">Tagged Departments</p>
-                                      <div className="flex flex-wrap gap-2">
-                                        {event.taggedDepartments.map((dept, idx) => (
-                                          <Badge key={idx} variant="secondary" className="text-sm">
-                                            {dept}
-                                          </Badge>
-                                        ))}
+                                      <p className="text-sm font-medium text-muted-foreground mb-2">Tagged Departments</p>
+                                      <div className="space-y-2">
+                                        {event.taggedDepartments.map((dept, idx) => {
+                                          const reqs = (event as any).departmentRequirements?.[dept] || [];
+                                          return (
+                                            <div key={idx}>
+                                              <div className="flex flex-wrap gap-2">
+                                                <Badge variant="secondary" className="text-xs">
+                                                  {dept}
+                                                </Badge>
+                                              </div>
+                                              {Array.isArray(reqs) && reqs.length > 0 && (
+                                                <div className="mt-2 flex flex-wrap gap-2">
+                                                  {reqs.map((r: any, rIdx: number) => (
+                                                    <Badge
+                                                      key={`${dept}-${rIdx}`}
+                                                      variant="outline"
+                                                      className="text-sm bg-white"
+                                                    >
+                                                      {formatRequirementLabel(r)}
+                                                    </Badge>
+                                                  ))}
+                                                </div>
+                                              )}
+                                            </div>
+                                          );
+                                        })}
                                       </div>
                                     </div>
                                   </div>
                                 )}
 
                                 <div className="flex items-start gap-3 pt-2">
-                                  <div className="w-7 h-7 flex-shrink-0" />
+                                  <div className="w-6 h-6 flex-shrink-0" />
                                   <div>
-                                    <p className="text-base font-medium text-muted-foreground mb-2">Status</p>
-                                    <Badge className={`${getStatusColor(event.status)} border text-sm px-3 py-1`}>
+                                    <p className="text-sm font-medium text-muted-foreground mb-2">Status</p>
+                                    <Badge className={`${getStatusColor(event.status)} border text-xs px-3 py-1`}>
                                       {getStatusLabel(event.status)}
                                     </Badge>
                                   </div>
