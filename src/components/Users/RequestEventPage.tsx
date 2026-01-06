@@ -4709,7 +4709,7 @@ const RequestEventPage: React.FC = () => {
 
       {/* W/O Gov Files Modal - Redesigned */}
       <Dialog open={showGovModal} onOpenChange={setShowGovModal}>
-        <DialogContent className="sm:max-w-2xl">
+        <DialogContent className="sm:max-w-2xl" showCloseButton={false}>
           <DialogHeader>
             <DialogTitle>Government Files</DialogTitle>
             <DialogDescription>

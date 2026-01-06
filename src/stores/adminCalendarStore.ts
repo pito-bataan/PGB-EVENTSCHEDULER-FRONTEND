@@ -11,6 +11,12 @@ export interface Event {
   eventTitle: string;
   location: string;
   locations?: string[];
+  withoutGov?: boolean;
+  govFiles?: {
+    brieferTemplate?: { filename?: string; originalName?: string };
+    programme?: { filename?: string; originalName?: string };
+    availableForDL?: { filename?: string; originalName?: string };
+  };
   startDate: string;
   startTime: string;
   endDate: string;
@@ -28,8 +34,12 @@ export interface Event {
 
 interface AdminCalendarState {
   // Data
+  allEvents: Event[];
   events: Event[];
   calendarEvents: CalendarEvent[];
+
+  // Filters
+  showGovOnly: boolean;
   
   // Loading & Cache
   loading: boolean;
@@ -38,6 +48,7 @@ interface AdminCalendarState {
   
   // Actions
   fetchEvents: (force?: boolean) => Promise<void>;
+  setShowGovOnly: (showGovOnly: boolean) => void;
   clearCache: () => void;
   
   // Getters
@@ -49,8 +60,10 @@ export const useAdminCalendarStore = create<AdminCalendarState>()(
   devtools(
     (set, get) => ({
       // Initial state
+      allEvents: [],
       events: [],
       calendarEvents: [],
+      showGovOnly: false,
       loading: false,
       lastFetched: null,
       CACHE_DURATION: 5 * 60 * 1000, // 5 minutes cache
@@ -86,12 +99,28 @@ export const useAdminCalendarStore = create<AdminCalendarState>()(
             const filteredEvents = allEvents.filter(
               (event: Event) => event.status !== 'draft'
             );
+
+            const showGovOnly = get().showGovOnly;
+            const isWithGov = (event: Event) => {
+              return Boolean(
+                event.govFiles?.brieferTemplate?.filename ||
+                event.govFiles?.brieferTemplate?.originalName ||
+                event.govFiles?.programme?.filename ||
+                event.govFiles?.programme?.originalName ||
+                event.govFiles?.availableForDL?.filename ||
+                event.govFiles?.availableForDL?.originalName
+              );
+            };
+            const finalEvents = showGovOnly
+              ? filteredEvents.filter(isWithGov)
+              : filteredEvents;
             
             // Convert to calendar events
-            const calEvents = get().convertToCalendarEvents(filteredEvents);
+            const calEvents = get().convertToCalendarEvents(finalEvents);
             
             set({
-              events: filteredEvents,
+              allEvents: filteredEvents,
+              events: finalEvents,
               calendarEvents: calEvents,
               lastFetched: now,
               loading: false
@@ -101,11 +130,36 @@ export const useAdminCalendarStore = create<AdminCalendarState>()(
           set({ loading: false });
         }
       },
+
+      setShowGovOnly: (showGovOnly: boolean) => {
+        const state = get();
+        const isWithGov = (event: Event) => {
+          return Boolean(
+            event.govFiles?.brieferTemplate?.filename ||
+            event.govFiles?.brieferTemplate?.originalName ||
+            event.govFiles?.programme?.filename ||
+            event.govFiles?.programme?.originalName ||
+            event.govFiles?.availableForDL?.filename ||
+            event.govFiles?.availableForDL?.originalName
+          );
+        };
+        const filtered = showGovOnly
+          ? state.allEvents.filter(isWithGov)
+          : state.allEvents;
+
+        set({
+          showGovOnly,
+          events: filtered,
+          calendarEvents: state.convertToCalendarEvents(filtered)
+        });
+      },
       
       clearCache: () => {
         set({
+          allEvents: [],
           events: [],
           calendarEvents: [],
+          showGovOnly: false,
           lastFetched: null
         });
       },

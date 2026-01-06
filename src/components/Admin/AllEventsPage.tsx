@@ -1105,13 +1105,14 @@ const AllEventsPage: React.FC = () => {
                     <TableHead>Date & Time</TableHead>
                     <TableHead>Location</TableHead>
                     <TableHead>Participants</TableHead>
+                    <TableHead className="w-[90px]">WITH GOV</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredEvents.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={enableEventDeletion ? 9 : 8} className="text-center py-8 text-gray-500">
+                      <TableCell colSpan={enableEventDeletion ? 10 : 9} className="text-center py-8 text-gray-500">
                         No events found
                       </TableCell>
                     </TableRow>
@@ -1246,6 +1247,22 @@ const AllEventsPage: React.FC = () => {
                               <Users className="w-3 h-3" />
                               <span>{event.participants}</span>
                             </div>
+                          </TableCell>
+                          <TableCell>
+                            <span className="text-sm font-medium text-gray-700">
+                              {(() => {
+                                const hasGovFiles = Boolean(
+                                  event.govFiles?.brieferTemplate?.filename ||
+                                  event.govFiles?.brieferTemplate?.originalName ||
+                                  event.govFiles?.programme?.filename ||
+                                  event.govFiles?.programme?.originalName ||
+                                  event.govFiles?.availableForDL?.filename ||
+                                  event.govFiles?.availableForDL?.originalName
+                                );
+
+                                return hasGovFiles ? 'Yes' : 'No';
+                              })()}
+                            </span>
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex items-center gap-2 justify-end">

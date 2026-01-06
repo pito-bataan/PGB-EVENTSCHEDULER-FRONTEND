@@ -1,16 +1,20 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import CustomCalendar from '@/components/ui/custom-calendar';
 import type { CalendarEvent } from '@/components/ui/custom-calendar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Calendar, MapPin, Clock, RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
 import { getGlobalSocket } from '@/hooks/useSocket';
 import { useAdminCalendarStore, type Event } from '@/stores/adminCalendarStore';
 
 const AdminCalendarPage: React.FC = () => {
+  const [showMoreEventsDialog, setShowMoreEventsDialog] = useState(false);
+  const [moreEventsDate, setMoreEventsDate] = useState<Date | null>(null);
+  const [moreDateEvents, setMoreDateEvents] = useState<CalendarEvent[]>([]);
   
   // Zustand store
   const {
@@ -18,6 +22,8 @@ const AdminCalendarPage: React.FC = () => {
     calendarEvents,
     loading,
     fetchEvents,
+    showGovOnly,
+    setShowGovOnly,
     getEventsForDate
   } = useAdminCalendarStore();
 
@@ -237,6 +243,13 @@ const AdminCalendarPage: React.FC = () => {
     const isCurrentMonth = format(date, 'MMM') === format(new Date(), 'MMM');
     const eventsForDate = getEventsForDate(date);
 
+    const handleShowMore = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setMoreEventsDate(date);
+      setMoreDateEvents(dateEvents);
+      setShowMoreEventsDialog(true);
+    };
+
     return (
       <>
         {/* Date Number */}
@@ -264,9 +277,13 @@ const AdminCalendarPage: React.FC = () => {
               return calEvent ? renderEventWithPopover(calEvent) : null;
             })}
             {eventsForDate.length > 3 && (
-              <div className="text-xs text-gray-500 font-medium">
+              <button
+                type="button"
+                onClick={handleShowMore}
+                className="text-xs text-gray-500 font-medium hover:text-gray-700 underline-offset-2 hover:underline text-left"
+              >
                 +{eventsForDate.length - 3} more
-              </div>
+              </button>
             )}
           </div>
         )}
@@ -277,21 +294,49 @@ const AdminCalendarPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50/50 p-8">
       <div className="max-w-[1600px] mx-auto space-y-6">
+        <Dialog open={showMoreEventsDialog} onOpenChange={setShowMoreEventsDialog}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>
+                {moreEventsDate
+                  ? `Events on ${format(moreEventsDate, 'MMM dd, yyyy')}`
+                  : 'Events'}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-1 max-h-[60vh] overflow-y-auto">
+              {moreDateEvents.length === 0 ? (
+                <div className="text-sm text-gray-500 py-4">No events</div>
+              ) : (
+                moreDateEvents.map((calEvent) => renderEventWithPopover(calEvent))
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight text-gray-900">Calendar</h1>
             <p className="text-sm text-muted-foreground mt-1">View all events and bookings in calendar view</p>
           </div>
-          <Button
-            onClick={() => fetchEvents(true)}
-            variant="outline"
-            size="sm"
-            className="gap-2"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={() => setShowGovOnly(!showGovOnly)}
+              variant={showGovOnly ? 'default' : 'outline'}
+              size="sm"
+            >
+              Gov’s Calendar
+            </Button>
+            <Button
+              onClick={() => fetchEvents(true)}
+              variant="outline"
+              size="sm"
+              className="gap-2"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+          </div>
         </div>
 
         {/* Calendar Card */}
