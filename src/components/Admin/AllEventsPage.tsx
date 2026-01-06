@@ -1118,8 +1118,27 @@ const AllEventsPage: React.FC = () => {
                   ) : (
                     paginatedEvents.map((event) => {
                       const statusInfo = getStatusInfo(event.status);
+
+                      const hasNoRequirements = (() => {
+                        if (!event.departmentRequirements) return true;
+                        const allRequirements: any[] = [];
+                        Object.values(event.departmentRequirements).forEach((reqs: any) => {
+                          if (Array.isArray(reqs)) {
+                            reqs.forEach((req: any) => allRequirements.push(req));
+                          }
+                        });
+                        return allRequirements.length === 0;
+                      })();
+
                       return (
-                        <TableRow key={event._id} className="hover:bg-gray-50">
+                        <TableRow
+                          key={event._id}
+                          className={
+                            hasNoRequirements
+                              ? 'bg-yellow-50 hover:bg-yellow-100'
+                              : 'hover:bg-gray-50'
+                          }
+                        >
                           {enableEventDeletion && (
                             <TableCell className="text-center">
                               <button

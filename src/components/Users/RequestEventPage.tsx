@@ -1364,6 +1364,10 @@ const RequestEventPage: React.FC = () => {
       
       // Filter events that conflict with the selected time AND location (for venue booking)
       const conflicts = events.filter((event: any) => {
+        if (event.status === 'cancelled') {
+          return false;
+        }
+
         if (!event.startDate || !event.startTime || !event.endDate || !event.endTime) {
           return false;
         }
@@ -1430,6 +1434,10 @@ const RequestEventPage: React.FC = () => {
       
       // Filter events that conflict with ANY of the dates in the range
       const conflicts = events.filter((event: any) => {
+        if (event.status === 'cancelled') {
+          return false;
+        }
+
         if (!event.startDate || !event.startTime || !event.endDate || !event.endTime) {
           return false;
         }
