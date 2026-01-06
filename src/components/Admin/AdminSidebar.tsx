@@ -15,7 +15,8 @@ import {
   ChevronRight,
   LogOut,
   List,
-  FileText
+  FileText,
+  Settings
 } from 'lucide-react';
 
 const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api`;
@@ -79,6 +80,7 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ user }) => {
     { icon: Users, label: 'Users', href: '/admin/users', roles: ['superadmin'] },
     { icon: Activity, label: 'Users Logs', href: '/admin/users-logs', roles: ['superadmin'] },
     { icon: Building2, label: 'Departments', href: '/admin/departments', roles: ['superadmin'] },
+    { icon: Settings, label: 'Settings', href: '/admin/settings', roles: ['superadmin', 'admin'] },
   ];
   
   // Filter navigation items based on user role (case-insensitive)

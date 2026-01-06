@@ -100,10 +100,12 @@ import {
   TrendingUp,
   Clock4,
   SortAsc,
-  UserCheck
+  UserCheck,
+  Trash2
 } from 'lucide-react';
 
 const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api`;
+const ADMIN_ENABLE_EVENT_DELETION_KEY = 'admin_enable_event_deletion';
 
 const AllEventsPage: React.FC = () => {
   // Socket.IO for real-time updates
@@ -136,6 +138,8 @@ const AllEventsPage: React.FC = () => {
   const [showDescription, setShowDescription] = useState(false);
   const [selectedEvents, setSelectedEvents] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<string>('all');
+  const [enableEventDeletion, setEnableEventDeletion] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -157,6 +161,35 @@ const AllEventsPage: React.FC = () => {
   
   // Use store's selected event or local state for status dialog
   const selectedEvent = storeSelectedEvent;
+
+  useEffect(() => {
+    const readFlag = () => {
+      try {
+        const raw = localStorage.getItem(ADMIN_ENABLE_EVENT_DELETION_KEY);
+        const enabled = raw === 'true';
+        setEnableEventDeletion(enabled);
+        if (!enabled) setSelectedEvents([]);
+      } catch {
+        setEnableEventDeletion(false);
+        setSelectedEvents([]);
+      }
+    };
+
+    readFlag();
+
+    const onSettingsChanged = () => readFlag();
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === ADMIN_ENABLE_EVENT_DELETION_KEY) readFlag();
+    };
+
+    window.addEventListener('adminSettingsChanged', onSettingsChanged);
+    window.addEventListener('storage', onStorage);
+
+    return () => {
+      window.removeEventListener('adminSettingsChanged', onSettingsChanged);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, []);
 
   // Get user role from localStorage
   const getUserRole = (): string => {
@@ -412,6 +445,7 @@ const AllEventsPage: React.FC = () => {
 
   // Handle checkbox selection
   const handleSelectEvent = (eventId: string) => {
+    if (!enableEventDeletion) return;
     setSelectedEvents(prev => 
       prev.includes(eventId) 
         ? prev.filter(id => id !== eventId)
@@ -420,10 +454,36 @@ const AllEventsPage: React.FC = () => {
   };
 
   const handleSelectAll = () => {
+    if (!enableEventDeletion) return;
     if (selectedEvents.length === filteredEvents.length) {
       setSelectedEvents([]);
     } else {
       setSelectedEvents(filteredEvents.map(event => event._id));
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    if (!enableEventDeletion) return;
+    if (selectedEvents.length === 0) return;
+
+    try {
+      const token = localStorage.getItem('authToken');
+      const headers = {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      };
+
+      await Promise.all(
+        selectedEvents.map((eventId) => axios.delete(`${API_BASE_URL}/events/${eventId}`, { headers }))
+      );
+
+      toast.success('Event(s) deleted successfully');
+      setSelectedEvents([]);
+      fetchAllEvents(true);
+    } catch (error) {
+      toast.error('Failed to delete event(s)');
+    } finally {
+      setShowDeleteConfirm(false);
     }
   };
 
@@ -839,6 +899,17 @@ const AllEventsPage: React.FC = () => {
                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
                 Refresh
               </Button>
+              {enableEventDeletion && (
+                <Button
+                  onClick={() => setShowDeleteConfirm(true)}
+                  disabled={selectedEvents.length === 0}
+                  variant="destructive"
+                  className="gap-2"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete ({selectedEvents.length})
+                </Button>
+              )}
               <Button
                 onClick={() => setShowPdfOptions(true)}
                 variant="outline"
@@ -1007,18 +1078,20 @@ const AllEventsPage: React.FC = () => {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-12">
-                      <button
-                        onClick={handleSelectAll}
-                        className="flex items-center justify-center w-5 h-5"
-                      >
-                        {selectedEvents.length === filteredEvents.length && filteredEvents.length > 0 ? (
-                          <CheckSquare className="w-4 h-4" />
-                        ) : (
-                          <Square className="w-4 h-4" />
-                        )}
-                      </button>
-                    </TableHead>
+                    {enableEventDeletion && (
+                      <TableHead className="w-12">
+                        <button
+                          onClick={handleSelectAll}
+                          className="flex items-center justify-center w-5 h-5"
+                        >
+                          {selectedEvents.length === filteredEvents.length && filteredEvents.length > 0 ? (
+                            <CheckSquare className="w-4 h-4" />
+                          ) : (
+                            <Square className="w-4 h-4" />
+                          )}
+                        </button>
+                      </TableHead>
+                    )}
                     <TableHead className="w-[100px]">Type</TableHead>
                     <TableHead className="w-[200px]">Event</TableHead>
                     <TableHead>Requestor</TableHead>
@@ -1032,7 +1105,7 @@ const AllEventsPage: React.FC = () => {
                 <TableBody>
                   {filteredEvents.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="text-center py-8 text-gray-500">
+                      <TableCell colSpan={enableEventDeletion ? 9 : 8} className="text-center py-8 text-gray-500">
                         No events found
                       </TableCell>
                     </TableRow>
@@ -1041,18 +1114,20 @@ const AllEventsPage: React.FC = () => {
                       const statusInfo = getStatusInfo(event.status);
                       return (
                         <TableRow key={event._id} className="hover:bg-gray-50">
-                          <TableCell className="text-center">
-                            <button
-                              onClick={() => handleSelectEvent(event._id)}
-                              className="flex items-center justify-center w-5 h-5"
-                            >
-                              {selectedEvents.includes(event._id) ? (
-                                <CheckSquare className="w-4 h-4" />
-                              ) : (
-                                <Square className="w-4 h-4" />
-                              )}
-                            </button>
-                          </TableCell>
+                          {enableEventDeletion && (
+                            <TableCell className="text-center">
+                              <button
+                                onClick={() => handleSelectEvent(event._id)}
+                                className="flex items-center justify-center w-5 h-5"
+                              >
+                                {selectedEvents.includes(event._id) ? (
+                                  <CheckSquare className="w-4 h-4" />
+                                ) : (
+                                  <Square className="w-4 h-4" />
+                                )}
+                              </button>
+                            </TableCell>
+                          )}
                           <TableCell>
                             <Badge 
                               variant="outline"
@@ -1709,6 +1784,23 @@ const AllEventsPage: React.FC = () => {
           </div>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete selected events?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteSelected}>
+              Delete ({selectedEvents.length})
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* PDF Preview Modal */}
       <Dialog open={showPdfPreview} onOpenChange={setShowPdfPreview}>

@@ -54,7 +54,11 @@ import {
   AlertTriangle,
   HelpCircle,
   Loader2,
-  MessageSquare
+  MessageSquare,
+  Package,
+  Settings,
+  Check,
+  X
 } from 'lucide-react';
 
 interface Event {
@@ -4784,152 +4788,234 @@ const MyEventsPage: React.FC = () => {
 
       {/* Department Requirements Modal */}
       <Dialog open={showDepartmentRequirementsModal} onOpenChange={setShowDepartmentRequirementsModal}>
-        <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-base md:text-lg">
-              <FileText className="w-4 h-4 md:w-5 md:h-5 text-blue-600" />
-              {selectedDepartmentData?.name} - Requirements
-            </DialogTitle>
-            <DialogDescription className="text-xs md:text-sm">
-              Select requirements for this department
-            </DialogDescription>
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <DialogTitle className="text-lg font-medium">
+                  Requirements - {selectedDepartmentData?.name}
+                </DialogTitle>
+                <DialogDescription className="text-sm text-muted-foreground">
+                  Select requirements for this department
+                </DialogDescription>
+                {addingToEvent?.startDate && (
+                  <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-blue-800 text-xs">
+                    📅 Showing availability for {new Date(addingToEvent.startDate).toDateString()}
+                  </div>
+                )}
+              </div>
+            </div>
           </DialogHeader>
 
           <div className="space-y-4 py-4">
-            <div className="border rounded-lg p-3 bg-gray-50">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-medium text-gray-900">Add Custom Requirement</p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowCustomInput((v) => !v)}
-                >
-                  {showCustomInput ? 'Hide' : 'Add'}
-                </Button>
-              </div>
+            <div className="space-y-3">
+              <h4 className="text-sm font-medium text-foreground">Available Requirements</h4>
 
-              {showCustomInput && (
-                <div className="mt-3 space-y-3">
-                  <div>
-                    <Label className="text-xs">Requirement Name</Label>
-                    <Input
-                      value={customRequirement}
-                      onChange={(e) => setCustomRequirement(e.target.value)}
-                      className="mt-1"
-                      placeholder="e.g., Extra Extension Cord"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <Label className="text-xs">Type</Label>
-                      <Select
-                        value={customRequirementType}
-                        onValueChange={(v) => setCustomRequirementType(v as 'physical' | 'service')}
-                      >
-                        <SelectTrigger className="mt-1">
-                          <SelectValue placeholder="Select type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="service">Service</SelectItem>
-                          <SelectItem value="physical">Physical</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    {customRequirementType === 'physical' && (
-                      <div>
-                        <Label className="text-xs">Quantity</Label>
-                        <Input
-                          type="number"
-                          min={1}
-                          value={pendingCustomQuantity}
-                          onChange={(e) => setPendingCustomQuantity(e.target.value)}
-                          className="mt-1"
-                        />
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex justify-end">
-                    <Button size="sm" onClick={handleAddCustomRequirement}>
-                      Add Custom Requirement
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {departmentRequirements.length > 0 ? (
-              <div className="space-y-3">
-                {departmentRequirements.map((req) => (
-                  <div key={req.id} className="border rounded-lg p-4">
-                    <div className="flex items-start gap-3">
-                      <Checkbox
-                        checked={req.selected}
-                        onCheckedChange={() => toggleRequirementSelection(req.id)}
-                        className="mt-1"
-                      />
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                          <p className="font-medium text-sm">{req.name}</p>
-                          <Badge variant="outline" className="text-xs">
-                            {req.type === 'physical' ? '📦 Physical' : '🔧 Service'}
-                          </Badge>
-                          {req.isAvailable !== undefined && (
-                            <Badge 
-                              variant={req.isAvailable ? "default" : "destructive"} 
+              <div className="space-y-3 max-h-96 overflow-y-auto">
+                {departmentRequirements.length > 0 ? (
+                  departmentRequirements.map((req) => (
+                    <div
+                      key={req.id}
+                      className={`p-3 border rounded-lg transition-all ${
+                        !req.isAvailable
+                          ? 'bg-gray-50 border-gray-200 opacity-60 cursor-not-allowed'
+                          : req.selected
+                            ? 'bg-blue-50 border-blue-200 shadow-sm cursor-pointer'
+                            : 'bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50 cursor-pointer'
+                      }`}
+                      onClick={() => req.isAvailable && toggleRequirementSelection(req.id)}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Checkbox
+                              checked={req.selected}
+                              disabled={!req.isAvailable}
+                              onCheckedChange={() => req.isAvailable && toggleRequirementSelection(req.id)}
+                              className="mt-0.5"
+                            />
+                            <h5 className={`font-medium text-sm ${req.isAvailable ? 'text-gray-900' : 'text-gray-500'}`}> 
+                              {req.name}
+                            </h5>
+                            <Badge
+                              variant={req.type === 'physical' ? 'secondary' : 'outline'}
                               className="text-xs"
                             >
-                              {req.isAvailable ? '✓ Available' : '✗ Unavailable'}
+                              <div className="flex items-center gap-1">
+                                {req.type === 'physical' ? (
+                                  <><Package className="w-3 h-3" /> Physical</>
+                                ) : (
+                                  <><Settings className="w-3 h-3" /> Service</>
+                                )}
+                              </div>
                             </Badge>
+                            {req.isCustom && (
+                              <Badge variant="secondary" className="text-xs bg-orange-600 text-white">Custom</Badge>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3 text-xs text-gray-600">
+                            <div className="flex items-center gap-1">
+                              <span className="font-medium">Available Quantity:</span>
+                              <span className={req.totalQuantity ? 'text-gray-900' : 'text-gray-400'}>
+                                {req.totalQuantity || 'N/A'}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className="font-medium">Status:</span>
+                              {req.isCustom ? (
+                                <span className="flex items-center gap-1 text-orange-600">
+                                  <div className="w-2 h-2 rounded-full bg-orange-500"></div>
+                                  Pending
+                                </span>
+                              ) : (
+                                <span className={`flex items-center gap-1 ${req.isAvailable ? 'text-green-600' : 'text-red-600'}`}>
+                                  <div className={`w-2 h-2 rounded-full ${req.isAvailable ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                                  {req.isAvailable ? 'Available' : 'Unavailable'}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {req.type === 'physical' && req.selected && (
+                            <div className="mt-3">
+                              <Label className="text-xs">Quantity</Label>
+                              <Input
+                                type="number"
+                                min={0}
+                                max={req.totalQuantity}
+                                value={req.quantity || ''}
+                                onChange={(e) => updateRequirementQuantity(req.id, parseInt(e.target.value) || 0)}
+                                className="mt-1"
+                                placeholder="Enter quantity"
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                            </div>
                           )}
                         </div>
-                        
-                        {/* Quantity only (no notes) */}
-                        {req.type === 'physical' && (
-                          <div>
-                            <Label className="text-xs">Quantity</Label>
-                            <Input
-                              type="number"
-                              min={0}
-                              max={req.totalQuantity}
-                              value={req.quantity || ''}
-                              onChange={(e) => updateRequirementQuantity(req.id, parseInt(e.target.value) || 0)}
-                              className="mt-1"
-                              placeholder="Enter quantity"
-                            />
-                            <p className="text-xs text-gray-500 mt-1">
-                              Available: <span className="font-medium">{req.totalQuantity || 'N/A'}</span>
-                            </p>
-                          </div>
-                        )}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-8 px-4">
+                    <div className="flex flex-col items-center gap-3">
+                      <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center">
+                        <Building2 className="w-8 h-8 text-gray-400" />
+                      </div>
+                      <div className="space-y-1 text-center">
+                        <h5 className="font-medium text-gray-900 text-center">No Requirements Available</h5>
+                        <p className="text-sm text-gray-600 max-w-md text-center mx-auto">
+                          The <strong>{selectedDepartmentData?.name}</strong> department has no default requirements.
+                        </p>
+                        <p className="text-xs text-gray-500 mt-2 text-center">
+                          Use <strong>Add Custom Requirement</strong> below.
+                        </p>
                       </div>
                     </div>
                   </div>
-                ))}
+                )}
+
+                <div
+                  className={`p-3 border-2 border-dashed rounded-lg cursor-pointer transition-all ${
+                    showCustomInput
+                      ? 'bg-blue-50 border-blue-300'
+                      : 'border-gray-300 hover:border-blue-300 hover:bg-blue-50'
+                  }`}
+                  onClick={() => setShowCustomInput(true)}
+                >
+                  <div className="flex items-center justify-center gap-2 text-sm text-gray-600">
+                    <Plus className="w-4 h-4" />
+                    Add Custom Requirement
+                  </div>
+                </div>
               </div>
-            ) : (
-              <div className="text-center py-8 text-gray-500">
-                <p className="text-sm">No requirements found for this department</p>
-              </div>
-            )}
+            </div>
           </div>
 
-          <div className="flex justify-end gap-3 pt-4 border-t">
-            <Button 
-              variant="outline" 
+          <Dialog open={showCustomInput} onOpenChange={setShowCustomInput}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Add Custom Requirement</DialogTitle>
+                <DialogDescription>
+                  Define a new requirement for {selectedDepartmentData?.name || 'this department'}.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 pt-2">
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-gray-900">Requirement Name</Label>
+                  <Input
+                    placeholder="Enter custom requirement name..."
+                    value={customRequirement}
+                    onChange={(e) => setCustomRequirement(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-gray-900">Type</Label>
+                  <Select
+                    value={customRequirementType || 'service'}
+                    onValueChange={(value: 'physical' | 'service') => setCustomRequirementType(value)}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="physical">
+                        <div className="flex items-center gap-2">
+                          <Package className="w-3 h-3" />
+                          Quantity (Physical Item)
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="service">
+                        <div className="flex items-center gap-2">
+                          <Settings className="w-3 h-3" />
+                          Service
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {customRequirementType === 'physical' && (
+                  <div className="space-y-2">
+                    <Label className="text-xs font-medium text-gray-900">Quantity Needed</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      value={pendingCustomQuantity}
+                      onChange={(e) => setPendingCustomQuantity(e.target.value)}
+                    />
+                  </div>
+                )}
+              </div>
+              <div className="mt-4 flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setShowCustomInput(false)} className="text-xs">
+                  Cancel
+                </Button>
+                <Button onClick={handleAddCustomRequirement} disabled={!customRequirement.trim()} className="text-xs">
+                  Add
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <div className="flex justify-end gap-2 pt-4 border-t">
+            <Button
+              variant="outline"
               onClick={() => {
                 setShowDepartmentRequirementsModal(false);
                 setSelectedDepartmentData(null);
                 setDepartmentRequirements([]);
+                setCustomRequirement('');
+                setShowCustomInput(false);
               }}
+              className="text-xs"
             >
               Cancel
             </Button>
-            <Button 
+            <Button
               onClick={handleSaveDepartmentRequirements}
-              disabled={departmentRequirements.filter(r => r.selected).length === 0}
+              disabled={!departmentRequirements.some((r) => r.selected)}
+              className="text-xs"
             >
               Add Department
             </Button>

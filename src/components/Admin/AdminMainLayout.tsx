@@ -29,7 +29,7 @@ const AdminMainLayout: React.FC<AdminMainLayoutProps> = ({ children }) => {
   }, []);
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen bg-gray-50 overflow-hidden">
       <AdminNotificationSystem />
       <AdminSidebar user={currentUser} />
       <main className="flex-1 overflow-auto">

@@ -26,6 +26,7 @@ import UsersManagement from './components/Admin/UsersManagement'
 import UsersLogsPage from './components/Admin/UsersLogsPage'
 import DepartmentsManagement from './components/Admin/DepartmentsManagement'
 import EventReportsManagement from './components/Admin/EventReportsManagement'
+import AdminSettingsPage from './components/Admin/AdminSettingsPage'
 import './App.css'
 
 const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api`;
@@ -173,6 +174,7 @@ function App() {
                   <Route path="users-logs" element={<UsersLogsPage />} />
                   <Route path="departments" element={<DepartmentsManagement />} />
                   <Route path="event-reports" element={<EventReportsManagement />} />
+                  <Route path="settings" element={<AdminSettingsPage />} />
                   <Route path="reports" element={<div className="p-6"><h1 className="text-2xl font-bold">Reports</h1><p>Coming soon...</p></div>} />
                   <Route path="" element={
                     <Navigate 
