@@ -1008,6 +1008,12 @@ const AllEventsPage: React.FC = () => {
                       Priority (Submitted First)
                     </div>
                   </SelectItem>
+                  <SelectItem value="no-requirements">
+                    <div className="flex items-center gap-2">
+                      <TrendingUp className="w-4 h-4" />
+                      No Requirements Only
+                    </div>
+                  </SelectItem>
                   <SelectItem value="upcoming-events">
                     <div className="flex items-center gap-2">
                       <Calendar className="w-4 h-4" />

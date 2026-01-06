@@ -259,6 +259,19 @@ export const useAllEventsStore = create<AllEventsState>()(
       getFilteredEvents: () => {
         const state = get();
         let filtered = [...state.events];
+
+        const hasNoRequirements = (event: Event) => {
+          if (!event.departmentRequirements) return true;
+
+          const allRequirements: any[] = [];
+          Object.values(event.departmentRequirements).forEach((reqs: any) => {
+            if (Array.isArray(reqs)) {
+              reqs.forEach(req => allRequirements.push(req));
+            }
+          });
+
+          return allRequirements.length === 0;
+        };
         
         // Search filter
         if (state.searchQuery) {
@@ -316,6 +329,11 @@ export const useAllEventsStore = create<AllEventsState>()(
             }
           });
         }
+
+        // Special filter: show only events with no requirements
+        if (state.sortBy === 'no-requirements') {
+          filtered = filtered.filter(hasNoRequirements);
+        }
         
         // Sort based on selected sorting option
         return filtered.sort((a, b) => {
@@ -356,6 +374,10 @@ export const useAllEventsStore = create<AllEventsState>()(
             case 'requestor-name':
               // Sort alphabetically by requestor name
               return a.requestor.localeCompare(b.requestor);
+
+            case 'no-requirements':
+              // Sort by creation date (most recent first)
+              return new Date(b.createdAt || b.startDate).getTime() - new Date(a.createdAt || a.startDate).getTime();
               
             default:
               // Default to status priority
