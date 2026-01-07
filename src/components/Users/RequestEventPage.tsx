@@ -179,6 +179,7 @@ const RequestEventPage: React.FC = () => {
     programme: null
   });
   const [conflictingEvents, setConflictingEvents] = useState<any[]>([]);
+  const [venueConflictingEvents, setVenueConflictingEvents] = useState<any[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [noDepartmentsNeeded, setNoDepartmentsNeeded] = useState(false);
   const [showLocationRequirementsModal, setShowLocationRequirementsModal] = useState(false);
@@ -512,13 +513,15 @@ const RequestEventPage: React.FC = () => {
           });
           
           if (conflicts.length > 0) {
-            setConflictingEvents(conflicts);
+            setVenueConflictingEvents(conflicts);
+          } else {
+            setVenueConflictingEvents([]);
           }
         }
       } else {
         if (!showScheduleModal) {
           // Clear conflicts when modal is closed
-          setConflictingEvents([]);
+          setVenueConflictingEvents([]);
         }
       }
     };
@@ -938,6 +941,14 @@ const RequestEventPage: React.FC = () => {
       setLoadingDepartmentRequirements(true);
       setShowRequirementsModal(true);
 
+      // Reset conflicts when switching/opening a department to avoid stale conflict UI
+      setConflictingEvents([]);
+
+      // Fetch conflicting events if date and time are set (needed for accurate availability/conflict UI)
+      if (formData.startDate && formData.startTime && formData.endTime) {
+        await fetchConflictingEvents(formData.startDate, formData.startTime, formData.endTime, formData.location);
+      }
+
       const isPgso = departmentName.toLowerCase().includes('pgso');
       const isPavilionLocation = typeof formData.location === 'string' && formData.location.toLowerCase().includes('pavilion');
 
@@ -971,11 +982,6 @@ const RequestEventPage: React.FC = () => {
 
         setLoadingDepartmentRequirements(false);
         return;
-      }
-      
-      // Fetch conflicting events if date and time are set
-      if (formData.startDate && formData.startTime && formData.endTime) {
-        await fetchConflictingEvents(formData.startDate, formData.startTime, formData.endTime, formData.location);
       }
       
       // Fetch resource availabilities for the selected date
@@ -1467,9 +1473,19 @@ const RequestEventPage: React.FC = () => {
   // Calculate available quantity after subtracting conflicting bookings from ALL departments
   const getAvailableQuantity = (requirement: any, departmentName: string) => {
     let usedQuantity = 0;
+
+    const notes = (requirement?.availabilityNotes || '').toString();
+    const isLocationDefault = notes.startsWith('PAVILION_DEFAULT:');
+    const locationDefaultTarget = isLocationDefault ? notes.split(':').slice(2).join(':') : '';
     
     
     conflictingEvents.forEach(event => {
+      if (isLocationDefault) {
+        const eventLoc = (event?.location || '').toString();
+        if (!locationDefaultTarget || !eventLoc) return;
+        if (!locationsConflict(locationDefaultTarget, eventLoc)) return;
+      }
+
       // Check ALL departments in the event, not just the current department
       if (event.taggedDepartments && event.departmentRequirements) {
         event.taggedDepartments.forEach((taggedDept: string) => {
@@ -1497,7 +1513,17 @@ const RequestEventPage: React.FC = () => {
 
   // Check if a specific requirement has conflicts (is actually booked by other events from ANY department)
   const hasRequirementConflict = (requirement: any, departmentName: string) => {
+    const notes = (requirement?.availabilityNotes || '').toString();
+    const isLocationDefault = notes.startsWith('PAVILION_DEFAULT:');
+    const locationDefaultTarget = isLocationDefault ? notes.split(':').slice(2).join(':') : '';
+
     return conflictingEvents.some(event => {
+      if (isLocationDefault) {
+        const eventLoc = (event?.location || '').toString();
+        if (!locationDefaultTarget || !eventLoc) return false;
+        if (!locationsConflict(locationDefaultTarget, eventLoc)) return false;
+      }
+
       // Check ALL departments in the event, not just the current department
       if (event.taggedDepartments && event.departmentRequirements) {
         return event.taggedDepartments.some((taggedDept: string) => {
@@ -1871,7 +1897,7 @@ const RequestEventPage: React.FC = () => {
 
   const getBookedVenueIntervals = (checkDate?: Date) => {
     const dateToCheck = checkDate || formData.startDate;
-    if (!dateToCheck || !formData.location || conflictingEvents.length === 0) {
+    if (!dateToCheck || !formData.location || venueConflictingEvents.length === 0) {
       return [] as Array<[number, number]>;
     }
 
@@ -1879,7 +1905,7 @@ const RequestEventPage: React.FC = () => {
 
     const intervals: Array<[number, number]> = [];
 
-    conflictingEvents.forEach((event) => {
+    venueConflictingEvents.forEach((event) => {
       // Check location conflict
       const eventLocations = event.locations && Array.isArray(event.locations) && event.locations.length > 0
         ? event.locations
@@ -1935,11 +1961,11 @@ const RequestEventPage: React.FC = () => {
     const dateToCheck = checkDate || formData.startDate;
     
     
-    if (!dateToCheck || !formData.location || conflictingEvents.length === 0) {
+    if (!dateToCheck || !formData.location || venueConflictingEvents.length === 0) {
       return false;
     }
 
-    const result = conflictingEvents.some(event => {
+    const result = venueConflictingEvents.some(event => {
       const checkDateStr = dateToCheck.toDateString();
       
       // Check if the main event date matches
@@ -3587,8 +3613,9 @@ const RequestEventPage: React.FC = () => {
                             <p className="text-sm text-gray-600 max-w-md text-center mx-auto">
                               The <strong>PGSO</strong> department doesn't have pre-configured requirements for this location.
                             </p>
+                            {/* PGSO: custom requirements intentionally disabled for now. Re-enable by removing the PGSO guard below. */}
                             <p className="text-xs text-gray-500 mt-2 text-center">
-                              Please use the <strong>Add Custom Requirement</strong> option below to specify what you need from PGSO for this event.
+                              Please coordinate directly with <strong>PGSO</strong> for the requirements needed for this event.
                             </p>
                           </>
                         ) : (
@@ -3624,111 +3651,128 @@ const RequestEventPage: React.FC = () => {
                 )}
                 
                 {/* Add Custom Requirement Button */}
-                <div 
-                  className={`p-3 border-2 border-dashed rounded-lg cursor-pointer transition-all ${
-                    showCustomInput 
-                      ? 'bg-blue-50 border-blue-300' 
-                      : 'border-gray-300 hover:border-blue-300 hover:bg-blue-50'
-                  }`}
-                  onClick={() => setShowCustomInput(true)}
-                >
-                  <div className="flex items-center justify-center gap-2 text-sm text-gray-600">
-                    <Plus className="w-4 h-4" />
-                    Add Custom Requirement
+                {/* PGSO: hide "Add Custom Requirement" UI. (Keep code for future re-enable.) */}
+                {!selectedDepartment?.toLowerCase().includes('pgso') && (
+                  <div 
+                    className={`p-3 border-2 border-dashed rounded-lg cursor-pointer transition-all ${
+                      showCustomInput 
+                        ? 'bg-blue-50 border-blue-300' 
+                        : 'border-gray-300 hover:border-blue-300 hover:bg-blue-50'
+                    }`}
+                    onClick={() => setShowCustomInput(true)}
+                  >
+                    <div className="flex items-center justify-center gap-2 text-sm text-gray-600">
+                      <Plus className="w-4 h-4" />
+                      Add Custom Requirement
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
           </div>
           {/* Custom Requirement Modal (name, type, and quantity/notes in one place) */}
-          <Dialog open={showCustomInput} onOpenChange={setShowCustomInput}>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle>Add Custom Requirement</DialogTitle>
-                <DialogDescription>
-                  Define a new requirement for {selectedDepartment || 'this department'}.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4 pt-2">
-                <div className="space-y-2">
-                  <Label className="text-xs font-medium text-gray-900">Requirement Name</Label>
-                  <Input
-                    placeholder="Enter custom requirement name..."
-                    value={customRequirement}
-                    onChange={(e) => setCustomRequirement(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs font-medium text-gray-900">Type</Label>
-                  <Select 
-                    value={customRequirementType || 'service'} 
-                    onValueChange={(value: 'physical' | 'service') => setCustomRequirementType(value)}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Select type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="physical">
-                        <div className="flex items-center gap-2">
-                          <Package className="w-3 h-3" />
-                          Quantity (Physical Item)
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="service">
-                        <div className="flex items-center gap-2">
-                          <StickyNote className="w-3 h-3" />
-                          Notes (Service)
-                        </div>
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Choose "Quantity" for physical items or "Notes" for services.
-                  </p>
-                </div>
-
-                {customRequirementType === 'physical' && (
+          {/* PGSO: hide the modal as well (code preserved for future re-enable). */}
+          {!selectedDepartment?.toLowerCase().includes('pgso') && (
+            <Dialog open={showCustomInput} onOpenChange={setShowCustomInput}>
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Add Custom Requirement</DialogTitle>
+                  <DialogDescription>
+                    Define a new requirement for {selectedDepartment || 'this department'}.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 pt-2">
                   <div className="space-y-2">
-                    <Label className="text-xs font-medium text-gray-900">Quantity Needed</Label>
+                    <Label className="text-xs font-medium text-gray-900">Requirement Name</Label>
                     <Input
-                      type="number"
-                      min="1"
-                      value={pendingCustomQuantity}
-                      onChange={(e) => setPendingCustomQuantity(e.target.value)}
+                      placeholder="Enter custom requirement name..."
+                      value={customRequirement}
+                      onChange={(e) => setCustomRequirement(e.target.value)}
                     />
                   </div>
-                )}
-
-                {customRequirementType === 'service' && (
                   <div className="space-y-2">
-                    <Label className="text-xs font-medium text-gray-900">Notes / Special Instructions</Label>
-                    <Textarea
-                      placeholder="Enter notes for this custom requirement..."
-                      value={customRequirementNotes}
-                      onChange={(e) => setCustomRequirementNotes(e.target.value)}
-                      className="text-sm min-h-24"
-                    />
+                    <Label className="text-xs font-medium text-gray-900">Type</Label>
+                    <Select 
+                      value={customRequirementType || 'service'} 
+                      onValueChange={(value: 'physical' | 'service') => setCustomRequirementType(value)}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="physical">
+                          <div className="flex items-center gap-2">
+                            <Package className="w-3 h-3" />
+                            Quantity (Physical Item)
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="service">
+                          <div className="flex items-center gap-2">
+                            <StickyNote className="w-3 h-3" />
+                            Service (Notes)
+                          </div>
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-[11px] text-gray-500">
+                      Choose <strong>Quantity</strong> if the department needs to allocate a number of items (e.g., chairs). Choose <strong>Service</strong> for notes/instructions.
+                    </p>
                   </div>
-                )}
+
+                  {customRequirementType === 'physical' && (
+                    <div className="space-y-2">
+                      <Label className="text-xs font-medium text-gray-900">Quantity Needed</Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        value={pendingCustomQuantity}
+                        onChange={(e) => setPendingCustomQuantity(e.target.value)}
+                      />
+                      <p className="text-[11px] text-gray-500">
+                        Enter how many items you need.
+                      </p>
+                    </div>
+                  )}
+
+                  {customRequirementType === 'service' && (
+                    <div className="space-y-2">
+                      <Label className="text-xs font-medium text-gray-900">Notes / Special Instructions</Label>
+                      <Textarea
+                        placeholder="Enter notes for this custom requirement..."
+                        value={customRequirementNotes}
+                        onChange={(e) => setCustomRequirementNotes(e.target.value)}
+                        className="text-sm min-h-24"
+                      />
+                    </div>
+                  )}
+                </div>
+                <DialogFooter>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setShowCustomInput(false);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleAddCustomRequirement}
+                    disabled={!customRequirement.trim()}
+                  >
+                    Add
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          )}
+
+          {selectedDepartment?.toLowerCase().includes('pgso') && (
+            <div className="px-1">
+              <div className="p-2 bg-amber-50 border border-amber-200 rounded text-amber-900 text-xs">
+                <span className="font-semibold">Note:</span> If you need a list of materials/equipment not listed above, please coordinate manually with <span className="font-semibold">PGSO</span>.
               </div>
-              <DialogFooter className="mt-4">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setShowCustomInput(false);
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleAddCustomRequirement}
-                  disabled={!customRequirement.trim()}
-                >
-                  Add
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+            </div>
+          )}
 
           <DialogFooter className="gap-2">
             <Button 
@@ -4159,36 +4203,38 @@ const RequestEventPage: React.FC = () => {
                   Only dates when {formData.location || selectedLocation} is available can be selected ({availableDates.length} available dates)
                 </p>
               )}
-              {formData.startDate && conflictingEvents.length > 0 && (
+              {formData.startDate && venueConflictingEvents.length > 0 && (
                 <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
                   {(() => {
                     // Filter events that actually booked THIS venue/location
                     const currentLocation = formData.location || selectedLocation;
-                    const venueBookers = conflictingEvents
+                    const venueBookers = venueConflictingEvents
                       .filter(e => {
-                        // Check if event location conflicts with current location (handles Entire vs Sections)
-                        const eventLocations = e.locations && Array.isArray(e.locations) && e.locations.length > 0
-                          ? e.locations
-                          : [e.location];
-                        
-                        return eventLocations.some((eventLoc: string) => 
-                          locationsConflict(eventLoc, currentLocation)
-                        );
+                        if (!currentLocation) return false;
+                        if (!e.location) return false;
+                        return locationsConflict(currentLocation, e.location);
                       })
-                      .map(e => e.requestorDepartment)
-                      .filter((v, i, a) => a.indexOf(v) === i);
-                    
-                    return venueBookers.length > 0 && (
+                      .map(e => e.requestorDepartment || e.department || e.departmentName || 'Unknown Department')
+                      .filter(Boolean);
+
+                    // Remove duplicates
+                    const uniqueBookers = Array.from(new Set(venueBookers));
+
+                    return uniqueBookers.length > 0 && (
                       <div className="flex items-center gap-2">
                         <Badge className="bg-orange-600 text-white text-xs px-2 py-0.5 h-5 flex-shrink-0 whitespace-nowrap">
                           VENUE
                         </Badge>
                         <p className="text-xs text-amber-900">
-                          <strong>{venueBookers.join(', ')}</strong> has booked this venue. Select a different time.
+                          <strong>{uniqueBookers.join(', ')}</strong> has booked this venue. Select a different time.
                         </p>
                       </div>
                     );
                   })()}
+                </div>
+              )}
+              {formData.startDate && conflictingEvents.length > 0 && (
+                <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
                   <div className="flex items-center gap-2">
                     <Badge className="bg-blue-600 text-white text-xs px-2 py-0.5 h-5 flex-shrink-0 whitespace-nowrap">
                       REQ
@@ -4232,6 +4278,7 @@ const RequestEventPage: React.FC = () => {
                         }
                         // Clear conflicting events when date changes so alert disappears
                         setConflictingEvents([]);
+                        setVenueConflictingEvents([]);
                       }}
                       disabled={isDateDisabled}
                       initialFocus
@@ -4328,6 +4375,7 @@ const RequestEventPage: React.FC = () => {
                         handleInputChange('endDate', date);
                         // Clear conflicting events when date changes so alert disappears
                         setConflictingEvents([]);
+                        setVenueConflictingEvents([]);
                       }}
                       disabled={isDateDisabled}
                       initialFocus

@@ -173,8 +173,7 @@ const MyEventsPage: React.FC = () => {
   const [showCustomLocationInput, setShowCustomLocationInput] = useState(false);
   const [customLocation, setCustomLocation] = useState('');
   const [conflictingEvents, setConflictingEvents] = useState<any[]>([]);
-  const [requirementConflicts, setRequirementConflicts] = useState<any[]>([]);
-  const [showConflictModal, setShowConflictModal] = useState(false);
+  const [venueConflictingEvents, setVenueConflictingEvents] = useState<any[]>([]);
   const [allEventsOnDate, setAllEventsOnDate] = useState<any[]>([]); // All events on selected date for REQ checking
   
   // Edit Requirement Modal State
@@ -703,10 +702,12 @@ const MyEventsPage: React.FC = () => {
           });
           
           setConflictingEvents(conflicts);
+          setVenueConflictingEvents(conflicts);
         }
       } else if (!showEditModal) {
         // Clear conflicts when modal is closed
         setConflictingEvents([]);
+        setVenueConflictingEvents([]);
       }
     };
 
@@ -714,180 +715,6 @@ const MyEventsPage: React.FC = () => {
     const timeoutId = setTimeout(checkConflicts, 300);
     return () => clearTimeout(timeoutId);
   }, [editFormData.startDate, editFormData.location, editFormData.dateTimeSlots, showEditModal, selectedEditEvent]);
-
-  // Auto-check for requirement availability when rescheduling
-  useEffect(() => {
-    const checkRequirementAvailability = async () => {
-      if (editFormData.startDate && editFormData.startTime && editFormData.endDate && editFormData.endTime && showEditModal && selectedEditEvent) {
-        try {
-          // Get all events to check requirement conflicts
-          const response = await fetch(`${API_BASE_URL}/events`, {
-            headers: {
-              'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-              'Content-Type': 'application/json'
-            }
-          });
-          
-          if (response.ok) {
-            const eventsData = await response.json();
-            const events = eventsData.data || [];
-            
-            // Find the current event in the database to get fresh requirement data
-            const currentEventInDB = events.find((e: any) => e._id === selectedEditEvent._id);
-            
-            if (!currentEventInDB || !currentEventInDB.taggedDepartments || !currentEventInDB.departmentRequirements) {
-              setRequirementConflicts([]);
-              return;
-            }
-            
-            // Get the new time range - create dates in local timezone to avoid UTC conversion issues
-            const [startHours, startMinutes] = editFormData.startTime.split(':').map(Number);
-            const [endHours, endMinutes] = editFormData.endTime.split(':').map(Number);
-            
-            // Extract just the date part if it's an ISO string
-            const startDateStr = editFormData.startDate.includes('T') 
-              ? editFormData.startDate.split('T')[0] 
-              : editFormData.startDate;
-            const endDateStr = editFormData.endDate.includes('T') 
-              ? editFormData.endDate.split('T')[0] 
-              : editFormData.endDate;
-            
-            const newStartDateTime = new Date(startDateStr);
-            newStartDateTime.setHours(startHours, startMinutes, 0, 0);
-            
-            const newEndDateTime = new Date(endDateStr);
-            newEndDateTime.setHours(endHours, endMinutes, 0, 0);
-            
-            // Find events that overlap with the new time range (excluding current event)
-            const overlappingEvents = events.filter((event: any) => {
-              if (!event.startDate || !event.startTime || !event.endDate || !event.endTime) return false;
-              if (event._id === selectedEditEvent._id) return false; // Exclude current event
-              if (event.status !== 'submitted' && event.status !== 'approved') return false; // Only check active events
-              
-              // Parse event dates - create in local timezone
-              const eventStartDate = event.startDate.includes('T') ? event.startDate.split('T')[0] : event.startDate;
-              const eventEndDate = event.endDate.includes('T') ? event.endDate.split('T')[0] : event.endDate;
-              
-              const [eventStartHours, eventStartMinutes] = event.startTime.split(':').map(Number);
-              const [eventEndHours, eventEndMinutes] = event.endTime.split(':').map(Number);
-              
-              const eventStart = new Date(eventStartDate);
-              eventStart.setHours(eventStartHours, eventStartMinutes, 0, 0);
-              
-              const eventEnd = new Date(eventEndDate);
-              eventEnd.setHours(eventEndHours, eventEndMinutes, 0, 0);
-              
-              // Check if time ranges overlap
-              const overlaps = (newStartDateTime < eventEnd && newEndDateTime > eventStart);
-              
-              
-              return overlaps;
-            });
-            
-            
-            // Fetch resource availability for the NEW date by checking other events on that date
-            // Since we can't access /api/departments as a regular user, we'll look at other events
-            // on the new date to find the most recent totalQuantity values
-            const newDateStr = startDateStr; // Use the new start date
-            const availabilityMap = new Map();
-            
-            // Find events on the new date to get the latest totalQuantity values
-            const eventsOnNewDate = events.filter((event: any) => {
-              if (!event.startDate) return false;
-              const eventDateStr = event.startDate.includes('T') ? event.startDate.split('T')[0] : event.startDate;
-              return eventDateStr === newDateStr;
-            });
-            
-            // Build a map of requirement ID -> highest totalQuantity found on the new date
-            eventsOnNewDate.forEach((event: any) => {
-              if (event.departmentRequirements) {
-                Object.entries(event.departmentRequirements).forEach(([dept, reqs]: [string, any]) => {
-                  if (Array.isArray(reqs)) {
-                    reqs.forEach((req: any) => {
-                      if (req.id && req.totalQuantity) {
-                        const key = `${dept}-${req.id}`;
-                        const currentMax = availabilityMap.get(key) || 0;
-                        // Use the highest totalQuantity we find (most recent/accurate)
-                        if (req.totalQuantity > currentMax) {
-                          availabilityMap.set(key, req.totalQuantity);
-                        }
-                      }
-                    });
-                  }
-                });
-              }
-            });
-            
-            
-            // Check each tagged department's requirements
-            const conflicts: any[] = [];
-            
-            currentEventInDB.taggedDepartments.forEach((dept: string) => {
-              const deptReqs = currentEventInDB.departmentRequirements[dept] || [];
-              
-              deptReqs.forEach((req: any) => {
-                // Skip custom requirements - they will be handled by the tagged department
-                if (req.isCustom) {
-                  return;
-                }
-                
-                if (req.type === 'physical' && req.quantity) {
-                  // Get the total quantity for the NEW date from ResourceAvailability
-                  const availKey = `${dept}-${req.id}`;
-                  const totalQuantityForNewDate = availabilityMap.get(availKey) || req.totalQuantity || 0;
-                  
-                  // Calculate how much is already booked during the new time slot
-                  let bookedQuantity = 0;
-                  
-                  overlappingEvents.forEach((event: any) => {
-                    if (event.departmentRequirements && event.departmentRequirements[dept]) {
-                      const eventReqs = event.departmentRequirements[dept];
-                      const matchingReq = eventReqs.find((r: any) => 
-                        r.id === req.id || r.name === req.name
-                      );
-                      if (matchingReq && matchingReq.quantity) {
-                        bookedQuantity += matchingReq.quantity;
-                      }
-                    }
-                  });
-                  
-                  const availableQuantity = totalQuantityForNewDate - bookedQuantity;
-                  
-                  
-                  // If requested quantity exceeds available, add to conflicts
-                  if (req.quantity > availableQuantity) {
-                    conflicts.push({
-                      department: dept,
-                      requirement: req.name,
-                      requested: req.quantity,
-                      available: availableQuantity,
-                      total: totalQuantityForNewDate,
-                      booked: bookedQuantity
-                    });
-                  }
-                }
-              });
-            });
-            
-            setRequirementConflicts(conflicts);
-            
-            // Show conflict modal if there are conflicts
-            if (conflicts.length > 0) {
-              setShowConflictModal(true);
-            }
-          }
-        } catch (error) {
-          // Error checking requirement availability
-        }
-      } else if (!showEditModal) {
-        setRequirementConflicts([]);
-        setShowConflictModal(false);
-      }
-    };
-
-    const timeoutId = setTimeout(checkRequirementAvailability, 300);
-    return () => clearTimeout(timeoutId);
-  }, [editFormData.startDate, editFormData.startTime, editFormData.endDate, editFormData.endTime, showEditModal, selectedEditEvent]);
 
   // Fetch user's events
   const fetchMyEvents = async () => {
@@ -1209,11 +1036,11 @@ const MyEventsPage: React.FC = () => {
   const isTimeSlotBooked = (timeSlot: string, checkDate?: Date) => {
     const dateToCheck = checkDate || (editFormData.startDate ? new Date(editFormData.startDate) : null);
     
-    if (!dateToCheck || !editFormData.location || conflictingEvents.length === 0) {
+    if (!dateToCheck || !editFormData.location || venueConflictingEvents.length === 0) {
       return false;
     }
 
-    return conflictingEvents.some(event => {
+    return venueConflictingEvents.some(event => {
       if (event.location !== editFormData.location) return false;
       
       // Check if event is on the same date
@@ -2073,6 +1900,10 @@ const MyEventsPage: React.FC = () => {
 
   const handleAddCustomRequirement = () => {
     if (!selectedDepartmentData?.name) return;
+    if (selectedDepartmentData.name.toLowerCase().includes('pgso')) {
+      toast.error('Custom requirements are not available for PGSO');
+      return;
+    }
     if (!customRequirement.trim()) {
       toast.error('Please enter a custom requirement name');
       return;
@@ -2160,7 +1991,7 @@ const MyEventsPage: React.FC = () => {
 
     // Check for time conflicts before saving
     if (editFormData.startDate && editFormData.startTime && editFormData.endTime && editFormData.location) {
-      const hasConflict = conflictingEvents.some(event => {
+      const hasConflict = venueConflictingEvents.some(event => {
         if (event.location !== editFormData.location) return false;
         
         // Convert times to minutes for easier comparison
@@ -3681,20 +3512,22 @@ const MyEventsPage: React.FC = () => {
 
       {/* Edit Event Modal */}
       <Dialog open={showEditModal} onOpenChange={setShowEditModal}>
-        <DialogContent className="!max-w-[900px] w-[90vw] max-h-[90vh] overflow-hidden p-0 flex flex-col">
-          <DialogHeader className="px-6 py-4 border-b flex-shrink-0">
-            <DialogTitle className="text-xl font-semibold text-gray-900">
-              Edit Event Schedule
-            </DialogTitle>
-            <DialogDescription className="text-sm text-gray-500 mt-1">
-              Update location, dates, and times for this event
-            </DialogDescription>
-          </DialogHeader>
+        <DialogContent className="!max-w-2xl !w-full max-h-[90vh] flex flex-col">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-xl font-semibold text-gray-900">
+                Schedule Event at {editFormData.location || selectedEditEvent?.location || 'Selected Location'}
+              </h2>
+              <p className="text-sm text-gray-600 mt-1">
+                Select your preferred start and end date/time for the event.
+              </p>
+            </div>
+          </div>
           
           {selectedEditEvent && (
             <div className="flex flex-col flex-1 min-h-0">
               {/* Scrollable Content */}
-              <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+              <div className="flex-1 overflow-y-auto space-y-6">
                 {/* Event Title (Read-only) */}
                 <div className="bg-gray-50 rounded-lg p-4 border">
                   <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Event Title</Label>
@@ -3711,35 +3544,26 @@ const MyEventsPage: React.FC = () => {
                 </div>
               )}
 
-              {/* Conflict Warning */}
-              {editFormData.startDate && conflictingEvents.length > 0 && (
-                <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
-                  <p className="text-xs text-orange-600 flex items-center gap-1">
-                    <AlertTriangle className="w-3 h-3" />
-                    {conflictingEvents.length} existing booking{conflictingEvents.length !== 1 ? 's' : ''} found for {editFormData.location} on {format(new Date(editFormData.startDate), "PPP")} - booked times are disabled
-                  </p>
-                </div>
-              )}
-
-              {/* Requirement Conflict Indicator */}
-              {requirementConflicts.length > 0 && (
-                <div className="p-3 bg-red-50 border border-red-300 rounded-lg">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <AlertTriangle className="w-4 h-4 text-red-600" />
-                      <p className="text-sm font-medium text-red-900">
-                        {requirementConflicts.length} Requirement{requirementConflicts.length > 1 ? 's' : ''} Unavailable
-                      </p>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setShowConflictModal(true)}
-                      className="text-red-700 border-red-300 hover:bg-red-100"
-                    >
-                      View Details
-                    </Button>
-                  </div>
+              {/* Venue Conflict Banner (match Request Event Schedule modal) */}
+              {editFormData.startDate && venueConflictingEvents.length > 0 && (
+                <div className="mt-1 bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
+                  {(() => {
+                    const bookers = venueConflictingEvents
+                      .filter(e => e.location === editFormData.location)
+                      .map((e) => e.requestorDepartment || e.department || e.departmentName || 'Unknown Department')
+                      .filter(Boolean);
+                    const uniqueBookers = Array.from(new Set(bookers));
+                    return uniqueBookers.length > 0 && (
+                      <div className="flex items-center gap-2">
+                        <Badge className="bg-orange-600 text-white text-xs px-2 py-0.5 h-5 flex-shrink-0 whitespace-nowrap">
+                          VENUE
+                        </Badge>
+                        <p className="text-xs text-amber-900">
+                          <strong>{uniqueBookers.join(', ')}</strong> has booked this venue. Select a different time.
+                        </p>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 
@@ -3957,7 +3781,7 @@ const MyEventsPage: React.FC = () => {
                                       )}
                                       {isBooked && (
                                         <Badge variant="destructive" className="text-xs">
-                                          BOOKED
+                                          VENUE
                                         </Badge>
                                       )}
                                     </div>
@@ -4001,7 +3825,7 @@ const MyEventsPage: React.FC = () => {
                                       )}
                                       {isBooked && (
                                         <Badge variant="destructive" className="text-xs">
-                                          BOOKED
+                                          VENUE
                                         </Badge>
                                       )}
                                     </div>
@@ -4016,194 +3840,174 @@ const MyEventsPage: React.FC = () => {
                   </div>
                 </div>
               ) : (
-                /* Single Day Event - Show Start and End columns */
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                /* Single Day Event - Match Request Event Schedule modal layout */
+                <div className="space-y-6">
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <h3 className="text-base font-semibold text-blue-900">Event Schedule Summary</h3>
+                    <p className="text-sm text-blue-700 mt-1 font-medium">
+                      Location: {editFormData.location || selectedEditEvent?.location || 'Selected Location'}
+                    </p>
+                  </div>
+
                   {/* Start Date & Time */}
-                  <div className="space-y-4">
-                    <h4 className="text-sm font-medium text-gray-700">Start</h4>
-                  
-                  {/* Start Date */}
-                  <div>
-                    <Label className="text-xs text-gray-600">Date</Label>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button
-                          variant="outline"
-                          className="w-full justify-start text-left font-normal mt-1"
-                        >
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {editFormData.startDate ? format(new Date(editFormData.startDate), 'PPP') : 'Pick a date'}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0">
-                        <Calendar
-                          mode="single"
-                          selected={editFormData.startDate ? new Date(editFormData.startDate) : undefined}
-                          onSelect={(date) => {
-                            if (date) {
-                              // Format date as YYYY-MM-DD without timezone conversion
-                              const year = date.getFullYear();
-                              const month = String(date.getMonth() + 1).padStart(2, '0');
-                              const day = String(date.getDate()).padStart(2, '0');
-                              const dateString = `${year}-${month}-${day}`;
-                              setEditFormData(prev => ({ ...prev, startDate: dateString }));
-                            }
-                          }}
-                          disabled={isDateDisabled}
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
-                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-sm font-medium text-gray-700 mb-2 block">Start Date</Label>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" className="w-full justify-start text-left font-normal">
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {editFormData.startDate ? format(new Date(editFormData.startDate), 'PPP') : 'Pick a date'}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0">
+                          <Calendar
+                            mode="single"
+                            selected={editFormData.startDate ? new Date(editFormData.startDate) : undefined}
+                            onSelect={(date) => {
+                              if (date) {
+                                const year = date.getFullYear();
+                                const month = String(date.getMonth() + 1).padStart(2, '0');
+                                const day = String(date.getDate()).padStart(2, '0');
+                                const dateString = `${year}-${month}-${day}`;
+                                setEditFormData(prev => ({ ...prev, startDate: dateString }));
+                                setConflictingEvents([]);
+                                setVenueConflictingEvents([]);
+                              }
+                            }}
+                            disabled={isDateDisabled}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                    </div>
 
-                  {/* Start Time */}
-                  <div>
-                    <Label className="text-xs text-gray-600">Time</Label>
-                    <Select 
-                      value={editFormData.startTime} 
-                      onValueChange={(value) => {
-                        setEditFormData(prev => ({ ...prev, startTime: value }));
-                        // Clear end time if it's now invalid
-                        if (editFormData.endTime) {
-                          const timeToMinutes = (time: string) => {
-                            const [hours, minutes] = time.split(':').map(Number);
-                            return hours * 60 + minutes;
-                          };
-                          if (timeToMinutes(value) >= timeToMinutes(editFormData.endTime)) {
-                            setEditFormData(prev => ({ ...prev, endTime: '' }));
+                    <div>
+                      <Label htmlFor="startTime" className="text-sm font-medium text-gray-700 mb-2 block">Start Time</Label>
+                      <Select
+                        value={editFormData.startTime}
+                        onValueChange={(value) => {
+                          setEditFormData(prev => ({ ...prev, startTime: value }));
+                          if (editFormData.endTime) {
+                            const timeToMinutes = (time: string) => {
+                              const [hours, minutes] = time.split(':').map(Number);
+                              return hours * 60 + minutes;
+                            };
+                            if (timeToMinutes(value) >= timeToMinutes(editFormData.endTime)) {
+                              setEditFormData(prev => ({ ...prev, endTime: '' }));
+                            }
                           }
-                        }
-                      }}
-                    >
-                      <SelectTrigger className="mt-1">
-                        <SelectValue placeholder="Select start time" />
-                      </SelectTrigger>
-                      <SelectContent className="max-h-80">
-                        {generateTimeOptions().map((timeOption) => {
-                          const isBooked = isTimeSlotBooked(timeOption.value);
-                          const hasReqConflicts = hasRequirementConflictsAtTime(timeOption.value);
-                          return (
-                            <SelectItem 
-                              key={timeOption.value} 
-                              value={timeOption.value}
-                              disabled={isBooked}
-                              className={isBooked ? 'opacity-50 cursor-not-allowed' : ''}
-                            >
-                              <div className="flex items-center justify-between w-full gap-2">
-                                <span className={isBooked ? 'text-gray-400' : ''}>
-                                  {timeOption.label}
-                                </span>
-                                <div className="flex items-center gap-1">
-                                  {hasReqConflicts && !isBooked && (
-                                    <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-300">
-                                      REQ
-                                    </Badge>
-                                  )}
-                                  {isBooked && (
-                                    <Badge variant="destructive" className="text-xs">
-                                      BOOKED
-                                    </Badge>
-                                  )}
+                        }}
+                        disabled={!editFormData.startDate}
+                      >
+                        <SelectTrigger className="w-full" disabled={!editFormData.startDate}>
+                          <SelectValue placeholder={!editFormData.startDate ? 'Select start date first' : 'Select start time'} />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-80">
+                          {generateTimeOptions().map((timeOption) => {
+                            const isBooked = isTimeSlotBooked(timeOption.value);
+                            const hasReqConflicts = hasRequirementConflictsAtTime(timeOption.value);
+                            const isDisabled = isBooked;
+                            return (
+                              <SelectItem
+                                key={timeOption.value}
+                                value={timeOption.value}
+                                disabled={isDisabled}
+                                className={isDisabled ? 'opacity-50 cursor-not-allowed' : ''}
+                              >
+                                <div className={`flex items-center justify-between w-full ${isBooked ? 'line-through' : ''}`}>
+                                  <span className={isDisabled ? 'text-gray-400' : ''}>{timeOption.label}</span>
+                                  <div className="flex items-center gap-1">
+                                    {isBooked && (
+                                      <Badge variant="destructive" className="text-xs">VENUE</Badge>
+                                    )}
+                                    {hasReqConflicts && (
+                                      <Badge variant="secondary" className="text-xs bg-orange-100 text-orange-800">REQ</Badge>
+                                    )}
+                                  </div>
                                 </div>
-                              </div>
-                            </SelectItem>
-                          );
-                        })}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                {/* End Date & Time */}
-                <div className="space-y-4">
-                  <h4 className="text-sm font-medium text-gray-700">End</h4>
-                  
-                  {/* End Date */}
-                  <div>
-                    <Label className="text-xs text-gray-600">Date</Label>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button
-                          variant="outline"
-                          className="w-full justify-start text-left font-normal mt-1"
-                        >
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {/* For multi-day events, Day 1 end date = start date */}
-                          {editFormData.startDate && editFormData.endDate && editFormData.startDate !== editFormData.endDate
-                            ? format(new Date(editFormData.startDate), 'PPP')
-                            : editFormData.endDate 
-                              ? format(new Date(editFormData.endDate), 'PPP') 
-                              : 'Pick a date'}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0">
-                        <Calendar
-                          mode="single"
-                          selected={editFormData.endDate ? new Date(editFormData.endDate) : undefined}
-                          onSelect={(date) => {
-                            if (date) {
-                              // Format date as YYYY-MM-DD without timezone conversion
-                              const year = date.getFullYear();
-                              const month = String(date.getMonth() + 1).padStart(2, '0');
-                              const day = String(date.getDate()).padStart(2, '0');
-                              const dateString = `${year}-${month}-${day}`;
-                              setEditFormData(prev => ({ ...prev, endDate: dateString }));
-                            }
-                          }}
-                          disabled={isDateDisabled}
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
+                              </SelectItem>
+                            );
+                          })}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
 
-                  {/* End Time */}
-                  <div>
-                    <Label className="text-xs text-gray-600">Time</Label>
-                    <Select 
-                      value={editFormData.endTime} 
-                      onValueChange={(value) => setEditFormData(prev => ({ ...prev, endTime: value }))}
-                      disabled={!editFormData.startTime}
-                    >
-                      <SelectTrigger className="mt-1">
-                        <SelectValue placeholder={editFormData.startTime ? "Select end time" : "Select start time first"} />
-                      </SelectTrigger>
-                      <SelectContent className="max-h-80">
-                        {getAvailableEndTimes().map((timeOption) => {
-                          const isBooked = isTimeSlotBooked(timeOption.value);
-                          const hasReqConflicts = hasRequirementConflictsAtTime(timeOption.value);
-                          return (
-                            <SelectItem 
-                              key={timeOption.value} 
-                              value={timeOption.value}
-                              disabled={isBooked}
-                              className={isBooked ? 'opacity-50 cursor-not-allowed' : ''}
-                            >
-                              <div className="flex items-center justify-between w-full gap-2">
-                                <span className={isBooked ? 'text-gray-400' : ''}>
-                                  {timeOption.label}
-                                </span>
-                                <div className="flex items-center gap-1">
-                                  {hasReqConflicts && !isBooked && (
-                                    <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-300">
-                                      REQ
-                                    </Badge>
-                                  )}
-                                  {isBooked && (
-                                    <Badge variant="destructive" className="text-xs">
-                                      BOOKED
-                                    </Badge>
-                                  )}
+                  {/* End Date & Time */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-sm font-medium text-gray-700 mb-2 block">End Date</Label>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" className="w-full justify-start text-left font-normal">
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {editFormData.endDate ? format(new Date(editFormData.endDate), 'PPP') : 'Pick a date'}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0">
+                          <Calendar
+                            mode="single"
+                            selected={editFormData.endDate ? new Date(editFormData.endDate) : undefined}
+                            onSelect={(date) => {
+                              if (date) {
+                                const year = date.getFullYear();
+                                const month = String(date.getMonth() + 1).padStart(2, '0');
+                                const day = String(date.getDate()).padStart(2, '0');
+                                const dateString = `${year}-${month}-${day}`;
+                                setEditFormData(prev => ({ ...prev, endDate: dateString }));
+                                setConflictingEvents([]);
+                                setVenueConflictingEvents([]);
+                              }
+                            }}
+                            disabled={isDateDisabled}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="endTime" className="text-sm font-medium text-gray-700 mb-2 block">End Time</Label>
+                      <Select
+                        value={editFormData.endTime}
+                        onValueChange={(value) => setEditFormData(prev => ({ ...prev, endTime: value }))}
+                        disabled={!editFormData.startTime}
+                      >
+                        <SelectTrigger className="w-full" disabled={!editFormData.startTime}>
+                          <SelectValue placeholder={editFormData.startTime ? 'Select end time' : 'Select start time first'} />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-80">
+                          {getAvailableEndTimes().map((timeOption) => {
+                            const isBooked = isTimeSlotBooked(timeOption.value);
+                            const hasReqConflicts = hasRequirementConflictsAtTime(timeOption.value);
+                            const isDisabled = isBooked;
+                            return (
+                              <SelectItem
+                                key={timeOption.value}
+                                value={timeOption.value}
+                                disabled={isDisabled}
+                                className={isDisabled ? 'opacity-50 cursor-not-allowed' : ''}
+                              >
+                                <div className={`flex items-center justify-between w-full ${isBooked ? 'line-through' : ''}`}>
+                                  <span className={isDisabled ? 'text-gray-400' : ''}>{timeOption.label}</span>
+                                  <div className="flex items-center gap-1">
+                                    {isBooked && (
+                                      <Badge variant="destructive" className="text-xs">VENUE</Badge>
+                                    )}
+                                    {hasReqConflicts && (
+                                      <Badge variant="secondary" className="text-xs bg-orange-100 text-orange-800">REQ</Badge>
+                                    )}
+                                  </div>
                                 </div>
-                              </div>
-                            </SelectItem>
-                          );
-                        })}
-                      </SelectContent>
-                    </Select>
+                              </SelectItem>
+                            );
+                          })}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
                 </div>
-              </div>
               )}
 
               {/* Multi-Day Event - Additional Date Slots */}
@@ -4396,7 +4200,7 @@ const MyEventsPage: React.FC = () => {
                                                   </span>
                                                   {isBooked && (
                                                     <Badge variant="destructive" className="text-xs">
-                                                      BOOKED
+                                                      VENUE
                                                     </Badge>
                                                   )}
                                                 </div>
@@ -4458,7 +4262,7 @@ const MyEventsPage: React.FC = () => {
                                                     </span>
                                                     {isBooked && (
                                                       <Badge variant="destructive" className="text-xs">
-                                                        BOOKED
+                                                        VENUE
                                                       </Badge>
                                                     )}
                                                   </div>
@@ -4482,7 +4286,7 @@ const MyEventsPage: React.FC = () => {
               </div>
 
               {/* Footer Action Buttons */}
-              <div className="px-6 py-4 border-t bg-gray-50 flex justify-end gap-3">
+              <div className="py-4 border-t bg-gray-50 flex justify-end gap-3">
                 <Button 
                   variant="outline" 
                   onClick={() => setShowEditModal(false)}
@@ -4491,10 +4295,8 @@ const MyEventsPage: React.FC = () => {
                 </Button>
                 <Button 
                   onClick={handleSaveEditedEvent}
-                  disabled={requirementConflicts.length > 0}
-                  className={requirementConflicts.length > 0 ? 'opacity-50 cursor-not-allowed' : ''}
                 >
-                  {requirementConflicts.length > 0 ? 'Cannot Save - Resolve Conflicts' : 'Save Changes'}
+                  Save Changes
                 </Button>
               </div>
             </div>
@@ -4977,96 +4779,102 @@ const MyEventsPage: React.FC = () => {
                         <p className="text-sm text-gray-600 max-w-md text-center mx-auto">
                           The <strong>{selectedDepartmentData?.name}</strong> department has no default requirements.
                         </p>
-                        <p className="text-xs text-gray-500 mt-2 text-center">
-                          Use <strong>Add Custom Requirement</strong> below.
-                        </p>
+                        {!selectedDepartmentData?.name?.toLowerCase().includes('pgso') && (
+                          <p className="text-xs text-gray-500 mt-2 text-center">
+                            Use <strong>Add Custom Requirement</strong> below.
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>
                 )}
 
-                <div
-                  className={`p-3 border-2 border-dashed rounded-lg cursor-pointer transition-all ${
-                    showCustomInput
-                      ? 'bg-blue-50 border-blue-300'
-                      : 'border-gray-300 hover:border-blue-300 hover:bg-blue-50'
-                  }`}
-                  onClick={() => setShowCustomInput(true)}
-                >
-                  <div className="flex items-center justify-center gap-2 text-sm text-gray-600">
-                    <Plus className="w-4 h-4" />
-                    Add Custom Requirement
+                {!selectedDepartmentData?.name?.toLowerCase().includes('pgso') && (
+                  <div
+                    className={`p-3 border-2 border-dashed rounded-lg cursor-pointer transition-all ${
+                      showCustomInput
+                        ? 'bg-blue-50 border-blue-300'
+                        : 'border-gray-300 hover:border-blue-300 hover:bg-blue-50'
+                    }`}
+                    onClick={() => setShowCustomInput(true)}
+                  >
+                    <div className="flex items-center justify-center gap-2 text-sm text-gray-600">
+                      <Plus className="w-4 h-4" />
+                      Add Custom Requirement
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
           </div>
 
-          <Dialog open={showCustomInput} onOpenChange={setShowCustomInput}>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle>Add Custom Requirement</DialogTitle>
-                <DialogDescription>
-                  Define a new requirement for {selectedDepartmentData?.name || 'this department'}.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4 pt-2">
-                <div className="space-y-2">
-                  <Label className="text-xs font-medium text-gray-900">Requirement Name</Label>
-                  <Input
-                    placeholder="Enter custom requirement name..."
-                    value={customRequirement}
-                    onChange={(e) => setCustomRequirement(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs font-medium text-gray-900">Type</Label>
-                  <Select
-                    value={customRequirementType || 'service'}
-                    onValueChange={(value: 'physical' | 'service') => setCustomRequirementType(value)}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Select type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="physical">
-                        <div className="flex items-center gap-2">
-                          <Package className="w-3 h-3" />
-                          Quantity (Physical Item)
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="service">
-                        <div className="flex items-center gap-2">
-                          <Settings className="w-3 h-3" />
-                          Service
-                        </div>
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {customRequirementType === 'physical' && (
+          {!selectedDepartmentData?.name?.toLowerCase().includes('pgso') && (
+            <Dialog open={showCustomInput} onOpenChange={setShowCustomInput}>
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Add Custom Requirement</DialogTitle>
+                  <DialogDescription>
+                    Define a new requirement for {selectedDepartmentData?.name || 'this department'}.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 pt-2">
                   <div className="space-y-2">
-                    <Label className="text-xs font-medium text-gray-900">Quantity Needed</Label>
+                    <Label className="text-xs font-medium text-gray-900">Requirement Name</Label>
                     <Input
-                      type="number"
-                      min="1"
-                      value={pendingCustomQuantity}
-                      onChange={(e) => setPendingCustomQuantity(e.target.value)}
+                      placeholder="Enter custom requirement name..."
+                      value={customRequirement}
+                      onChange={(e) => setCustomRequirement(e.target.value)}
                     />
                   </div>
-                )}
-              </div>
-              <div className="mt-4 flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setShowCustomInput(false)} className="text-xs">
-                  Cancel
-                </Button>
-                <Button onClick={handleAddCustomRequirement} disabled={!customRequirement.trim()} className="text-xs">
-                  Add
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
+                  <div className="space-y-2">
+                    <Label className="text-xs font-medium text-gray-900">Type</Label>
+                    <Select
+                      value={customRequirementType || 'service'}
+                      onValueChange={(value: 'physical' | 'service') => setCustomRequirementType(value)}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="physical">
+                          <div className="flex items-center gap-2">
+                            <Package className="w-3 h-3" />
+                            Quantity (Physical Item)
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="service">
+                          <div className="flex items-center gap-2">
+                            <Settings className="w-3 h-3" />
+                            Service
+                          </div>
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {customRequirementType === 'physical' && (
+                    <div className="space-y-2">
+                      <Label className="text-xs font-medium text-gray-900">Quantity Needed</Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        value={pendingCustomQuantity}
+                        onChange={(e) => setPendingCustomQuantity(e.target.value)}
+                      />
+                    </div>
+                  )}
+                </div>
+                <div className="mt-4 flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setShowCustomInput(false)} className="text-xs">
+                    Cancel
+                  </Button>
+                  <Button onClick={handleAddCustomRequirement} disabled={!customRequirement.trim()} className="text-xs">
+                    Add
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          )}
 
           <div className="flex justify-end gap-2 pt-4 border-t">
             <Button
@@ -5416,73 +5224,6 @@ const MyEventsPage: React.FC = () => {
             </Button>
             <Button onClick={handleSaveEditedDetails}>
               Save Changes
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Requirement Conflicts Modal */}
-      <Dialog open={showConflictModal} onOpenChange={setShowConflictModal}>
-        <DialogContent className="!max-w-[700px] w-[85vw] !max-h-[75vh]">
-          <DialogHeader className="pb-3">
-            <DialogTitle className="text-lg font-semibold text-red-900 flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5" />
-              Requirement Availability Issues
-            </DialogTitle>
-            <DialogDescription className="text-xs text-red-700 mt-1">
-              The following requirements are not available. Please choose a different time or reduce requirements.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-2 max-h-[300px] overflow-y-auto py-1">
-            {requirementConflicts.map((conflict, idx) => (
-              <Card key={idx} className="border-red-200">
-                <CardContent className="p-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <div>
-                      <h4 className="text-sm font-semibold text-gray-900">{conflict.requirement}</h4>
-                      <p className="text-xs text-gray-500">{conflict.department}</p>
-                    </div>
-                    <Badge variant="destructive" className="text-xs px-2 py-0.5">Insufficient</Badge>
-                  </div>
-                  
-                  <div className="grid grid-cols-3 gap-3 bg-gray-50 rounded p-2">
-                    <div className="text-center">
-                      <p className="text-xs text-gray-500">Requested</p>
-                      <p className="text-base font-bold text-gray-900">{conflict.requested}</p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-xs text-gray-500">Available</p>
-                      <p className="text-base font-bold text-red-600">{conflict.available}</p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-xs text-gray-500">Total</p>
-                      <p className="text-base font-bold text-gray-900">{conflict.total}</p>
-                    </div>
-                  </div>
-                  
-                  <p className="text-xs text-orange-700 text-center mt-2">
-                    {conflict.booked} already booked
-                  </p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-
-          <div className="bg-red-50 border border-red-300 rounded p-2 mt-3">
-            <p className="text-xs text-red-900 font-medium text-center flex items-center justify-center gap-1">
-              <AlertTriangle className="w-3 h-3" />
-              Cannot reschedule to this date/time
-            </p>
-          </div>
-
-          <div className="flex justify-end mt-3">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowConflictModal(false)}
-            >
-              Close
             </Button>
           </div>
         </DialogContent>

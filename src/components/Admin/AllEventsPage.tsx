@@ -108,6 +108,11 @@ const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}
 const ADMIN_ENABLE_EVENT_DELETION_KEY = 'admin_enable_event_deletion';
 
 const AllEventsPage: React.FC = () => {
+  const rawUserData = localStorage.getItem('userData');
+  const parsedUserData = rawUserData ? JSON.parse(rawUserData) : null;
+  const roleFromStorage = (parsedUserData?.role || '').toString().toLowerCase();
+  const isSuperAdmin = roleFromStorage === 'superadmin';
+  const canDeleteEvents = isSuperAdmin || roleFromStorage === 'admin';
   // Socket.IO for real-time updates
   const { socket } = useSocket();
   
@@ -169,7 +174,7 @@ const AllEventsPage: React.FC = () => {
       try {
         const raw = localStorage.getItem(ADMIN_ENABLE_EVENT_DELETION_KEY);
         const enabled = raw === 'true';
-        setEnableEventDeletion(enabled);
+        setEnableEventDeletion(enabled && canDeleteEvents);
         if (!enabled) setSelectedEvents([]);
       } catch {
         setEnableEventDeletion(false);
@@ -206,9 +211,6 @@ const AllEventsPage: React.FC = () => {
     }
     return 'admin';
   };
-  
-  const userRole = getUserRole();
-  const isSuperAdmin = userRole === 'superadmin';
 
   // Note: Socket.IO listeners and notifications are now handled globally by AdminNotificationSystem
   // This component only needs to handle the table display and filtering
@@ -467,6 +469,11 @@ const AllEventsPage: React.FC = () => {
   const handleDeleteSelected = async () => {
     if (!enableEventDeletion) return;
     if (selectedEvents.length === 0) return;
+    if (!canDeleteEvents) {
+      toast.error('You do not have permission to delete events');
+      setShowDeleteConfirm(false);
+      return;
+    }
 
     try {
       const token = localStorage.getItem('authToken');
@@ -483,7 +490,12 @@ const AllEventsPage: React.FC = () => {
       setSelectedEvents([]);
       fetchAllEvents(true);
     } catch (error) {
-      toast.error('Failed to delete event(s)');
+      const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+      if (status === 403) {
+        toast.error('Forbidden: you do not have permission to delete events');
+      } else {
+        toast.error('Failed to delete event(s)');
+      }
     } finally {
       setShowDeleteConfirm(false);
     }
@@ -1297,7 +1309,6 @@ const AllEventsPage: React.FC = () => {
                                 <Button
                                   variant="outline"
                                   size="sm"
-                                  className="gap-1"
                                   onClick={() => {
                                     setStoreSelectedEvent(event);
                                     setShowStatusDialog(true);

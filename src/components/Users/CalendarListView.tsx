@@ -9,6 +9,13 @@ import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -77,6 +84,12 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
     to: undefined
   });
   const [idSearch, setIdSearch] = useState('');
+  const [excelExportModalOpen, setExcelExportModalOpen] = useState(false);
+  const [excelExportLocation, setExcelExportLocation] = useState<string>('all');
+  const [excelExportDateRange, setExcelExportDateRange] = useState<{ from: Date; to?: Date }>({
+    from: new Date(),
+    to: undefined,
+  });
   const [pdfModal, setPdfModal] = useState(false);
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
   const [exportingEventId, setExportingEventId] = useState<string | null>(null);
@@ -104,8 +117,39 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
     XLSX.writeFile(workbook, filename);
   };
 
-  const exportAllExcel = async () => {
-    if (dateEntries.length === 0) {
+  const normalizeLocation = (value: string) => (value || '').trim().toLowerCase();
+
+  const getAllLocationOptions = () => {
+    const set = new Set<string>();
+    events.forEach(e => {
+      if (e.multipleLocations && Array.isArray(e.locations) && e.locations.length > 0) {
+        e.locations.forEach(loc => {
+          const v = (loc || '').trim();
+          if (v) set.add(v);
+        });
+      }
+
+      const single = (e.location || '').trim();
+      if (single) set.add(single);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  };
+
+  const eventMatchesLocation = (event: CalendarEvent, selected: string) => {
+    if (!selected || selected === 'all') return true;
+    const target = normalizeLocation(selected);
+
+    const candidates: string[] = [];
+    if (event.multipleLocations && Array.isArray(event.locations) && event.locations.length > 0) {
+      candidates.push(...event.locations);
+    }
+    candidates.push(event.location);
+
+    return candidates.some(loc => normalizeLocation(loc) === target);
+  };
+
+  const exportAllExcel = async (exportEvents: CalendarEvent[], rangeForFilename: { from: Date; to?: Date }, locationForFilename: string) => {
+    if (exportEvents.length === 0) {
       toast.error('No events to export');
       return;
     }
@@ -113,8 +157,7 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
     try {
       setExportingExcel(true);
 
-      const allEvents: CalendarEvent[] = dateEntries.flatMap(entry => entry.events);
-      const rows = allEvents.map(event => ({
+      const rows = exportEvents.map(event => ({
         'Invoice ID': toInvoiceId(event),
         'Event Title': event.eventTitle,
         'Requestor': event.requestor,
@@ -130,11 +173,15 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
         'Tagged Departments': event.taggedDepartments ? event.taggedDepartments.join(', ') : ''
       }));
 
-      const dateRangeText = dateRange.to
-        ? `${format(dateRange.from, 'yyyy-MM-dd')}_to_${format(dateRange.to, 'yyyy-MM-dd')}`
-        : format(dateRange.from, 'yyyy-MM-dd');
+      const dateRangeText = rangeForFilename.to
+        ? `${format(rangeForFilename.from, 'yyyy-MM-dd')}_to_${format(rangeForFilename.to, 'yyyy-MM-dd')}`
+        : format(rangeForFilename.from, 'yyyy-MM-dd');
 
-      exportExcel(rows, `MyCalendar_Events_${dateRangeText}.xlsx`);
+      const locationText = locationForFilename && locationForFilename !== 'all'
+        ? `_${locationForFilename.replace(/[^a-z0-9\-_ ]/gi, '').replace(/\s+/g, '_').slice(0, 40)}`
+        : '';
+
+      exportExcel(rows, `MyCalendar_Events${locationText}_${dateRangeText}.xlsx`);
       toast.success('Excel exported successfully!');
     } catch (error) {
       console.error('Error exporting Excel:', error);
@@ -261,6 +308,19 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
     const fullId = (event._id || '').toString().toLowerCase();
     const suffix6 = fullId.slice(-6);
     return fullId.includes(idQuery) || suffix6.includes(idQuery);
+  };
+
+  const getExcelFilteredEvents = () => {
+    const rangeStart = startOfDay(excelExportDateRange.from);
+    const rangeEnd = excelExportDateRange.to ? endOfDay(excelExportDateRange.to) : endOfDay(excelExportDateRange.from);
+
+    return events
+      .filter(e => matchesIdQuery(e))
+      .filter(e => {
+        const eventDate = startOfDay(new Date(e.startDate));
+        return isWithinInterval(eventDate, { start: rangeStart, end: rangeEnd });
+      })
+      .filter(e => eventMatchesLocation(e, excelExportLocation));
   };
 
   const filteredEventsById = idQuery
@@ -628,7 +688,11 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
 
             <Button
               variant="default"
-              onClick={exportAllExcel}
+              onClick={() => {
+                setExcelExportDateRange(dateRange);
+                setExcelExportLocation('all');
+                setExcelExportModalOpen(true);
+              }}
               disabled={exportingExcel || dateEntries.length === 0}
               className="gap-2 export-all-button bg-emerald-600 hover:bg-emerald-700"
             >
@@ -668,6 +732,80 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
           </Button>
         </div>
       </div>
+
+      {/* Excel Export Modal */}
+      <Dialog open={excelExportModalOpen} onOpenChange={setExcelExportModalOpen}>
+        <DialogContent className="w-[90vw] max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Export Events to Excel</DialogTitle>
+            <DialogDescription>
+              Choose a location and date range to export.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Location</p>
+              <Select value={excelExportLocation} onValueChange={setExcelExportLocation}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select location" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Locations</SelectItem>
+                  {getAllLocationOptions().map(loc => (
+                    <SelectItem key={loc} value={loc}>
+                      {loc}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Date Range</p>
+              <div className="rounded-md border p-2">
+                <CalendarComponent
+                  mode="range"
+                  selected={excelExportDateRange}
+                  onSelect={(range: any) => setExcelExportDateRange(range || { from: new Date(), to: undefined })}
+                  numberOfMonths={2}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Exporting: {excelExportDateRange.to
+                  ? `${format(excelExportDateRange.from, 'MMM dd, yyyy')} - ${format(excelExportDateRange.to, 'MMM dd, yyyy')}`
+                  : format(excelExportDateRange.from, 'MMM dd, yyyy')}
+              </p>
+            </div>
+
+            <div className="text-sm">
+              <span className="text-muted-foreground">Matching events:</span>{' '}
+              <span className="font-semibold">{getExcelFilteredEvents().length}</span>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setExcelExportModalOpen(false)}
+              disabled={exportingExcel}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={async () => {
+                const filtered = getExcelFilteredEvents();
+                await exportAllExcel(filtered, excelExportDateRange, excelExportLocation);
+                setExcelExportModalOpen(false);
+              }}
+              disabled={exportingExcel || getExcelFilteredEvents().length === 0}
+              className="bg-emerald-600 hover:bg-emerald-700"
+            >
+              {exportingExcel ? 'Exporting...' : 'Export Excel'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div className="space-y-4" ref={allEventsRef}>
         {dateEntries.length === 0 ? (
