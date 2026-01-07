@@ -477,6 +477,15 @@ const TaggedDepartmentPage: React.FC = () => {
     return (anyEvent?._id ?? anyEvent?.id ?? '').toString();
   };
 
+  const toInvoiceId = (event: Event) => {
+    const date = new Date(event.startDate);
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    const idSuffix = getEventIdString(event).slice(-6).toUpperCase();
+    return `INV-${yyyy}${mm}${dd}-${idSuffix || '000000'}`;
+  };
+
   const applyEventSearchFilterSort = (list: Event[]) => {
     const query = eventSearch.trim().toLowerCase();
     const isSuffix6Query = /^[a-f0-9]{6}$/i.test(eventSearch.trim());
@@ -922,7 +931,10 @@ const TaggedDepartmentPage: React.FC = () => {
                           {/* Header: Title + Status Badge */}
                           <div className="flex items-start justify-between gap-3">
                             <h3 className="font-semibold text-sm leading-tight flex-1 truncate" title={event.eventTitle}>
-                              {event.eventTitle}
+                              {event.eventTitle}{' '}
+                              <span className="font-mono text-[10px] text-muted-foreground">
+                                ({toInvoiceId(event)})
+                              </span>
                             </h3>
                             <Badge className={`text-[10px] px-2 py-0.5 flex-shrink-0 font-medium ${
                               event.status === 'approved' ? 'bg-green-500 text-white' :
@@ -1063,17 +1075,22 @@ const TaggedDepartmentPage: React.FC = () => {
                                 <div className="space-y-4">
                                   <div className="overflow-hidden">
                                     <div className="flex items-start gap-2 mb-2">
-                                      <h3 className="font-semibold text-sm leading-tight flex-1 truncate" title={event.eventTitle}>{event.eventTitle}</h3>
+                                      <h3 className="font-semibold text-sm leading-tight flex-1 truncate" title={event.eventTitle}>
+                                        {event.eventTitle}{' '}
+                                        <span className="font-mono text-[10px] text-muted-foreground">
+                                          ({toInvoiceId(event)})
+                                        </span>
+                                      </h3>
                                       <Badge className="text-[10px] h-4 bg-green-500 text-white flex-shrink-0">
                                         ✓ Confirmed
                                       </Badge>
                                     </div>
                                     <div className="space-y-1">
                                       <div className="flex items-start gap-2 text-xs text-muted-foreground">
-                                        <MapPin className="w-3 h-3 flex-shrink-0 mt-0.5" />
+                                        <MapPin className="w-3 h-3 text-blue-600 flex-shrink-0 mt-0.5" />
                                         {event.locations && event.locations.length > 1 ? (
                                           <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                                            <span className="leading-tight truncate">
+                                            <span className="text-xs text-muted-foreground leading-tight truncate">
                                               {event.locations[0]}
                                             </span>
                                             <HoverCard openDelay={200}>
@@ -1103,7 +1120,7 @@ const TaggedDepartmentPage: React.FC = () => {
                                             </HoverCard>
                                           </div>
                                         ) : (
-                                          <span className="leading-tight">{event.location}</span>
+                                          <span className="text-xs text-muted-foreground leading-tight">{event.location}</span>
                                         )}
                                       </div>
                                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -1178,7 +1195,12 @@ const TaggedDepartmentPage: React.FC = () => {
                                 <div className="space-y-4">
                                   <div className="overflow-hidden">
                                     <div className="flex items-start gap-2 mb-2">
-                                      <h3 className="font-semibold text-sm leading-tight flex-1 truncate" title={event.eventTitle}>{event.eventTitle}</h3>
+                                      <h3 className="font-semibold text-sm leading-tight flex-1 truncate" title={event.eventTitle}>
+                                        {event.eventTitle}{' '}
+                                        <span className="font-mono text-[10px] text-muted-foreground">
+                                          ({toInvoiceId(event)})
+                                        </span>
+                                      </h3>
                                       <Badge className={`text-xs px-2 py-1 flex-shrink-0 ${
                                         event.status === 'approved' ? 'bg-green-500 text-white' :
                                         event.status === 'submitted' ? 'bg-blue-500 text-white' :
@@ -1281,7 +1303,12 @@ const TaggedDepartmentPage: React.FC = () => {
                               <div className="space-y-4">
                                 <div className="overflow-hidden">
                                   <div className="flex items-start gap-2 mb-2">
-                                    <h3 className="font-semibold text-sm leading-tight flex-1 truncate" title={event.eventTitle}>{event.eventTitle}</h3>
+                                    <h3 className="font-semibold text-sm leading-tight flex-1 truncate" title={event.eventTitle}>
+                                      {event.eventTitle}{' '}
+                                      <span className="font-mono text-[10px] text-muted-foreground">
+                                        ({toInvoiceId(event)})
+                                      </span>
+                                    </h3>
                                     <Badge className="text-xs px-2 py-1 flex-shrink-0 bg-gray-500 text-white">done</Badge>
                                   </div>
                                   <div className="space-y-1">
@@ -1324,7 +1351,12 @@ const TaggedDepartmentPage: React.FC = () => {
               {/* Event Header */}
               <div className="bg-background/95 backdrop-blur-sm border-b px-5 md:px-6 py-3">
                 <div className="flex items-center justify-between mb-3">
-                  <h2 className="text-lg font-semibold">{selectedEvent.eventTitle}</h2>
+                  <h2 className="text-lg font-semibold">
+                    {selectedEvent.eventTitle}{' '}
+                    <span className="font-mono text-xs text-muted-foreground">
+                      ({toInvoiceId(selectedEvent)})
+                    </span>
+                  </h2>
                   <Badge variant="outline" className="text-sm px-2 py-0.5">
                     {(selectedEvent.departmentRequirements[currentUserDepartment] || []).length} Requirements
                   </Badge>
@@ -1589,7 +1621,7 @@ const TaggedDepartmentPage: React.FC = () => {
                                   {req.type === 'yesno' ? 'Requestor\'s Answer' : 'Requestor\'s Note'}
                                 </Label>
                                 <div className="bg-gray-50 rounded-md p-3 border">
-                                  <p className="text-sm text-gray-700">
+                                  <p className="text-sm text-gray-700 font-semibold">
                                     {req.type === 'yesno' ? (
                                       req.yesNoAnswer ? (
                                         <span className="font-semibold text-green-600">✓ Yes</span>
@@ -1950,7 +1982,7 @@ const TaggedDepartmentPage: React.FC = () => {
                                             {req.type === 'yesno' ? 'Requestor\'s Answer' : 'Requestor\'s Note'}
                                           </Label>
                                           <div className="bg-gray-50 rounded-md p-3 border">
-                                            <p className="text-sm text-gray-700">
+                                            <p className="text-sm text-gray-700 font-semibold">
                                               {req.type === 'yesno' ? (
                                                 req.yesNoAnswer ? (
                                                   <span className="font-semibold text-green-600">✓ Yes</span>

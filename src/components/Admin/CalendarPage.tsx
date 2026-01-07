@@ -6,10 +6,12 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Calendar, MapPin, Clock, RefreshCw } from 'lucide-react';
+import { Calendar, MapPin, Clock, RefreshCw, FileText, Download } from 'lucide-react';
 import { format } from 'date-fns';
 import { getGlobalSocket } from '@/hooks/useSocket';
 import { useAdminCalendarStore, type Event } from '@/stores/adminCalendarStore';
+
+const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api`;
 
 const AdminCalendarPage: React.FC = () => {
   const [showMoreEventsDialog, setShowMoreEventsDialog] = useState(false);
@@ -231,6 +233,107 @@ const AdminCalendarPage: React.FC = () => {
                 <span className="font-medium text-gray-700">{event.requestorDepartment}</span>
               </p>
             </div>
+
+            {/* Gov Files */}
+            {(event.govFiles?.brieferTemplate?.filename || event.govFiles?.programme?.filename || event.govFiles?.availableForDL?.filename) && (
+              <div className="pt-2 border-t">
+                <p className="text-sm font-medium text-gray-700 mb-2">Gov Files</p>
+                <div className="space-y-2">
+                  {event.govFiles?.brieferTemplate?.filename && (
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-gray-600">Briefer Template</p>
+                        <p className="text-xs text-gray-500 truncate">
+                          {event.govFiles.brieferTemplate.originalName || event.govFiles.brieferTemplate.filename}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 px-2 gap-1"
+                          onClick={() => window.open(`${API_BASE_URL}/events/govfile/${event.govFiles!.brieferTemplate!.filename}`, '_blank')}
+                        >
+                          <FileText className="w-3 h-3" />
+                          View
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 px-2 gap-1"
+                          onClick={() => window.open(`${API_BASE_URL}/events/govfile/${event.govFiles!.brieferTemplate!.filename}?download=true`, '_blank')}
+                        >
+                          <Download className="w-3 h-3" />
+                          DL
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {event.govFiles?.programme?.filename && (
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-gray-600">Programme</p>
+                        <p className="text-xs text-gray-500 truncate">
+                          {event.govFiles.programme.originalName || event.govFiles.programme.filename}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 px-2 gap-1"
+                          onClick={() => window.open(`${API_BASE_URL}/events/govfile/${event.govFiles!.programme!.filename}`, '_blank')}
+                        >
+                          <FileText className="w-3 h-3" />
+                          View
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 px-2 gap-1"
+                          onClick={() => window.open(`${API_BASE_URL}/events/govfile/${event.govFiles!.programme!.filename}?download=true`, '_blank')}
+                        >
+                          <Download className="w-3 h-3" />
+                          DL
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {event.govFiles?.availableForDL?.filename && (
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-gray-600">Available for DL</p>
+                        <p className="text-xs text-gray-500 truncate">
+                          {event.govFiles.availableForDL.originalName || event.govFiles.availableForDL.filename}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 px-2 gap-1"
+                          onClick={() => window.open(`${API_BASE_URL}/events/govfile/${event.govFiles!.availableForDL!.filename}`, '_blank')}
+                        >
+                          <FileText className="w-3 h-3" />
+                          View
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 px-2 gap-1"
+                          onClick={() => window.open(`${API_BASE_URL}/events/govfile/${event.govFiles!.availableForDL!.filename}?download=true`, '_blank')}
+                        >
+                          <Download className="w-3 h-3" />
+                          DL
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </PopoverContent>
       </Popover>
