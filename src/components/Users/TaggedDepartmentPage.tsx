@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import axios from 'axios';
@@ -96,6 +96,7 @@ interface Event {
   requestor: string;
   requestorDepartment: string;
   location: string;
+  locations?: string[];
   participants: number;
   vip: number;
   vvip: number;
@@ -148,6 +149,10 @@ const TaggedDepartmentPage: React.FC = () => {
   
   // Per-requirement reply drafts for department conversation
   const [replyDrafts, setReplyDrafts] = React.useState<{ [reqId: string]: string }>({});
+
+  const [eventSearch, setEventSearch] = React.useState('');
+  const [eventFilter, setEventFilter] = React.useState<'all' | 'has-declined' | 'all-declined' | 'no-declined'>('all');
+  const [eventSort, setEventSort] = React.useState<'date-desc' | 'date-asc' | 'title-asc' | 'title-desc' | 'declined-first'>('date-asc');
   
   // Zustand store - replaces all useState calls above!
   const {
@@ -281,9 +286,10 @@ const TaggedDepartmentPage: React.FC = () => {
           
           if (freshEvent) {
             const userDeptReqs = freshEvent.departmentRequirements[currentUserDepartment] || [];
-            const confirmedCount = userDeptReqs.filter(r => (r.status || 'pending') === 'confirmed').length;
             const totalCount = userDeptReqs.length;
-            const isNowCompleted = totalCount > 0 && confirmedCount === totalCount;
+            const pendingCount = userDeptReqs.filter(r => (r.status || 'pending') === 'pending').length;
+            const declinedCount = userDeptReqs.filter(r => (r.status || 'pending') === 'declined').length;
+            const isNowCompleted = totalCount > 0 && pendingCount === 0 && declinedCount < totalCount;
             
             if (isNowCompleted) {
               const ongoingEvents = getOngoingEvents();
@@ -337,9 +343,10 @@ const TaggedDepartmentPage: React.FC = () => {
           
           if (freshEvent) {
             const userDeptReqs = freshEvent.departmentRequirements[currentUserDepartment] || [];
-            const confirmedCount = userDeptReqs.filter(r => (r.status || 'pending') === 'confirmed').length;
             const totalCount = userDeptReqs.length;
-            const isNowCompleted = totalCount > 0 && confirmedCount === totalCount;
+            const pendingCount = userDeptReqs.filter(r => (r.status || 'pending') === 'pending').length;
+            const declinedCount = userDeptReqs.filter(r => (r.status || 'pending') === 'declined').length;
+            const isNowCompleted = totalCount > 0 && pendingCount === 0 && declinedCount < totalCount;
             
             if (isNowCompleted) {
               // Get next ongoing event from store
@@ -463,6 +470,209 @@ const TaggedDepartmentPage: React.FC = () => {
     }
   };
 
+  const getUserDeptReqs = (event: Event) => event.departmentRequirements[currentUserDepartment] || [];
+
+  const getEventIdString = (event: Event) => {
+    const anyEvent = event as any;
+    return (anyEvent?._id ?? anyEvent?.id ?? '').toString();
+  };
+
+  const applyEventSearchFilterSort = (list: Event[]) => {
+    const query = eventSearch.trim().toLowerCase();
+    const isSuffix6Query = /^[a-f0-9]{6}$/i.test(eventSearch.trim());
+
+    const matchesQuery = (e: Event) => {
+      if (!query) return true;
+      const title = (e.eventTitle || '').toLowerCase();
+      const fullId = getEventIdString(e).toLowerCase();
+      const suffix6 = fullId.slice(-6);
+
+      // If user typed exactly the last-6 ID (e.g., DDC229), match it exactly to avoid false positives
+      if (isSuffix6Query) {
+        return suffix6 === query;
+      }
+
+      return title.includes(query) || fullId.includes(query) || suffix6.includes(query);
+    };
+
+    let filtered = list;
+
+    if (query) {
+      filtered = filtered.filter(matchesQuery);
+    }
+
+    if (eventFilter !== 'all') {
+      filtered = filtered.filter(e => {
+        const reqs = getUserDeptReqs(e);
+        const declinedCount = reqs.filter(r => getRequirementStatus(r) === 'declined').length;
+        const totalCount = reqs.length;
+
+        switch (eventFilter) {
+          case 'has-declined':
+            return declinedCount > 0;
+          case 'all-declined':
+            return totalCount > 0 && declinedCount === totalCount;
+          case 'no-declined':
+            return declinedCount === 0;
+          default:
+            return true;
+        }
+      });
+    }
+
+    const sorted = [...filtered].sort((a, b) => {
+      switch (eventSort) {
+        case 'title-asc':
+          return (a.eventTitle || '').localeCompare(b.eventTitle || '');
+        case 'title-desc':
+          return (b.eventTitle || '').localeCompare(a.eventTitle || '');
+        case 'date-asc':
+          return new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
+        case 'declined-first': {
+          const aDeclined = getUserDeptReqs(a).some(r => getRequirementStatus(r) === 'declined') ? 1 : 0;
+          const bDeclined = getUserDeptReqs(b).some(r => getRequirementStatus(r) === 'declined') ? 1 : 0;
+          if (aDeclined !== bDeclined) return bDeclined - aDeclined;
+          return new Date(b.startDate).getTime() - new Date(a.startDate).getTime();
+        }
+        case 'date-desc':
+        default:
+          return new Date(b.startDate).getTime() - new Date(a.startDate).getTime();
+      }
+    });
+
+    return sorted;
+  };
+
+  const visibleOngoingEvents = useMemo(() => applyEventSearchFilterSort(getOngoingEvents()), [events, currentUserDepartment, eventSearch, eventFilter, eventSort, activeEventTab]);
+  const visibleCompletedEvents = useMemo(() => applyEventSearchFilterSort(getCompletedEvents()), [events, currentUserDepartment, eventSearch, eventFilter, eventSort, activeEventTab]);
+  const visibleDeclinedEvents = useMemo(() => {
+    const declinedList = events.filter(event => {
+      const userDeptReqs = getUserDeptReqs(event);
+      const declinedCount = userDeptReqs.filter(r => getRequirementStatus(r) === 'declined').length;
+      const totalCount = userDeptReqs.length;
+      return totalCount > 0 && declinedCount === totalCount;
+    });
+    return applyEventSearchFilterSort(declinedList);
+  }, [events, currentUserDepartment, eventSearch, eventFilter, eventSort, activeEventTab]);
+
+  const visibleDoneEvents = useMemo(() => {
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const doneList = events.filter(event => {
+      const isDoneByStatus = (event.status || '').toLowerCase() === 'completed';
+      const isDoneByDate = new Date(event.endDate) < startOfToday;
+      return isDoneByStatus || isDoneByDate;
+    });
+    return applyEventSearchFilterSort(doneList);
+  }, [events, currentUserDepartment, eventSearch, eventFilter, eventSort, activeEventTab]);
+
+  const lastSearchToastRef = useRef<string>('');
+
+  useEffect(() => {
+    const raw = eventSearch.trim();
+    const query = raw.toLowerCase();
+    if (!query) return;
+
+    const isSuffix6Query = /^[a-f0-9]{6}$/i.test(raw);
+
+    const matchesQuery = (e: Event) => {
+      const title = (e.eventTitle || '').toLowerCase();
+      const fullId = getEventIdString(e).toLowerCase();
+      const suffix6 = fullId.slice(-6);
+
+      if (isSuffix6Query) return suffix6 === query;
+      return title.includes(query) || fullId.includes(query) || suffix6.includes(query);
+    };
+
+    // If searching by a 6-char suffix, enforce unique match and auto-focus it
+    if (isSuffix6Query) {
+      const matches = events.filter(matchesQuery);
+
+      if (matches.length === 0) {
+        setSelectedEvent(null);
+        if (lastSearchToastRef.current !== `none:${query}`) {
+          toast.error('No event found for that ID in Tagged Departments. It may exist in My Calendar but not be released/visible here.');
+          lastSearchToastRef.current = `none:${query}`;
+        }
+        return;
+      }
+
+      if (matches.length > 1) {
+        setSelectedEvent(null);
+        if (lastSearchToastRef.current !== `multi:${query}`) {
+          toast.info(`Multiple events matched ID ${raw}. Try searching the full ID or title.`);
+          lastSearchToastRef.current = `multi:${query}`;
+        }
+        return;
+      }
+
+      const matchedEvent = matches[0];
+      setSelectedEvent(matchedEvent);
+
+      const now = new Date();
+      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+      const declinedList = events.filter(event => {
+        const userDeptReqs = getUserDeptReqs(event);
+        const declinedCount = userDeptReqs.filter(r => getRequirementStatus(r) === 'declined').length;
+        const totalCount = userDeptReqs.length;
+        return totalCount > 0 && declinedCount === totalCount;
+      });
+
+      const doneList = events.filter(event => {
+        const isDoneByStatus = (event.status || '').toLowerCase() === 'completed';
+        const isDoneByDate = new Date(event.endDate) < startOfToday;
+        return isDoneByStatus || isDoneByDate;
+      });
+
+      const matchedId = getEventIdString(matchedEvent);
+      const inList = (list: Event[]) => list.some(e => getEventIdString(e) === matchedId);
+
+      const tabOrder: Array<{ tab: 'ongoing' | 'completed' | 'declined' | 'done'; list: Event[] }> = [
+        { tab: 'ongoing', list: getOngoingEvents() },
+        { tab: 'completed', list: getCompletedEvents() },
+        { tab: 'declined', list: declinedList },
+        { tab: 'done', list: doneList },
+      ];
+
+      const targetTab = tabOrder.find(({ list }) => inList(list))?.tab;
+      if (targetTab && targetTab !== activeEventTab) {
+        setActiveEventTab(targetTab);
+      }
+
+      return;
+    }
+
+    // Non-suffix search: keep the previous behavior (auto-tab to first tab with a match)
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    const declinedList = events.filter(event => {
+      const userDeptReqs = getUserDeptReqs(event);
+      const declinedCount = userDeptReqs.filter(r => getRequirementStatus(r) === 'declined').length;
+      const totalCount = userDeptReqs.length;
+      return totalCount > 0 && declinedCount === totalCount;
+    });
+
+    const doneList = events.filter(event => {
+      const isDoneByStatus = (event.status || '').toLowerCase() === 'completed';
+      const isDoneByDate = new Date(event.endDate) < startOfToday;
+      return isDoneByStatus || isDoneByDate;
+    });
+
+    const tabOrder: Array<{ tab: 'ongoing' | 'completed' | 'declined' | 'done'; list: Event[] }> = [
+      { tab: 'ongoing', list: getOngoingEvents() },
+      { tab: 'completed', list: getCompletedEvents() },
+      { tab: 'declined', list: declinedList },
+      { tab: 'done', list: doneList },
+    ];
+
+    const firstMatch = tabOrder.find(({ list }) => list.some(matchesQuery));
+    if (firstMatch && firstMatch.tab !== activeEventTab) {
+      setActiveEventTab(firstMatch.tab);
+    }
+  }, [eventSearch, events, currentUserDepartment, activeEventTab, getOngoingEvents, getCompletedEvents, setActiveEventTab, setSelectedEvent]);
+
   const getStatusIcon = (status: string) => {
     switch (status.toLowerCase()) {
       case 'confirmed': return <CheckCircle className="w-4 h-4 text-green-500" />;
@@ -473,9 +683,9 @@ const TaggedDepartmentPage: React.FC = () => {
   };
 
   // Helper function to get requirement status with default
-  const getRequirementStatus = (requirement: Requirement) => {
+  function getRequirementStatus(requirement: Requirement) {
     return requirement.status || 'pending';
-  };
+  }
 
   // Helper function to format time to 12-hour format with AM/PM
   const formatTime = (time: string) => {
@@ -549,10 +759,46 @@ const TaggedDepartmentPage: React.FC = () => {
                 {events.length} Events
               </Badge>
             </div>
+
+            <div className="flex flex-col md:flex-row gap-2 md:items-center md:justify-between mb-4">
+              <div className="flex-1">
+                <Input
+                  value={eventSearch}
+                  onChange={(e) => setEventSearch(e.target.value)}
+                  placeholder="Search event title or ID..."
+                />
+              </div>
+              <div className="flex gap-2">
+                <Select value={eventFilter} onValueChange={(v) => setEventFilter(v as any)}>
+                  <SelectTrigger className="w-[190px]">
+                    <SelectValue placeholder="Filter" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Events</SelectItem>
+                    <SelectItem value="has-declined">Has Declined</SelectItem>
+                    <SelectItem value="all-declined">All Declined</SelectItem>
+                    <SelectItem value="no-declined">No Declined</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Select value={eventSort} onValueChange={(v) => setEventSort(v as any)}>
+                  <SelectTrigger className="w-[190px]">
+                    <SelectValue placeholder="Sort" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="date-desc">Newest Date First</SelectItem>
+                    <SelectItem value="date-asc">Oldest Date First</SelectItem>
+                    <SelectItem value="title-asc">Title A-Z</SelectItem>
+                    <SelectItem value="title-desc">Title Z-A</SelectItem>
+                    <SelectItem value="declined-first">Declined First</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
             
             {/* Event Tabs */}
-            <Tabs value={activeEventTab} onValueChange={(value) => setActiveEventTab(value as 'ongoing' | 'completed' | 'declined')} className="w-full">
-              <TabsList className="grid w-full grid-cols-3 gap-2 bg-transparent p-0">
+            <Tabs value={activeEventTab} onValueChange={(value) => setActiveEventTab(value as 'ongoing' | 'completed' | 'declined' | 'done')} className="w-full">
+              <TabsList className="grid w-full grid-cols-4 gap-2 bg-transparent p-0">
                 <TabsTrigger 
                   value="ongoing" 
                   className="flex items-center justify-center gap-1.5 px-3 py-2 bg-yellow-50 text-yellow-800 data-[state=active]:bg-yellow-100 data-[state=active]:text-yellow-900 hover:bg-yellow-100"
@@ -562,10 +808,9 @@ const TaggedDepartmentPage: React.FC = () => {
                   {(() => {
                     const pendingCount = events.filter(event => {
                       const userDeptReqs = event.departmentRequirements[currentUserDepartment] || [];
-                      const confirmedCount = userDeptReqs.filter(r => getRequirementStatus(r) === 'confirmed').length;
-                      const declinedCount = userDeptReqs.filter(r => getRequirementStatus(r) === 'declined').length;
                       const totalCount = userDeptReqs.length;
-                      return totalCount > 0 && confirmedCount < totalCount && declinedCount < totalCount;
+                      const pendingCountInner = userDeptReqs.filter(r => getRequirementStatus(r) === 'pending').length;
+                      return totalCount > 0 && pendingCountInner > 0;
                     }).length;
                     return pendingCount > 0 ? (
                       <Badge variant="secondary" className="text-[10px] h-4 px-1.5 ml-auto bg-red-500 text-white">
@@ -581,11 +826,18 @@ const TaggedDepartmentPage: React.FC = () => {
                   <CheckCircle className="h-3.5 w-3.5 flex-shrink-0" />
                   <span className="text-xs font-medium">Completed</span>
                   {(() => {
+                    const now = new Date();
+                    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
                     const completedCount = events.filter(event => {
                       const userDeptReqs = event.departmentRequirements[currentUserDepartment] || [];
-                      const confirmedCount = userDeptReqs.filter(r => getRequirementStatus(r) === 'confirmed').length;
                       const totalCount = userDeptReqs.length;
-                      return totalCount > 0 && confirmedCount === totalCount;
+                      const pendingCountInner = userDeptReqs.filter(r => getRequirementStatus(r) === 'pending').length;
+                      const declinedCountInner = userDeptReqs.filter(r => getRequirementStatus(r) === 'declined').length;
+
+                      const isDoneByStatus = (event.status || '').toLowerCase() === 'completed';
+                      const isDoneByDate = new Date(event.endDate) < startOfToday;
+
+                      return totalCount > 0 && pendingCountInner === 0 && declinedCountInner < totalCount && !(isDoneByStatus || isDoneByDate);
                     }).length;
                     return completedCount > 0 ? (
                       <Badge variant="secondary" className="text-[10px] h-4 px-1.5 ml-auto bg-red-500 text-white">
@@ -614,6 +866,27 @@ const TaggedDepartmentPage: React.FC = () => {
                     ) : null;
                   })()}
                 </TabsTrigger>
+                <TabsTrigger
+                  value="done"
+                  className="flex items-center justify-center gap-1.5 px-3 py-2 bg-gray-50 text-gray-800 data-[state=active]:bg-gray-100 data-[state=active]:text-gray-900 hover:bg-gray-100"
+                >
+                  <CheckCircle className="h-3.5 w-3.5 flex-shrink-0" />
+                  <span className="text-xs font-medium">Done</span>
+                  {(() => {
+                    const now = new Date();
+                    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                    const doneCount = events.filter(event => {
+                      const isDoneByStatus = (event.status || '').toLowerCase() === 'completed';
+                      const isDoneByDate = new Date(event.endDate) < startOfToday;
+                      return isDoneByStatus || isDoneByDate;
+                    }).length;
+                    return doneCount > 0 ? (
+                      <Badge variant="secondary" className="text-[10px] h-4 px-1.5 ml-auto bg-red-500 text-white">
+                        {doneCount}
+                      </Badge>
+                    ) : null;
+                  })()}
+                </TabsTrigger>
               </TabsList>
             </Tabs>
           </div>
@@ -628,7 +901,7 @@ const TaggedDepartmentPage: React.FC = () => {
                   ) : (
                     <div className="flex gap-3 overflow-x-auto pb-2">
                     <AnimatePresence>
-                      {getOngoingEvents()
+                      {visibleOngoingEvents
                         .map((event) => (
                     <motion.div
                     key={event._id}
@@ -658,7 +931,7 @@ const TaggedDepartmentPage: React.FC = () => {
                               event.status === 'cancelled' ? 'bg-yellow-600 text-white' :
                               'bg-gray-500 text-white'
                             }`}>
-                              {event.status}
+                              {(event.status || '').toLowerCase() === 'completed' ? 'done' : event.status}
                             </Badge>
                           </div>
 
@@ -762,13 +1035,15 @@ const TaggedDepartmentPage: React.FC = () => {
                   ) : (
                     <div className="flex gap-3 overflow-x-auto pb-2">
                     <AnimatePresence>
-                      {events
-                        .filter(event => {
-                          const userDeptReqs = event.departmentRequirements[currentUserDepartment] || [];
-                          const confirmedCount = userDeptReqs.filter(r => getRequirementStatus(r) === 'confirmed').length;
-                          const totalCount = userDeptReqs.length;
-                          return totalCount > 0 && confirmedCount === totalCount;
-                        })
+                      {(() => {
+                        const now = new Date();
+                        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                        return visibleCompletedEvents.filter(event => {
+                          const isDoneByStatus = (event.status || '').toLowerCase() === 'completed';
+                          const isDoneByDate = new Date(event.endDate) < startOfToday;
+                          return !(isDoneByStatus || isDoneByDate);
+                        });
+                      })()
                         .map((event) => (
                           <motion.div
                             key={event._id}
@@ -789,16 +1064,6 @@ const TaggedDepartmentPage: React.FC = () => {
                                   <div className="overflow-hidden">
                                     <div className="flex items-start gap-2 mb-2">
                                       <h3 className="font-semibold text-sm leading-tight flex-1 truncate" title={event.eventTitle}>{event.eventTitle}</h3>
-                                      <Badge className={`text-xs px-2 py-1 flex-shrink-0 ${
-                                        event.status === 'approved' ? 'bg-green-500 text-white' :
-                                        event.status === 'submitted' ? 'bg-blue-500 text-white' :
-                                        event.status === 'rejected' ? 'bg-red-500 text-white' :
-                                        event.status === 'cancelled' ? 'bg-yellow-600 text-white' :
-                                        event.status === 'ended' ? 'bg-blue-600 text-white' :
-                                        'bg-gray-500 text-white'
-                                      }`}>
-                                        {event.status}
-                                      </Badge>
                                       <Badge className="text-[10px] h-4 bg-green-500 text-white flex-shrink-0">
                                         ✓ Confirmed
                                       </Badge>
@@ -893,13 +1158,7 @@ const TaggedDepartmentPage: React.FC = () => {
                   ) : (
                     <div className="flex gap-3 overflow-x-auto pb-2">
                     <AnimatePresence>
-                      {events
-                        .filter(event => {
-                          const userDeptReqs = event.departmentRequirements[currentUserDepartment] || [];
-                          const declinedCount = userDeptReqs.filter(r => getRequirementStatus(r) === 'declined').length;
-                          const totalCount = userDeptReqs.length;
-                          return totalCount > 0 && declinedCount === totalCount;
-                        })
+                      {visibleDeclinedEvents
                         .map((event) => (
                           <motion.div
                             key={event._id}
@@ -927,7 +1186,7 @@ const TaggedDepartmentPage: React.FC = () => {
                                         event.status === 'cancelled' ? 'bg-yellow-600 text-white' :
                                         'bg-gray-500 text-white'
                                       }`}>
-                                        {event.status}
+                                        {(event.status || '').toLowerCase() === 'completed' ? 'done' : event.status}
                                       </Badge>
                                       <Badge className="text-[10px] h-4 bg-red-500 text-white flex-shrink-0">
                                         ✗ Declined
@@ -971,6 +1230,80 @@ const TaggedDepartmentPage: React.FC = () => {
                             </Card>
                           </motion.div>
                         ))}
+                    </AnimatePresence>
+                    </div>
+                  )}
+                </div>
+            </TabsContent>
+
+            <TabsContent value="done" className="flex-1 mt-0 bg-white">
+                <div className="p-3">
+                  {loading ? (
+                    <div className="flex items-center justify-center h-24">
+                      <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : (
+                    <div className="flex gap-3 overflow-x-auto pb-2">
+                    <AnimatePresence>
+                      {(() => {
+                        const now = new Date();
+                        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+                        const doneList = events.filter(event => {
+                          const userDeptReqs = event.departmentRequirements[currentUserDepartment] || [];
+                          const totalCount = userDeptReqs.length;
+                          const pendingCountInner = userDeptReqs.filter(r => getRequirementStatus(r) === 'pending').length;
+                          const declinedCountInner = userDeptReqs.filter(r => getRequirementStatus(r) === 'declined').length;
+                          const isResolved = totalCount > 0 && pendingCountInner === 0 && declinedCountInner < totalCount;
+
+                          const isDoneByStatus = (event.status || '').toLowerCase() === 'completed';
+                          const isDoneByDate = new Date(event.endDate) < startOfToday;
+                          return isResolved && (isDoneByStatus || isDoneByDate);
+                        });
+
+                        return applyEventSearchFilterSort(doneList);
+                      })().map((event) => (
+                        <motion.div
+                          key={event._id}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, x: -20 }}
+                          transition={{ duration: 0.2 }}
+                          className="flex-shrink-0 w-[280px]"
+                        >
+                          <Card
+                            className={`transition-all hover:shadow-md cursor-pointer overflow-hidden border-l-4 border ${
+                              selectedEvent?._id === event._id ? 'border-l-gray-500 border-blue-400 shadow-lg bg-blue-50/30' : 'border-l-gray-500 border-gray-200'
+                            }`}
+                            onClick={() => setSelectedEvent(event)}
+                          >
+                            <CardContent className="p-4">
+                              <div className="space-y-4">
+                                <div className="overflow-hidden">
+                                  <div className="flex items-start gap-2 mb-2">
+                                    <h3 className="font-semibold text-sm leading-tight flex-1 truncate" title={event.eventTitle}>{event.eventTitle}</h3>
+                                    <Badge className="text-xs px-2 py-1 flex-shrink-0 bg-gray-500 text-white">done</Badge>
+                                  </div>
+                                  <div className="space-y-1">
+                                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                        <CalendarDays className="w-3 h-3" />
+                                        <span>
+                                          {new Date(event.startDate).toLocaleDateString()} - {new Date(event.endDate).toLocaleDateString()}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                        <Clock className="w-3 h-3" />
+                                        <span>
+                                          {formatTime(event.startTime)} - {formatTime(event.endTime)}
+                                        </span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        </motion.div>
+                      ))}
                     </AnimatePresence>
                     </div>
                   )}

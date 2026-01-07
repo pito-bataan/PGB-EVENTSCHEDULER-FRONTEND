@@ -81,6 +81,7 @@ interface AllEventsState {
   statusFilter: string;
   departmentFilter: string;
   dateFilter: string;
+  monthFilter: string;
   eventTypeFilter: string;
   sortBy: string;
   
@@ -99,6 +100,7 @@ interface AllEventsState {
   setStatusFilter: (status: string) => void;
   setDepartmentFilter: (department: string) => void;
   setDateFilter: (date: string) => void;
+  setMonthFilter: (month: string) => void;
   setEventTypeFilter: (eventType: string) => void;
   setSortBy: (sortBy: string) => void;
   clearFilters: () => void;
@@ -121,6 +123,7 @@ export const useAllEventsStore = create<AllEventsState>()(
       statusFilter: 'all',
       departmentFilter: 'all',
       dateFilter: 'all',
+      monthFilter: 'all',
       eventTypeFilter: 'all',
       sortBy: 'status-priority', // Default to status priority (submitted first)
       loading: false,
@@ -227,6 +230,10 @@ export const useAllEventsStore = create<AllEventsState>()(
       setDateFilter: (date: string) => {
         set({ dateFilter: date });
       },
+
+      setMonthFilter: (month: string) => {
+        set({ monthFilter: month });
+      },
       
       setEventTypeFilter: (eventType: string) => {
         set({ eventTypeFilter: eventType });
@@ -243,6 +250,7 @@ export const useAllEventsStore = create<AllEventsState>()(
           statusFilter: 'all',
           departmentFilter: 'all',
           dateFilter: 'all',
+          monthFilter: 'all',
           eventTypeFilter: 'all'
         });
       },
@@ -330,11 +338,47 @@ export const useAllEventsStore = create<AllEventsState>()(
           });
         }
 
+        // Month filter (0-11)
+        if (state.monthFilter !== 'all') {
+          const monthIndex = Number(state.monthFilter);
+          if (!Number.isNaN(monthIndex)) {
+            filtered = filtered.filter(event => {
+              const eventDate = new Date(event.startDate);
+              return eventDate.getMonth() === monthIndex;
+            });
+          }
+        }
+
         // Special filter: show only events with no requirements
         if (state.sortBy === 'no-requirements') {
           filtered = filtered.filter(hasNoRequirements);
         }
         
+        // If month filter is active, show upcoming events in that month first (soonest-first)
+        // and push past events to the end (most recent past first).
+        if (state.monthFilter !== 'all') {
+          const now = new Date();
+          return filtered.sort((a, b) => {
+            const aTime = new Date(a.startDate).getTime();
+            const bTime = new Date(b.startDate).getTime();
+
+            const aIsUpcoming = aTime >= now.getTime();
+            const bIsUpcoming = bTime >= now.getTime();
+
+            if (aIsUpcoming !== bIsUpcoming) {
+              return aIsUpcoming ? -1 : 1;
+            }
+
+            // Both upcoming -> soonest first
+            if (aIsUpcoming && bIsUpcoming) {
+              return aTime - bTime;
+            }
+
+            // Both past -> most recent past first
+            return bTime - aTime;
+          });
+        }
+
         // Sort based on selected sorting option
         return filtered.sort((a, b) => {
           switch (state.sortBy) {

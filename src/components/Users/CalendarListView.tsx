@@ -4,6 +4,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
@@ -32,6 +33,7 @@ import {
 import { format, isWithinInterval, startOfDay, endOfDay, eachDayOfInterval, addDays, startOfWeek, endOfWeek } from 'date-fns';
 import jsPDF from 'jspdf';
 import * as htmlToImage from 'html-to-image';
+import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
 import { useSocket } from '@/hooks/useSocket';
 import { useMyCalendarStore } from '@/stores/myCalendarStore';
@@ -74,10 +76,12 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
     from: new Date(),
     to: undefined
   });
+  const [idSearch, setIdSearch] = useState('');
   const [pdfModal, setPdfModal] = useState(false);
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
   const [exportingEventId, setExportingEventId] = useState<string | null>(null);
   const [exportingAll, setExportingAll] = useState(false);
+  const [exportingExcel, setExportingExcel] = useState(false);
   const eventRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
   const allEventsRef = useRef<HTMLDivElement | null>(null);
   
@@ -91,6 +95,90 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
     const name = req?.name ?? req?.text ?? req?.requirementText ?? req?.requirementName ?? 'Requirement';
     const qty = req?.quantity ?? req?.requestedQuantity ?? req?.qty;
     return typeof qty === 'number' && qty > 0 ? `${name} (${qty})` : `${name}`;
+  };
+
+  const exportExcel = (rows: Array<Record<string, any>>, filename: string) => {
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Events');
+    XLSX.writeFile(workbook, filename);
+  };
+
+  const exportAllExcel = async () => {
+    if (dateEntries.length === 0) {
+      toast.error('No events to export');
+      return;
+    }
+
+    try {
+      setExportingExcel(true);
+
+      const allEvents: CalendarEvent[] = dateEntries.flatMap(entry => entry.events);
+      const rows = allEvents.map(event => ({
+        'Invoice ID': toInvoiceId(event),
+        'Event Title': event.eventTitle,
+        'Requestor': event.requestor,
+        'Requestor Department': event.requestorDepartment || '',
+        'Location(s)': formatLocationDisplay(event),
+        'Date/Time': getDateTimeDisplay(event),
+        'Participants': (event as any).numberOfParticipants || (event as any).participants || 0,
+        'VIP': (event as any).numberOfVIP || (event as any).vip || 0,
+        'VVIP': (event as any).numberOfVVIP || (event as any).vvip || 0,
+        'Status': getStatusLabel(event.status),
+        'Contact Number': event.contactNumber || '',
+        'Contact Email': event.contactEmail || '',
+        'Tagged Departments': event.taggedDepartments ? event.taggedDepartments.join(', ') : ''
+      }));
+
+      const dateRangeText = dateRange.to
+        ? `${format(dateRange.from, 'yyyy-MM-dd')}_to_${format(dateRange.to, 'yyyy-MM-dd')}`
+        : format(dateRange.from, 'yyyy-MM-dd');
+
+      exportExcel(rows, `MyCalendar_Events_${dateRangeText}.xlsx`);
+      toast.success('Excel exported successfully!');
+    } catch (error) {
+      console.error('Error exporting Excel:', error);
+      toast.error('Failed to export Excel');
+    } finally {
+      setExportingExcel(false);
+    }
+  };
+
+  const exportEventExcel = async (event: CalendarEvent) => {
+    try {
+      setExportingEventId(event._id);
+
+      const rows = [
+        {
+          'Invoice ID': toInvoiceId(event),
+          'Event Title': event.eventTitle,
+          'Requestor': event.requestor,
+          'Requestor Department': event.requestorDepartment || '',
+          'Location(s)': formatLocationDisplay(event),
+          'Date/Time': getDateTimeDisplay(event),
+          'Participants': (event as any).numberOfParticipants || (event as any).participants || 0,
+          'VIP': (event as any).numberOfVIP || (event as any).vip || 0,
+          'VVIP': (event as any).numberOfVVIP || (event as any).vvip || 0,
+          'Status': getStatusLabel(event.status),
+          'Contact Number': event.contactNumber || '',
+          'Contact Email': event.contactEmail || '',
+          'Tagged Departments': event.taggedDepartments ? event.taggedDepartments.join(', ') : ''
+        }
+      ];
+
+      const safeTitle = (event.eventTitle || 'Event')
+        .replace(/[^a-z0-9\-_ ]/gi, '')
+        .replace(/\s+/g, '_')
+        .slice(0, 60);
+
+      exportExcel(rows, `MyCalendar_${safeTitle}_${toInvoiceId(event)}.xlsx`);
+      toast.success('Excel exported successfully!');
+    } catch (error) {
+      console.error('Error exporting Excel:', error);
+      toast.error('Failed to export Excel');
+    } finally {
+      setExportingEventId(null);
+    }
   };
 
   // Set up real-time event updates via WebSocket
@@ -140,27 +228,71 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
     return `${hour12}:${minutes} ${ampm}`;
   };
 
+  const toInvoiceId = (event: CalendarEvent) => {
+    const datePart = format(new Date(event.startDate), 'yyyyMMdd');
+    const idSuffix = (event._id || '').toString().slice(-6).toUpperCase();
+    return `INV-${datePart}-${idSuffix || '000000'}`;
+  };
+
+  const formatLocationDisplay = (event: CalendarEvent) => {
+    return event.multipleLocations && event.locations && event.locations.length > 0
+      ? event.locations.join(', ')
+      : event.location;
+  };
+
+  const getDateTimeDisplay = (event: CalendarEvent) => {
+    if (event.dateTimeSlots && event.dateTimeSlots.length > 0) {
+      const parts = [
+        `${format(new Date(event.startDate), 'MMM d, yyyy')} ${formatTime(event.startTime)} - ${formatTime(event.endTime)}`,
+        ...event.dateTimeSlots.map(slot =>
+          `${format(new Date(slot.startDate), 'MMM d, yyyy')} ${formatTime(slot.startTime)} - ${formatTime(slot.endTime)}`
+        )
+      ];
+      return parts.join(' | ');
+    }
+    return `${format(new Date(event.startDate), 'MMM d, yyyy')} ${formatTime(event.startTime)} - ${format(new Date(event.endDate), 'MMM d, yyyy')} ${formatTime(event.endTime)}`;
+  };
+
   // Filter events by date range
-  const filteredEvents = events.filter(event => {
-    const eventDate = startOfDay(new Date(event.startDate));
-    const rangeStart = startOfDay(dateRange.from);
-    const rangeEnd = dateRange.to ? endOfDay(dateRange.to) : endOfDay(dateRange.from);
-    
-    return isWithinInterval(eventDate, { start: rangeStart, end: rangeEnd });
-  });
+  const idQuery = idSearch.trim().toLowerCase();
+
+  const matchesIdQuery = (event: CalendarEvent) => {
+    if (!idQuery) return true;
+    const fullId = (event._id || '').toString().toLowerCase();
+    const suffix6 = fullId.slice(-6);
+    return fullId.includes(idQuery) || suffix6.includes(idQuery);
+  };
+
+  const filteredEventsById = idQuery
+    ? events.filter(matchesIdQuery)
+    : events.filter(event => {
+        const eventDate = startOfDay(new Date(event.startDate));
+        const rangeStart = startOfDay(dateRange.from);
+        const rangeEnd = dateRange.to ? endOfDay(dateRange.to) : endOfDay(dateRange.from);
+
+        return isWithinInterval(eventDate, { start: rangeStart, end: rangeEnd });
+      });
 
   // Debug: Log first event to see structure
-  if (filteredEvents.length > 0) {
-    console.log('First event structure:', filteredEvents[0]);
+  if (filteredEventsById.length > 0) {
+    console.log('First event structure:', filteredEventsById[0]);
   }
 
-  // Get all dates in range
-  const allDatesInRange = dateRange.to 
-    ? eachDayOfInterval({ start: startOfDay(dateRange.from), end: endOfDay(dateRange.to) })
-    : [dateRange.from];
+  // Get all dates in range (or, when searching by ID, only the dates of matched events)
+  const allDatesInRange = idQuery
+    ? Array.from(
+        new Set(
+          filteredEventsById.map(e => format(startOfDay(new Date(e.startDate)), 'yyyy-MM-dd'))
+        )
+      )
+        .sort()
+        .map(dateStr => new Date(`${dateStr}T00:00:00`))
+    : dateRange.to
+      ? eachDayOfInterval({ start: startOfDay(dateRange.from), end: endOfDay(dateRange.to) })
+      : [dateRange.from];
 
   // Group events by date
-  const groupedEvents = filteredEvents.reduce((acc, event) => {
+  const groupedEvents = filteredEventsById.reduce((acc, event) => {
     const date = format(new Date(event.startDate), 'yyyy-MM-dd');
     if (!acc[date]) {
       acc[date] = [];
@@ -443,6 +575,13 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
             <p className="text-sm font-medium mb-1">Select Date Range</p>
             <p className="text-xs text-muted-foreground">Choose dates to view events</p>
           </div>
+          <div className="w-full max-w-sm">
+            <Input
+              value={idSearch}
+              onChange={(e) => setIdSearch(e.target.value)}
+              placeholder="Search by Event ID (last 6 chars or full)"
+            />
+          </div>
           <div className="flex items-center gap-2">
             <Popover>
               <PopoverTrigger asChild>
@@ -483,6 +622,25 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
                 <>
                   <FileText className="w-4 h-4" />
                   Export All PDF ({dateEntries.length})
+                </>
+              )}
+            </Button>
+
+            <Button
+              variant="default"
+              onClick={exportAllExcel}
+              disabled={exportingExcel || dateEntries.length === 0}
+              className="gap-2 export-all-button bg-emerald-600 hover:bg-emerald-700"
+            >
+              {exportingExcel ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  Exporting Excel...
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4" />
+                  Export All Excel ({dateEntries.length})
                 </>
               )}
             </Button>
@@ -587,6 +745,26 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
                                 <>
                                   <FileText className="w-4 h-4" />
                                   Export PDF
+                                </>
+                              )}
+                            </Button>
+
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => exportEventExcel(event)}
+                              disabled={exportingEventId === event._id}
+                              className="gap-2"
+                            >
+                              {exportingEventId === event._id ? (
+                                <>
+                                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current"></div>
+                                  Exporting...
+                                </>
+                              ) : (
+                                <>
+                                  <Download className="w-4 h-4" />
+                                  Export Excel
                                 </>
                               )}
                             </Button>

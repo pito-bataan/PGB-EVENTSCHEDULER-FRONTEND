@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -143,8 +143,10 @@ const MyEventsPage: React.FC = () => {
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<string>('newest');
+  const [visibleCount, setVisibleCount] = useState(20);
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [showEventModal, setShowEventModal] = useState(false);
   const [selectedEventFiles, setSelectedEventFiles] = useState<Event | null>(null);
@@ -209,6 +211,17 @@ const MyEventsPage: React.FC = () => {
       window.dispatchEvent(new CustomEvent('myEventsBadgeViewed'));
     }
   }, [events, loading]);
+
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 200);
+    return () => clearTimeout(id);
+  }, [searchTerm]);
+
+  useEffect(() => {
+    setVisibleCount(20);
+  }, [debouncedSearchTerm, statusFilter, sortBy]);
 
   // Realtime reply updates via Socket.IO (for requirement conversations)
   useEffect(() => {
@@ -938,6 +951,34 @@ const MyEventsPage: React.FC = () => {
     fetchAllDepartments();
   }, []);
 
+  const getRequirementStatus = (req: any): 'pending' | 'confirmed' | 'declined' | string => {
+    return req?.status || 'pending';
+  };
+
+  const getTaggedRequirementsSummary = (event: Event) => {
+    const deptReqs = event.departmentRequirements || {};
+    const allReqs: any[] = [];
+
+    Object.values(deptReqs).forEach((reqs: any) => {
+      if (Array.isArray(reqs)) allReqs.push(...reqs);
+    });
+
+    const total = allReqs.length;
+    const pending = allReqs.filter(r => getRequirementStatus(r) === 'pending').length;
+    const confirmed = allReqs.filter(r => getRequirementStatus(r) === 'confirmed').length;
+    const declined = allReqs.filter(r => getRequirementStatus(r) === 'declined').length;
+
+    return {
+      total,
+      pending,
+      confirmed,
+      declined,
+      anyPending: pending > 0,
+      anyDeclined: declined > 0,
+      allConfirmed: total > 0 && confirmed === total,
+    };
+  };
+
   // WebSocket listener for automatic event status updates
   useEffect(() => {
     const socket = getGlobalSocket();
@@ -1007,65 +1048,75 @@ const MyEventsPage: React.FC = () => {
   };
 
   // Filter and sort events
-  const filteredAndSortedEvents = events
-    .map(event => ({
-      ...event,
-      dynamicStatus: getDynamicStatus(event)
-    }))
-    .filter(event => {
-      const matchesSearch = event.eventTitle.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           event.location.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           event.requestor.toLowerCase().includes(searchTerm.toLowerCase());
-      
-      // Match by either dynamic status OR actual status
-      const matchesStatus = statusFilter === 'all' || 
-                           event.dynamicStatus === statusFilter || 
-                           event.status === statusFilter;
-      
-      return matchesSearch && matchesStatus;
-    })
-    .sort((a, b) => {
-      // Smart default sorting: incoming first, then ongoing, then completed last
-      if (sortBy === 'newest') {
-        // First sort by status priority
-        const statusPriority: { [key: string]: number } = {
-          'incoming': 0,
-          'ongoing': 1,
-          'approved': 2,
-          'submitted': 3,
-          'draft': 4,
-          'completed': 5,
-          'rejected': 6,
-          'cancelled': 7
-        };
+  const filteredAndSortedEvents = useMemo(() => {
+    const q = debouncedSearchTerm.trim().toLowerCase();
+    const list = events
+      .map(event => ({
+        ...event,
+        dynamicStatus: getDynamicStatus(event)
+      }))
+      .filter(event => {
+        const matchesSearch = !q ||
+          event.eventTitle.toLowerCase().includes(q) ||
+          event.location.toLowerCase().includes(q) ||
+          event.requestor.toLowerCase().includes(q);
         
-        const priorityA = statusPriority[a.dynamicStatus] ?? 99;
-        const priorityB = statusPriority[b.dynamicStatus] ?? 99;
+        // Match by either dynamic status OR actual status
+        const matchesStatus = statusFilter === 'all' || 
+          event.dynamicStatus === statusFilter || 
+          event.status === statusFilter;
         
-        if (priorityA !== priorityB) {
-          return priorityA - priorityB;
-        }
-        
-        // Then sort by date (earliest first for incoming/ongoing, latest first for completed)
-        if (a.dynamicStatus === 'completed' && b.dynamicStatus === 'completed') {
-          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-        }
-        return new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
-      }
-      
-      switch (sortBy) {
-        case 'oldest':
-          return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-        case 'date-asc':
+        return matchesSearch && matchesStatus;
+      })
+      .sort((a, b) => {
+        // Smart default sorting: incoming first, then ongoing, then completed last
+        if (sortBy === 'newest') {
+          // First sort by status priority
+          const statusPriority: { [key: string]: number } = {
+            'incoming': 0,
+            'ongoing': 1,
+            'approved': 2,
+            'submitted': 3,
+            'draft': 4,
+            'completed': 5,
+            'rejected': 6,
+            'cancelled': 7
+          };
+          
+          const priorityA = statusPriority[a.dynamicStatus] ?? 99;
+          const priorityB = statusPriority[b.dynamicStatus] ?? 99;
+          
+          if (priorityA !== priorityB) {
+            return priorityA - priorityB;
+          }
+          
+          // Then sort by date (earliest first for incoming/ongoing, latest first for completed)
+          if (a.dynamicStatus === 'completed' && b.dynamicStatus === 'completed') {
+            return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+          }
           return new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
-        case 'date-desc':
-          return new Date(b.startDate).getTime() - new Date(a.startDate).getTime();
-        case 'title':
-          return a.eventTitle.localeCompare(b.eventTitle);
-        default:
-          return 0;
-      }
-    });
+        }
+        
+        switch (sortBy) {
+          case 'oldest':
+            return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+          case 'date-asc':
+            return new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
+          case 'date-desc':
+            return new Date(b.startDate).getTime() - new Date(a.startDate).getTime();
+          case 'title':
+            return a.eventTitle.localeCompare(b.eventTitle);
+          default:
+            return 0;
+        }
+      });
+
+    return list;
+  }, [events, debouncedSearchTerm, statusFilter, sortBy]);
+
+  const visibleEvents = useMemo(() => {
+    return filteredAndSortedEvents.slice(0, visibleCount);
+  }, [filteredAndSortedEvents, visibleCount]);
 
   // Get status badge variant and icon
   const getStatusInfo = (status: string) => {
@@ -2471,8 +2522,15 @@ const MyEventsPage: React.FC = () => {
           </Card>
         ) : (
           <div className="grid grid-cols-1 gap-4 md:gap-5">
-            {filteredAndSortedEvents.map((event, index) => {
+            {visibleEvents.map((event, index) => {
             const statusInfo = getStatusInfo(event.dynamicStatus);
+            const taggedReqSummary = getTaggedRequirementsSummary(event);
+
+            const cardBgClass = taggedReqSummary.allConfirmed && !taggedReqSummary.anyDeclined
+              ? 'bg-green-50 border-green-200'
+              : taggedReqSummary.anyPending
+                ? 'bg-yellow-50 border-yellow-200'
+                : 'bg-white';
             
             return (
               <motion.div
@@ -2481,7 +2539,7 @@ const MyEventsPage: React.FC = () => {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.1 }}
               >
-                <Card className="hover:shadow-md transition-shadow">
+                <Card className={`hover:shadow-md transition-shadow border ${cardBgClass}`}>
                   <CardContent className="p-4 md:p-6">
                     <div className="flex items-start justify-between">
                       <div className="flex-1 min-w-0 space-y-3">
@@ -2691,6 +2749,18 @@ const MyEventsPage: React.FC = () => {
               </motion.div>
             );
           })}
+
+          {filteredAndSortedEvents.length > visibleCount && (
+            <div className="flex justify-center pt-2">
+              <Button
+                variant="outline"
+                onClick={() => setVisibleCount((c) => c + 20)}
+                className="w-full sm:w-auto"
+              >
+                Load more
+              </Button>
+            </div>
+          )}
           </div>
         )}
       </motion.div>

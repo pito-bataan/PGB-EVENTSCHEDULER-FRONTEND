@@ -59,7 +59,7 @@ interface TaggedDepartmentsState {
   loading: boolean;
   showNotesMap: Record<string, boolean>;
   notesMap: Record<string, string>;
-  activeEventTab: 'ongoing' | 'completed' | 'declined';
+  activeEventTab: 'ongoing' | 'completed' | 'declined' | 'done';
   statusDialog: {
     isOpen: boolean;
     eventId: string;
@@ -75,7 +75,7 @@ interface TaggedDepartmentsState {
   // Actions
   fetchTaggedEvents: (force?: boolean) => Promise<void>;
   setSelectedEvent: (event: Event | null) => void;
-  setActiveEventTab: (tab: 'ongoing' | 'completed' | 'declined') => void;
+  setActiveEventTab: (tab: 'ongoing' | 'completed' | 'declined' | 'done') => void;
   setShowNotes: (requirementId: string, show: boolean) => void;
   setNotes: (requirementId: string, notes: string) => void;
   setStatusDialog: (dialog: { isOpen: boolean; eventId: string; requirementId: string; status: string }) => void;
@@ -235,7 +235,7 @@ export const useTaggedDepartmentsStore = create<TaggedDepartmentsState>()(
         set({ selectedEvent: event });
       },
       
-      setActiveEventTab: (tab: 'ongoing' | 'completed' | 'declined') => {
+      setActiveEventTab: (tab: 'ongoing' | 'completed' | 'declined' | 'done') => {
         set({ activeEventTab: tab });
       },
       
@@ -375,9 +375,9 @@ export const useTaggedDepartmentsStore = create<TaggedDepartmentsState>()(
         const state = get();
         return state.events.filter(event => {
           const userDeptReqs = event.departmentRequirements[state.currentUserDepartment] || [];
-          const confirmedCount = userDeptReqs.filter(r => (r.status || 'pending') === 'confirmed').length;
           const totalCount = userDeptReqs.length;
-          return totalCount === 0 || confirmedCount < totalCount;
+          const pendingCount = userDeptReqs.filter(r => (r.status || 'pending') === 'pending').length;
+          return totalCount === 0 || pendingCount > 0;
         });
       },
       
@@ -385,9 +385,10 @@ export const useTaggedDepartmentsStore = create<TaggedDepartmentsState>()(
         const state = get();
         return state.events.filter(event => {
           const userDeptReqs = event.departmentRequirements[state.currentUserDepartment] || [];
-          const confirmedCount = userDeptReqs.filter(r => (r.status || 'pending') === 'confirmed').length;
           const totalCount = userDeptReqs.length;
-          return totalCount > 0 && confirmedCount === totalCount;
+          const pendingCount = userDeptReqs.filter(r => (r.status || 'pending') === 'pending').length;
+          const declinedCount = userDeptReqs.filter(r => (r.status || 'pending') === 'declined').length;
+          return totalCount > 0 && pendingCount === 0 && declinedCount < totalCount;
         });
       },
       

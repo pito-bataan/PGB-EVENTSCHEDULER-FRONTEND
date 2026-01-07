@@ -118,6 +118,7 @@ const AllEventsPage: React.FC = () => {
     loading,
     searchQuery,
     statusFilter,
+    monthFilter,
     departmentFilter,
     eventTypeFilter,
     sortBy,
@@ -127,6 +128,7 @@ const AllEventsPage: React.FC = () => {
     updateEventStatus,
     setSearchQuery,
     setStatusFilter,
+    setMonthFilter,
     setDepartmentFilter,
     setEventTypeFilter,
     setSortBy,
@@ -316,7 +318,7 @@ const AllEventsPage: React.FC = () => {
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, statusFilter, departmentFilter, eventTypeFilter, activeTab]);
+  }, [searchQuery, statusFilter, monthFilter, departmentFilter, eventTypeFilter, activeTab]);
 
   // Get status info
   const getStatusInfo = (status: string) => {
@@ -1040,6 +1042,30 @@ const AllEventsPage: React.FC = () => {
                   </SelectItem>
                 </SelectContent>
               </Select>
+
+              {/* Month Filter Dropdown */}
+              <Select value={monthFilter} onValueChange={setMonthFilter}>
+                <SelectTrigger className="w-48">
+                  <Calendar className="w-4 h-4 mr-2" />
+                  <SelectValue placeholder="Month" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Months</SelectItem>
+                  <SelectItem value="0">January</SelectItem>
+                  <SelectItem value="1">February</SelectItem>
+                  <SelectItem value="2">March</SelectItem>
+                  <SelectItem value="3">April</SelectItem>
+                  <SelectItem value="4">May</SelectItem>
+                  <SelectItem value="5">June</SelectItem>
+                  <SelectItem value="6">July</SelectItem>
+                  <SelectItem value="7">August</SelectItem>
+                  <SelectItem value="8">September</SelectItem>
+                  <SelectItem value="9">October</SelectItem>
+                  <SelectItem value="10">November</SelectItem>
+                  <SelectItem value="11">December</SelectItem>
+                </SelectContent>
+              </Select>
+
               <Select value={eventTypeFilter} onValueChange={setEventTypeFilter}>
                 <SelectTrigger className="w-48">
                   <Filter className="w-4 h-4 mr-2" />
