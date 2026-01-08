@@ -1010,8 +1010,10 @@ const TaggedDepartmentPage: React.FC = () => {
                                 {(() => {
                                   const userDeptReqs = event.departmentRequirements[currentUserDepartment] || [];
                                   const confirmedCount = userDeptReqs.filter(r => getRequirementStatus(r) === 'confirmed').length;
+                                  const declinedCount = userDeptReqs.filter(r => getRequirementStatus(r) === 'declined').length;
                                   const totalCount = userDeptReqs.length;
-                                  return `${confirmedCount}/${totalCount}`;
+                                  const progressedCount = confirmedCount + declinedCount;
+                                  return `${progressedCount}/${totalCount}`;
                                 })()}
                               </span>
                             </div>
@@ -1020,8 +1022,10 @@ const TaggedDepartmentPage: React.FC = () => {
                                 (() => {
                                   const userDeptReqs = event.departmentRequirements[currentUserDepartment] || [];
                                   const confirmedCount = userDeptReqs.filter(r => getRequirementStatus(r) === 'confirmed').length;
+                                  const declinedCount = userDeptReqs.filter(r => getRequirementStatus(r) === 'declined').length;
                                   const totalCount = userDeptReqs.length;
-                                  return totalCount > 0 ? (confirmedCount / totalCount) * 100 : 0;
+                                  const progressedCount = confirmedCount + declinedCount;
+                                  return totalCount > 0 ? (progressedCount / totalCount) * 100 : 0;
                                 })()
                               } 
                               className="h-2"

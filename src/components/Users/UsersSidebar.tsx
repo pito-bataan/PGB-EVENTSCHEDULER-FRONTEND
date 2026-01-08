@@ -277,13 +277,15 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
         
         if (response.data.success) {
           const events = response.data.data || [];
-          // Count only ongoing events (not completed)
+          // Count only ongoing events where this department has pending requirements
           const ongoingEvents = events.filter((event: any) => {
+            const eventStatus = (event.status || '').toLowerCase();
+            if (eventStatus !== 'approved' && eventStatus !== 'completed') return false;
             const userDeptReqs = event.departmentRequirements?.[currentUser.department] || [];
-            const confirmedCount = userDeptReqs.filter((r: any) => (r.status || 'pending') === 'confirmed').length;
-            const totalCount = userDeptReqs.length;
-            // Ongoing = not all requirements are confirmed
-            return totalCount === 0 || confirmedCount < totalCount;
+            const releasedReqs = userDeptReqs.filter((r: any) => !r.requirementsStatus || r.requirementsStatus === 'released');
+            const totalCount = releasedReqs.length;
+            const pendingCount = releasedReqs.filter((r: any) => (r.status || 'pending') === 'pending').length;
+            return totalCount > 0 && pendingCount > 0;
           });
           setTaggedDepartmentsCount(ongoingEvents.length);
         }
@@ -465,10 +467,13 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
         if (taggedResponse.data.success) {
           const taggedEvents = taggedResponse.data.data || [];
           const ongoingEvents = taggedEvents.filter((event: any) => {
+            const eventStatus = (event.status || '').toLowerCase();
+            if (eventStatus !== 'approved' && eventStatus !== 'completed') return false;
             const userDeptReqs = event.departmentRequirements?.[currentUser.department] || [];
-            const confirmedCount = userDeptReqs.filter((r: any) => (r.status || 'pending') === 'confirmed').length;
-            const totalCount = userDeptReqs.length;
-            return totalCount === 0 || confirmedCount < totalCount;
+            const releasedReqs = userDeptReqs.filter((r: any) => !r.requirementsStatus || r.requirementsStatus === 'released');
+            const totalCount = releasedReqs.length;
+            const pendingCount = releasedReqs.filter((r: any) => (r.status || 'pending') === 'pending').length;
+            return totalCount > 0 && pendingCount > 0;
           });
           setTaggedDepartmentsCount(ongoingEvents.length);
         }
@@ -576,12 +581,13 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
                 if (taggedResponse.data.success) {
                   const taggedEvents = taggedResponse.data.data || [];
                   const ongoingEvents = taggedEvents.filter((event: any) => {
+                    const eventStatus = (event.status || '').toLowerCase();
+                    if (eventStatus !== 'approved' && eventStatus !== 'completed') return false;
                     const userDeptReqs = event.departmentRequirements?.[currentUser.department] || [];
-                    const confirmedCount = userDeptReqs.filter((r: any) => 
-                      (r.status || 'pending') === 'confirmed'
-                    ).length;
-                    const totalCount = userDeptReqs.length;
-                    return totalCount === 0 || confirmedCount < totalCount;
+                    const releasedReqs = userDeptReqs.filter((r: any) => !r.requirementsStatus || r.requirementsStatus === 'released');
+                    const totalCount = releasedReqs.length;
+                    const pendingCount = releasedReqs.filter((r: any) => (r.status || 'pending') === 'pending').length;
+                    return totalCount > 0 && pendingCount > 0;
                   });
                   setTaggedDepartmentsCount(ongoingEvents.length);
                 }
