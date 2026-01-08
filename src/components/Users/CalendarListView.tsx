@@ -92,7 +92,7 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
     to: undefined,
   });
   const [pdfExportModalOpen, setPdfExportModalOpen] = useState(false);
-  const [pdfExportAllLocations, setPdfExportAllLocations] = useState(true);
+  const [pdfExportAllLocations, setPdfExportAllLocations] = useState(false);
   const [pdfExportLocations, setPdfExportLocations] = useState<string[]>([]);
   const [pdfModal, setPdfModal] = useState(false);
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
@@ -709,8 +709,8 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
             <Button
               variant="default"
               onClick={() => {
-                setPdfExportAllLocations(true);
-                setPdfExportLocations([]);
+                setPdfExportAllLocations(false);
+                setPdfExportLocations(getAllLocationOptions());
                 setPdfExportModalOpen(true);
               }}
               disabled={exportingAll || dateEntries.length === 0}
