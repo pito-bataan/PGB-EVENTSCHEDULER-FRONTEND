@@ -740,7 +740,7 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
   // Fetch conversations when user changes or navigates
   useEffect(() => {
     if (currentUser.department && currentUser.department !== "Department") {
-      fetchEventConversations(true); // Force refresh
+      fetchEventConversations(false); // Use cache to avoid spamming unread-count requests
       // Also update unread count immediately after fetching
       setTimeout(() => {
         const count = getTotalUnreadCount();

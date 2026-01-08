@@ -439,42 +439,6 @@ const MyEventsPage: React.FC = () => {
 
       if (selectedLocations.length === 0) return [];
 
-      // Same matching strategy as RequestEventPage:
-      // - exact doc for single location
-      // - include group/hierarchy docs containing the location
-      // - pick MOST SPECIFIC doc (smallest locationNames length)
-      const exactMatch = selectedLocations.length === 1
-        ? allDocs.find((doc: any) => {
-            const docLocations: string[] = doc.locationNames && Array.isArray(doc.locationNames)
-              ? doc.locationNames
-              : (doc.locationName ? [doc.locationName] : []);
-            const docNorm = docLocations.map(normalizeLocation);
-            return docNorm.length === 1 && docNorm[0] === selectedLocationsNorm[0];
-          })
-        : null;
-
-      const groupMatches = selectedLocations.length === 1
-        ? allDocs.filter((doc: any) => {
-            if (doc.locationNames && Array.isArray(doc.locationNames)) {
-              const docNorm = doc.locationNames.map(normalizeLocation);
-              return docNorm.length > 1 && docNorm.includes(selectedLocationsNorm[0]);
-            }
-            return false;
-          })
-        : allDocs.filter((doc: any) => {
-            if (doc.locationNames && Array.isArray(doc.locationNames)) {
-              const docNorm = doc.locationNames.map(normalizeLocation);
-              return docNorm.length > 1 && selectedLocationsNorm.every((loc) => docNorm.includes(loc));
-            }
-            return false;
-          });
-
-      const candidateDocs: any[] = [];
-      if (exactMatch) candidateDocs.push(exactMatch);
-      candidateDocs.push(...groupMatches);
-
-      if (candidateDocs.length === 0) return [];
-
       const pickMostSpecific = (docs: any[]) => {
         if (!docs.length) return null;
         return docs.reduce((best, doc) => {
@@ -489,15 +453,64 @@ const MyEventsPage: React.FC = () => {
         }, null as any);
       };
 
-      const requirementDocs = candidateDocs.filter((doc) => Array.isArray(doc.requirements) && doc.requirements.length > 0);
-      const requirementsSource = requirementDocs.length > 0
-        ? pickMostSpecific(requirementDocs)
-        : exactMatch || groupMatches[0] || null;
+      const getRequirementsForSingleLocation = (locNorm: string) => {
+        const exactMatch = allDocs.find((doc: any) => {
+          const docLocations: string[] = doc.locationNames && Array.isArray(doc.locationNames)
+            ? doc.locationNames
+            : (doc.locationName ? [doc.locationName] : []);
+          const docNorm = docLocations.map(normalizeLocation);
+          return docNorm.length === 1 && docNorm[0] === locNorm;
+        });
 
-      const reqs = requirementsSource && Array.isArray(requirementsSource.requirements)
-        ? requirementsSource.requirements
-        : [];
-      return Array.isArray(reqs) ? reqs : [];
+        const groupMatches = allDocs.filter((doc: any) => {
+          if (doc.locationNames && Array.isArray(doc.locationNames)) {
+            const docNorm = doc.locationNames.map(normalizeLocation);
+            return docNorm.length > 1 && docNorm.includes(locNorm);
+          }
+          return false;
+        });
+
+        const candidateDocs: any[] = [];
+        if (exactMatch) candidateDocs.push(exactMatch);
+        candidateDocs.push(...groupMatches);
+        if (candidateDocs.length === 0) return [] as any[];
+
+        const requirementDocs = candidateDocs.filter((doc) => Array.isArray(doc.requirements) && doc.requirements.length > 0);
+        const requirementsSource = requirementDocs.length > 0
+          ? pickMostSpecific(requirementDocs)
+          : exactMatch || groupMatches[0] || null;
+
+        const reqs = requirementsSource && Array.isArray(requirementsSource.requirements)
+          ? requirementsSource.requirements
+          : [];
+
+        return Array.isArray(reqs) ? reqs : [];
+      };
+
+      // Multi-location events: merge defaults per location (sum quantities by name)
+      if (selectedLocationsNorm.length > 1) {
+        const merged = new Map<string, number>();
+        selectedLocationsNorm.forEach((locNorm) => {
+          const reqs = getRequirementsForSingleLocation(locNorm);
+          reqs.forEach((r: any) => {
+            const name = r?.name;
+            const qtyRaw = r?.quantity;
+            const qty = typeof qtyRaw === 'number'
+              ? qtyRaw
+              : typeof qtyRaw === 'string'
+                ? parseInt(qtyRaw, 10)
+                : 0;
+            if (typeof name === 'string' && name.trim().length > 0) {
+              merged.set(name, (merged.get(name) || 0) + (Number.isFinite(qty) ? qty : 0));
+            }
+          });
+        });
+
+        return Array.from(merged.entries()).map(([name, quantity]) => ({ name, quantity }));
+      }
+
+      // Single location: keep original behavior (most specific doc)
+      return getRequirementsForSingleLocation(selectedLocationsNorm[0]);
     } catch (error) {
       return [];
     }
@@ -1664,9 +1677,14 @@ const MyEventsPage: React.FC = () => {
               const basePoolByName = new Map<string, number>();
               locationReqs.forEach((lr: any) => {
                 const name = lr?.name;
-                const qty = typeof lr?.quantity === 'number' ? lr.quantity : 0;
+                const qtyRaw = lr?.quantity;
+                const qty = typeof qtyRaw === 'number'
+                  ? qtyRaw
+                  : typeof qtyRaw === 'string'
+                    ? parseInt(qtyRaw, 10)
+                    : 0;
                 if (typeof name === 'string' && name.trim().length > 0) {
-                  basePoolByName.set(name, qty);
+                  basePoolByName.set(name, Number.isFinite(qty) ? qty : 0);
                 }
               });
 
@@ -1680,6 +1698,18 @@ const MyEventsPage: React.FC = () => {
                 : Array.isArray(eventsResponse.data?.data)
                   ? eventsResponse.data.data
                   : [];
+
+              const normalizeLocation = (s: any) =>
+                String(s || '')
+                  .toLowerCase()
+                  .trim()
+                  .replace(/\s+/g, ' ')
+                  .replace(/[’']/g, "'");
+
+              const selectedLocationsRaw: string[] = Array.isArray(addingToEvent?.locations) && addingToEvent.locations.length > 0
+                ? addingToEvent.locations
+                : (addingToEvent?.location ? [addingToEvent.location] : []);
+              const selectedLocationsNorm = selectedLocationsRaw.map(normalizeLocation).filter((l) => l.length > 0);
 
               const conflictingEvents = allEvents.filter((event: any) => {
                 if (event._id === addingToEvent._id) return false;
@@ -1695,7 +1725,15 @@ const MyEventsPage: React.FC = () => {
                   (addingToEvent.startTime <= event.startTime && addingToEvent.endTime >= event.endTime)
                 );
 
-                return hasTimeOverlap;
+                const eventLocationsRaw: string[] = Array.isArray(event?.locations) && event.locations.length > 0
+                  ? event.locations
+                  : (event?.location ? [event.location] : []);
+                const eventLocationsNorm = eventLocationsRaw.map(normalizeLocation).filter((l) => l.length > 0);
+                const hasLocationOverlap = selectedLocationsNorm.length === 0
+                  ? true
+                  : eventLocationsNorm.some((l) => selectedLocationsNorm.includes(l));
+
+                return hasTimeOverlap && hasLocationOverlap;
               });
 
               const selectedLocationLabel = Array.isArray(addingToEvent?.locations) && addingToEvent.locations.length > 0
@@ -1797,8 +1835,28 @@ const MyEventsPage: React.FC = () => {
               (addingToEvent.startTime <= event.startTime && addingToEvent.endTime >= event.endTime)
             );
             
-            
-            return hasTimeOverlap;
+            const normalizeLocation = (s: any) =>
+              String(s || '')
+                .toLowerCase()
+                .trim()
+                .replace(/\s+/g, ' ')
+                .replace(/[’']/g, "'");
+
+            const selectedLocationsRaw: string[] = Array.isArray(addingToEvent?.locations) && addingToEvent.locations.length > 0
+              ? addingToEvent.locations
+              : (addingToEvent?.location ? [addingToEvent.location] : []);
+            const selectedLocationsNorm = selectedLocationsRaw.map(normalizeLocation).filter((l) => l.length > 0);
+
+            const eventLocationsRaw: string[] = Array.isArray(event?.locations) && event.locations.length > 0
+              ? event.locations
+              : (event?.location ? [event.location] : []);
+            const eventLocationsNorm = eventLocationsRaw.map(normalizeLocation).filter((l) => l.length > 0);
+
+            const hasLocationOverlap = selectedLocationsNorm.length === 0
+              ? true
+              : eventLocationsNorm.some((l) => selectedLocationsNorm.includes(l));
+
+            return hasTimeOverlap && hasLocationOverlap;
           });
           
           
@@ -4729,8 +4787,8 @@ const MyEventsPage: React.FC = () => {
                           <div className="grid grid-cols-2 gap-3 text-xs text-gray-600">
                             <div className="flex items-center gap-1">
                               <span className="font-medium">Available Quantity:</span>
-                              <span className={req.totalQuantity ? 'text-gray-900' : 'text-gray-400'}>
-                                {req.totalQuantity || 'N/A'}
+                              <span className={req.totalQuantity !== undefined && req.totalQuantity !== null ? 'text-gray-900' : 'text-gray-400'}>
+                                {req.totalQuantity ?? 'N/A'}
                               </span>
                             </div>
                             <div className="flex items-center gap-1">
