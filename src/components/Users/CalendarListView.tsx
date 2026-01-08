@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
@@ -90,6 +91,9 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
     from: new Date(),
     to: undefined,
   });
+  const [pdfExportModalOpen, setPdfExportModalOpen] = useState(false);
+  const [pdfExportAllLocations, setPdfExportAllLocations] = useState(true);
+  const [pdfExportLocations, setPdfExportLocations] = useState<string[]>([]);
   const [pdfModal, setPdfModal] = useState(false);
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
   const [exportingEventId, setExportingEventId] = useState<string | null>(null);
@@ -323,6 +327,38 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
       .filter(e => eventMatchesLocation(e, excelExportLocation));
   };
 
+  const eventMatchesAnyLocation = (event: CalendarEvent, selected: string[]) => {
+    if (!selected || selected.length === 0) return true;
+    const candidates: string[] = [];
+    if (event.multipleLocations && Array.isArray(event.locations) && event.locations.length > 0) {
+      candidates.push(...event.locations);
+    }
+    candidates.push(event.location);
+
+    const candidateNorm = candidates.map(loc => normalizeLocation(loc)).filter(Boolean);
+    const selectedNorm = selected.map(loc => normalizeLocation(loc)).filter(Boolean);
+    return candidateNorm.some(loc => selectedNorm.includes(loc));
+  };
+
+  const getPdfExportEvents = () => {
+    const base = filteredEventsById;
+    if (pdfExportAllLocations) return base;
+    return base.filter(e => eventMatchesAnyLocation(e, pdfExportLocations));
+  };
+
+  const buildDateEntriesFromEvents = (eventsList: CalendarEvent[]) => {
+    const grouped = eventsList.reduce((acc, event) => {
+      const date = format(new Date(event.startDate), 'yyyy-MM-dd');
+      if (!acc[date]) acc[date] = [];
+      acc[date].push(event);
+      return acc;
+    }, {} as Record<string, CalendarEvent[]>);
+
+    return Object.keys(grouped)
+      .sort()
+      .map(date => ({ date, events: grouped[date] }));
+  };
+
   const filteredEventsById = idQuery
     ? events.filter(matchesIdQuery)
     : events.filter(event => {
@@ -508,8 +544,11 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
   };
 
   // Generate PDF for all events: header + up to 3 PNG cards per page
-  const generateAllPdf = async () => {
-    if (dateEntries.length === 0) {
+  const generateAllPdf = async (exportEvents?: CalendarEvent[]) => {
+    const eventsToExport = Array.isArray(exportEvents) ? exportEvents : dateEntries.flatMap(d => d.events);
+    const exportEntries = buildDateEntriesFromEvents(eventsToExport);
+
+    if (exportEntries.length === 0) {
       toast.error('No events to export');
       return;
     }
@@ -559,7 +598,7 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
       const availableHeightPerPage = pageHeight - yPos - margin;
       const maxCardHeight = availableHeightPerPage / maxCardsPerPage - 4; // small gap
 
-      for (const entry of dateEntries) {
+      for (const entry of exportEntries) {
         for (const event of entry.events) {
           const element = eventRefs.current[event._id];
           if (!element) continue;
@@ -669,7 +708,11 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
             {/* Export All Button - PDF */}
             <Button
               variant="default"
-              onClick={generateAllPdf}
+              onClick={() => {
+                setPdfExportAllLocations(true);
+                setPdfExportLocations([]);
+                setPdfExportModalOpen(true);
+              }}
               disabled={exportingAll || dateEntries.length === 0}
               className="gap-2 export-all-button bg-green-600 hover:bg-green-700"
             >
@@ -802,6 +845,104 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
               className="bg-emerald-600 hover:bg-emerald-700"
             >
               {exportingExcel ? 'Exporting...' : 'Export Excel'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* PDF Export Modal */}
+      <Dialog open={pdfExportModalOpen} onOpenChange={setPdfExportModalOpen}>
+        <DialogContent className="w-[90vw] max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Export Events to PDF</DialogTitle>
+            <DialogDescription>
+              Choose which location(s) to include in the PDF export.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <Checkbox
+                checked={pdfExportAllLocations}
+                onCheckedChange={(v) => {
+                  const checked = v === true;
+                  setPdfExportAllLocations(checked);
+                  if (checked) setPdfExportLocations([]);
+                }}
+              />
+              <p className="text-sm font-medium">Download all locations</p>
+            </div>
+
+            {!pdfExportAllLocations && (
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Locations</p>
+                <div className="rounded-md border">
+                  <ScrollArea className="h-56 p-3">
+                    <div className="space-y-2">
+                      {getAllLocationOptions().map((loc) => {
+                        const checked = pdfExportLocations.includes(loc);
+                        return (
+                          <label key={loc} className="flex items-center gap-2 text-sm">
+                            <Checkbox
+                              checked={checked}
+                              onCheckedChange={(v) => {
+                                const isChecked = v === true;
+                                setPdfExportLocations((prev) => {
+                                  if (isChecked) return prev.includes(loc) ? prev : [...prev, loc];
+                                  return prev.filter((x) => x !== loc);
+                                });
+                              }}
+                            />
+                            <span className="leading-tight">{loc}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </ScrollArea>
+                </div>
+                <div className="flex items-center justify-between">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPdfExportLocations(getAllLocationOptions())}
+                  >
+                    Select all
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPdfExportLocations([])}
+                  >
+                    Clear
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            <div className="text-sm">
+              <span className="text-muted-foreground">Matching events:</span>{' '}
+              <span className="font-semibold">{getPdfExportEvents().length}</span>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setPdfExportModalOpen(false)}
+              disabled={exportingAll}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={async () => {
+                const filtered = getPdfExportEvents();
+                await generateAllPdf(filtered);
+                setPdfExportModalOpen(false);
+              }}
+              disabled={exportingAll || getPdfExportEvents().length === 0 || (!pdfExportAllLocations && pdfExportLocations.length === 0)}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              {exportingAll ? 'Exporting...' : 'Export PDF'}
             </Button>
           </DialogFooter>
         </DialogContent>
