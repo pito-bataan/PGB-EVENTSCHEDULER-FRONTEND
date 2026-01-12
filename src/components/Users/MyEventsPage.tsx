@@ -30,6 +30,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Calendar as CalendarIcon,
   Clock,
@@ -156,6 +157,10 @@ const MyEventsPage: React.FC = () => {
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>('all');
   const [selectedEditEvent, setSelectedEditEvent] = useState<Event | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showCancelEventModal, setShowCancelEventModal] = useState(false);
+  const [cancellingEvent, setCancellingEvent] = useState<Event | null>(null);
+  const [cancelEventReason, setCancelEventReason] = useState('');
+  const [isCancellingEvent, setIsCancellingEvent] = useState(false);
   const [editFormData, setEditFormData] = useState({
     location: '',
     startDate: '',
@@ -739,7 +744,7 @@ const MyEventsPage: React.FC = () => {
         'Content-Type': 'application/json'
       };
 
-      const response = await axios.get(`${API_BASE_URL}/events/my`, { headers });
+      const response = await axios.get(`${API_BASE_URL}/events/my?recalcAvailability=false`, { headers });
 
       if (response.data.success) {
         setEvents(response.data.data);
@@ -1209,6 +1214,50 @@ const MyEventsPage: React.FC = () => {
       fetchMyEvents(); // Refresh the list
     } catch (error) {
       toast.error('Failed to delete event');
+    }
+  };
+
+  const handleOpenCancelEvent = (event: Event) => {
+    setCancellingEvent(event);
+    setCancelEventReason('');
+    setShowCancelEventModal(true);
+  };
+
+  const handleConfirmCancelEvent = async () => {
+    if (!cancellingEvent) return;
+
+    setIsCancellingEvent(true);
+    try {
+      const token = localStorage.getItem('authToken');
+      const headers = {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      };
+
+      const payload: any = { status: 'cancelled' };
+      if (cancelEventReason && cancelEventReason.trim()) {
+        payload.reason = cancelEventReason.trim();
+      }
+
+      const response = await axios.patch(
+        `${API_BASE_URL}/events/${cancellingEvent._id}/status`,
+        payload,
+        { headers }
+      );
+
+      if (response.data?.success) {
+        toast.success('Event cancelled successfully');
+        setShowCancelEventModal(false);
+        setCancellingEvent(null);
+        setCancelEventReason('');
+        fetchMyEvents();
+      } else {
+        toast.error('Failed to cancel event');
+      }
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || 'Failed to cancel event');
+    } finally {
+      setIsCancellingEvent(false);
     }
   };
 
@@ -2381,14 +2430,47 @@ const MyEventsPage: React.FC = () => {
         className="space-y-4 mt-8 max-h-[70vh] overflow-y-auto pr-2"
       >
         {loading ? (
-          <Card>
-            <CardContent className="p-8">
-              <div className="flex items-center justify-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                <span className="ml-3 text-gray-600">Loading your events...</span>
-              </div>
-            </CardContent>
-          </Card>
+          <div className="grid grid-cols-1 gap-4 md:gap-5">
+            {Array.from({ length: 5 }).map((_, idx) => (
+              <Card key={idx} className="border">
+                <CardContent className="p-4 md:p-6">
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <Skeleton className="h-6 w-28" />
+                      <div className="flex items-center gap-2">
+                        <Skeleton className="h-7 w-24" />
+                        <Skeleton className="h-7 w-20" />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Skeleton className="h-6 w-[60%]" />
+                      <Skeleton className="h-4 w-[40%]" />
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                      <Skeleton className="h-4 w-full" />
+                      <Skeleton className="h-4 w-full" />
+                      <Skeleton className="h-4 w-full" />
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3">
+                      <Skeleton className="h-4 w-28" />
+                      <Skeleton className="h-4 w-32" />
+                      <Skeleton className="h-4 w-40" />
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 pt-2">
+                      <Skeleton className="h-7 w-20" />
+                      <Skeleton className="h-7 w-44" />
+                      <Skeleton className="h-7 w-20" />
+                      <Skeleton className="h-7 w-44" />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
         ) : filteredAndSortedEvents.length === 0 ? (
           <Card>
             <CardContent className="p-8 text-center">
@@ -2512,6 +2594,17 @@ const MyEventsPage: React.FC = () => {
                               >
                                 <Trash2 className="w-3 h-3" />
                                 Delete
+                              </Button>
+                            )}
+                            {(event.status === 'draft' || event.status === 'submitted') && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleOpenCancelEvent(event)}
+                                className="gap-1 h-7 px-2 text-xs text-orange-700 hover:text-orange-800"
+                              >
+                                <XCircle className="w-3 h-3" />
+                                Cancel
                               </Button>
                             )}
                           </div>
@@ -2852,6 +2945,56 @@ const MyEventsPage: React.FC = () => {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Cancel Event Modal */}
+      <Dialog open={showCancelEventModal} onOpenChange={setShowCancelEventModal}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Cancel Event</DialogTitle>
+            <DialogDescription>
+              This will cancel your event request. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="rounded-md border p-3 bg-muted/30">
+              <p className="text-sm font-medium text-gray-900">
+                {cancellingEvent?.eventTitle || 'Event'}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {cancellingEvent?.location}
+              </p>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-sm">Reason (optional)</Label>
+              <Textarea
+                value={cancelEventReason}
+                onChange={(e) => setCancelEventReason(e.target.value)}
+                placeholder="e.g., Schedule conflict, venue change, etc."
+                className="min-h-[90px]"
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowCancelEventModal(false)}
+              disabled={isCancellingEvent}
+            >
+              Close
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmCancelEvent}
+              disabled={isCancellingEvent}
+            >
+              {isCancellingEvent ? 'Cancelling...' : 'Confirm Cancel'}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 

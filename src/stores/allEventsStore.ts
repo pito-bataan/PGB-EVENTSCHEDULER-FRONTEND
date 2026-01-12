@@ -58,6 +58,7 @@ export interface Event {
   taggedDepartments: string[];
   departmentRequirements: any;
   status: 'draft' | 'submitted' | 'approved' | 'rejected' | 'completed' | 'cancelled';
+  reason?: string;
   submittedAt?: string;
   createdBy: {
     _id: string;

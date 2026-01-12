@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
 import CustomCalendar, { type CalendarEvent } from '@/components/ui/custom-calendar';
 import { 
   Calendar as CalendarIcon, 
@@ -194,9 +195,24 @@ const MyCalendarPage: React.FC = () => {
 
           {/* Calendar or List View */}
           {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-              <span className="ml-3 text-gray-600">Loading resources...</span>
+            <div className="space-y-4 py-6">
+              <div className="flex items-center justify-between gap-4">
+                <Skeleton className="h-10 w-56" />
+                <div className="flex items-center gap-2">
+                  <Skeleton className="h-9 w-28" />
+                  <Skeleton className="h-9 w-24" />
+                </div>
+              </div>
+
+              <Card className="shadow-sm">
+                <CardContent className="p-6">
+                  <div className="grid grid-cols-7 gap-2">
+                    {Array.from({ length: 28 }).map((_, idx) => (
+                      <Skeleton key={idx} className="h-20 w-full" />
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           ) : viewMode === 'calendar' ? (
             <CustomCalendar

@@ -121,11 +121,9 @@ const EventReportsPage: React.FC = () => {
   const fetchCompletedEvents = async () => {
     try {
       const token = localStorage.getItem('authToken');
-      const response = await axios.get(`${API_BASE_URL}/events/my`, {
+      const response = await axios.get(`${API_BASE_URL}/events/my?recalcAvailability=false`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-
-      console.log('📊 All events:', response.data.data);
       
       // Filter events: approved, ongoing, and completed
       const ongoing = response.data.data.filter((event: Event) => {
@@ -134,7 +132,6 @@ const EventReportsPage: React.FC = () => {
         return status === 'approved' || status === 'ongoing' || status === 'completed';
       });
       
-      console.log('✅ Ongoing/Completed events:', ongoing);
       
       setCompletedEvents(ongoing);
       if (ongoing.length > 0 && !selectedEvent) {

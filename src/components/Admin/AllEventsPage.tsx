@@ -1220,13 +1220,33 @@ const AllEventsPage: React.FC = () => {
                             </div>
                           </TableCell>
                           <TableCell>
-                            <Badge 
-                              variant={statusInfo.variant}
-                              className={`gap-1 ${statusInfo.className || ''}`}
-                            >
-                              {statusInfo.icon}
-                              {statusInfo.label}
-                            </Badge>
+                            {event.status === 'cancelled' ? (
+                              <HoverCard openDelay={200}>
+                                <HoverCardTrigger asChild>
+                                  <Badge 
+                                    variant={statusInfo.variant}
+                                    className={`gap-1 ${statusInfo.className || ''} cursor-help`}
+                                  >
+                                    {statusInfo.icon}
+                                    {statusInfo.label}
+                                  </Badge>
+                                </HoverCardTrigger>
+                                <HoverCardContent className="w-80" side="right" align="start" sideOffset={5}>
+                                  <div className="space-y-2">
+                                    <h4 className="text-[12px] font-semibold text-slate-900">Cancellation Reason</h4>
+                                    <p className="text-[11px] text-slate-700">{event.reason || 'No reason provided.'}</p>
+                                  </div>
+                                </HoverCardContent>
+                              </HoverCard>
+                            ) : (
+                              <Badge 
+                                variant={statusInfo.variant}
+                                className={`gap-1 ${statusInfo.className || ''}`}
+                              >
+                                {statusInfo.icon}
+                                {statusInfo.label}
+                              </Badge>
+                            )}
                           </TableCell>
                           <TableCell>
                             <div className="text-sm">
@@ -1287,20 +1307,27 @@ const AllEventsPage: React.FC = () => {
                             </div>
                           </TableCell>
                           <TableCell>
-                            <span className="text-sm font-medium text-gray-700">
-                              {(() => {
-                                const hasGovFiles = Boolean(
-                                  event.govFiles?.brieferTemplate?.filename ||
-                                  event.govFiles?.brieferTemplate?.originalName ||
-                                  event.govFiles?.programme?.filename ||
-                                  event.govFiles?.programme?.originalName ||
-                                  event.govFiles?.availableForDL?.filename ||
-                                  event.govFiles?.availableForDL?.originalName
-                                );
+                            {(() => {
+                              const hasGovFiles = Boolean(
+                                event.govFiles?.brieferTemplate?.filename ||
+                                event.govFiles?.brieferTemplate?.originalName ||
+                                event.govFiles?.programme?.filename ||
+                                event.govFiles?.programme?.originalName ||
+                                event.govFiles?.availableForDL?.filename ||
+                                event.govFiles?.availableForDL?.originalName
+                              );
 
-                                return hasGovFiles ? 'Yes' : 'No';
-                              })()}
-                            </span>
+                              const label = hasGovFiles ? 'Yes' : 'No';
+                              const className = hasGovFiles
+                                ? 'bg-green-50 text-green-700 border-green-200'
+                                : 'bg-red-50 text-red-700 border-red-200';
+
+                              return (
+                                <Badge variant="outline" className={`text-xs ${className}`}>
+                                  {label}
+                                </Badge>
+                              );
+                            })()}
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex items-center gap-2 justify-end">

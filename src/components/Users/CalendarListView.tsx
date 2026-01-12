@@ -432,24 +432,24 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
     return status.charAt(0).toUpperCase() + status.slice(1);
   };
 
-  // Helper: load Bataan logo for PDF header
   const loadLogo = async (): Promise<HTMLImageElement | null> => {
     try {
       const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-        const logo = new Image();
-        logo.crossOrigin = 'anonymous';
-        logo.onload = () => resolve(logo);
-        logo.onerror = reject;
-        logo.src = '/images/bataanlogo.png';
+        const image = new Image();
+        image.crossOrigin = 'anonymous';
+        image.onload = () => resolve(image);
+        image.onerror = reject;
+        image.src = '/BataanLogo.png';
       });
       return img;
-    } catch (error) {
-      console.log('Logo not found, continuing without logo');
+    } catch {
       return null;
     }
   };
 
-  // Generate PDF for a single event: header + PNG of the event card, scaled to fit
+  const PDF_CAPTURE_PIXEL_RATIO = 1.25;
+  const PDF_CAPTURE_JPEG_QUALITY = 0.75;
+
   const generateEventPdf = async (event: CalendarEvent) => {
     try {
       setExportingEventId(event._id);
@@ -463,9 +463,9 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
       // Small delay to ensure UI settled
       await new Promise(resolve => setTimeout(resolve, 100));
 
-      const dataUrl = await htmlToImage.toPng(element, {
-        quality: 1,
-        pixelRatio: 2,
+      const dataUrl = await htmlToImage.toJpeg(element, {
+        quality: PDF_CAPTURE_JPEG_QUALITY,
+        pixelRatio: PDF_CAPTURE_PIXEL_RATIO,
         backgroundColor: '#ffffff',
         style: {
           transform: 'scale(1)',
@@ -479,7 +479,7 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
         }
       });
 
-      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4', compress: true });
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
       const margin = 15;
@@ -529,7 +529,7 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
       }
 
       const x = (pageWidth - imgWidth) / 2;
-      pdf.addImage(dataUrl, 'PNG', x, yPos, imgWidth, imgHeight);
+      pdf.addImage(dataUrl, 'JPEG', x, yPos, imgWidth, imgHeight, undefined, 'FAST');
 
       const blob = pdf.output('blob');
       const url = URL.createObjectURL(blob);
@@ -556,7 +556,7 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
     try {
       setExportingAll(true);
 
-      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4', compress: true });
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
       const margin = 15;
@@ -592,28 +592,19 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
       };
 
       let yPos = addHeader();
-      let eventsOnPage = 0;
 
-      const maxCardsPerPage = 3;
-      const availableHeightPerPage = pageHeight - yPos - margin;
-      const maxCardHeight = availableHeightPerPage / maxCardsPerPage - 4; // small gap
+      const maxWidth = pageWidth - 2 * margin;
 
       for (const entry of exportEntries) {
         for (const event of entry.events) {
           const element = eventRefs.current[event._id];
           if (!element) continue;
 
-          if (eventsOnPage === maxCardsPerPage) {
-            pdf.addPage();
-            yPos = addHeader();
-            eventsOnPage = 0;
-          }
-
           await new Promise(resolve => setTimeout(resolve, 50));
 
-          const dataUrl = await htmlToImage.toPng(element, {
-            quality: 1,
-            pixelRatio: 2,
+          const dataUrl = await htmlToImage.toJpeg(element, {
+            quality: PDF_CAPTURE_JPEG_QUALITY,
+            pixelRatio: PDF_CAPTURE_PIXEL_RATIO,
             backgroundColor: '#ffffff',
             style: {
               transform: 'scale(1)',
@@ -628,27 +619,29 @@ const CalendarListView: React.FC<CalendarListViewProps> = ({ events }) => {
           });
 
           const imgProps = pdf.getImageProperties(dataUrl);
-          const maxWidth = pageWidth - 2 * margin;
-          let imgWidth = maxWidth;
-          let imgHeight = (imgProps.height * imgWidth) / imgProps.width;
-
-          if (imgHeight > maxCardHeight) {
-            const scale = maxCardHeight / imgHeight;
-            imgHeight = maxCardHeight;
-            imgWidth = imgWidth * scale;
-          }
+          const imgWidth = maxWidth;
+          const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
 
           // Date label (top-left) for this event card
           const eventDateLabel = format(new Date(event.startDate), 'EEEE, MMMM d, yyyy');
+          const labelHeight = 6;
+          const cardGap = 6;
+          const requiredHeight = labelHeight + imgHeight + cardGap;
+
+          // If not enough space on current page, go to next page and continue
+          if (yPos + requiredHeight > pageHeight - margin) {
+            pdf.addPage();
+            yPos = addHeader();
+          }
+
           pdf.setFontSize(11);
           pdf.setFont('helvetica', 'bold');
           pdf.text(eventDateLabel, margin, yPos);
-          yPos += 6;
+          yPos += labelHeight;
 
           const x = (pageWidth - imgWidth) / 2;
-          pdf.addImage(dataUrl, 'PNG', x, yPos, imgWidth, imgHeight);
-          yPos += imgHeight + 4;
-          eventsOnPage += 1;
+          pdf.addImage(dataUrl, 'JPEG', x, yPos, imgWidth, imgHeight, undefined, 'FAST');
+          yPos += imgHeight + cardGap;
         }
       }
 

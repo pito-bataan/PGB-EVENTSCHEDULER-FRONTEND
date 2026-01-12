@@ -154,7 +154,7 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
         const token = localStorage.getItem('authToken');
         if (!token) return;
         
-        const response = await axios.get(`${API_BASE_URL}/events/my`, {
+        const response = await axios.get(`${API_BASE_URL}/events/my?recalcAvailability=false`, {
           headers: getAuthHeaders()
         });
         
@@ -334,7 +334,7 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
         const token = localStorage.getItem('authToken');
         if (!token) return;
         
-        const response = await axios.get(`${API_BASE_URL}/events/my`, {
+        const response = await axios.get(`${API_BASE_URL}/events/my?recalcAvailability=false`, {
           headers: getAuthHeaders()
         });
         
@@ -374,7 +374,7 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
         const token = localStorage.getItem('authToken');
         if (!token) return;
         
-        const response = await axios.get(`${API_BASE_URL}/events/my`, {
+        const response = await axios.get(`${API_BASE_URL}/events/my?recalcAvailability=false`, {
           headers: getAuthHeaders()
         });
         
@@ -480,7 +480,7 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
       }
 
       // Update My Events badge count
-      const myEventsResponse = await axios.get(`${API_BASE_URL}/events/my`, {
+      const myEventsResponse = await axios.get(`${API_BASE_URL}/events/my?recalcAvailability=false`, {
         headers: getAuthHeaders()
       });
       
@@ -598,7 +598,7 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
             }
 
             // Update My Events badge count (total count of all events with tagged requirements)
-            axios.get(`${API_BASE_URL}/events/my`, {
+            axios.get(`${API_BASE_URL}/events/my?recalcAvailability=false`, {
               headers: getAuthHeaders()
             })
             .then(myEventsResponse => {
@@ -626,7 +626,7 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
             });
 
             // Update Event Reports badge count (pending reports)
-            axios.get(`${API_BASE_URL}/events/my`, {
+            axios.get(`${API_BASE_URL}/events/my?recalcAvailability=false`, {
               headers: getAuthHeaders()
             })
             .then(eventReportsResponse => {
