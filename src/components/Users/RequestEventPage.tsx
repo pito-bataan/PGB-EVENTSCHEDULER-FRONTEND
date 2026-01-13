@@ -994,7 +994,7 @@ const RequestEventPage: React.FC = () => {
       // (e.g., Conference Rooms, Meeting Rooms): use the locationRequirements
       // list directly as the PGSO defaults, bypassing the global PGSO master
       // list / availability API.
-      if (isPgso && locationRequirements.length > 0 && !isPavilionLocation) {
+      if (isPgso && locationRequirements.length > 0) {
         const mappedRequirements: DepartmentRequirement[] = locationRequirements.map((locReq, idx) => ({
           id: `pgso-location-${idx}-${locReq.name}`,
           name: locReq.name,
