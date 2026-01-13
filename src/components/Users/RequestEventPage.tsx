@@ -182,6 +182,8 @@ const RequestEventPage: React.FC = () => {
   const [venueConflictingEvents, setVenueConflictingEvents] = useState<any[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [noDepartmentsNeeded, setNoDepartmentsNeeded] = useState(false);
+  const [showPgsoDefaultsDialog, setShowPgsoDefaultsDialog] = useState(false);
+  const [autoSelectPgsoAfterStep3, setAutoSelectPgsoAfterStep3] = useState(false);
   const [showLocationRequirementsModal, setShowLocationRequirementsModal] = useState(false);
   const [locationRequirements, setLocationRequirements] = useState<Array<{ name: string; quantity: number }>>([]);
   const [showEventTypeAlert, setShowEventTypeAlert] = useState(false);
@@ -349,6 +351,42 @@ const RequestEventPage: React.FC = () => {
     } catch (error) {
       // On error, set empty array to allow date selection based on event type rules
       setAvailableDates([]);
+    }
+  };
+
+  const handleContinueToTagDepartments = async () => {
+    setCurrentStep(3);
+  };
+
+  const handleNoDepartmentsNeededChange = async (checked: boolean) => {
+    setNoDepartmentsNeeded(checked);
+
+    if (checked) {
+      // Clear any tagged departments if checking "no departments needed"
+      handleInputChange('taggedDepartments', []);
+      handleInputChange('departmentRequirements', {});
+
+      // For Simple Meeting, if the location has default requirements, immediately
+      // prompt and then auto-select PGSO after user confirms.
+      if (formData.eventType === 'simple-meeting') {
+        const locationName = typeof formData.location === 'string' ? formData.location : '';
+        if (locationName) {
+          let detected = locationRequirements;
+          if (!detected || detected.length === 0) {
+            const locationData = await fetchLocationRequirements(locationName);
+            detected = locationData?.requirements || [];
+            if (detected.length > 0) {
+              setLocationRequirements(detected);
+              setLocationRoomTypes(locationData?.roomTypes || []);
+            }
+          }
+
+          if (detected.length > 0) {
+            setAutoSelectPgsoAfterStep3(true);
+            setShowPgsoDefaultsDialog(true);
+          }
+        }
+      }
     }
   };
 
@@ -2761,12 +2799,7 @@ const RequestEventPage: React.FC = () => {
                         id="noDepartmentsNeeded"
                         checked={noDepartmentsNeeded}
                         onCheckedChange={(checked) => {
-                          setNoDepartmentsNeeded(checked as boolean);
-                          if (checked) {
-                            // Clear any tagged departments if checking "no departments needed"
-                            handleInputChange('taggedDepartments', []);
-                            handleInputChange('departmentRequirements', {});
-                          }
+                          handleNoDepartmentsNeededChange(checked as boolean);
                         }}
                         className="mt-0.5"
                       />
@@ -3364,7 +3397,7 @@ const RequestEventPage: React.FC = () => {
               Previous
             </Button>
             <Button 
-              onClick={() => setCurrentStep(3)} 
+              onClick={handleContinueToTagDepartments}
               disabled={!formData.eventTitle || !formData.requestor || !formData.location || !formData.participants || !formData.description || !isAttachmentsCompleted || !formData.startDate || !formData.startTime || !formData.endDate || !formData.endTime}
               className="gap-2"
             >
@@ -6085,6 +6118,57 @@ const RequestEventPage: React.FC = () => {
             >
               Continue to Schedule
               <ChevronRight className="w-4 h-4 ml-1" />
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showPgsoDefaultsDialog} onOpenChange={setShowPgsoDefaultsDialog}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Info className="w-5 h-5 text-blue-600" />
+              Default PGSO Requirements Detected
+            </DialogTitle>
+            <DialogDescription>
+              The system detected that your selected location has default requirements under PGSO. Click Continue to automatically select PGSO and show the default requirements.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="rounded-md border bg-blue-50 p-3 text-sm text-blue-900">
+            This helps avoid missing required items for the selected venue.
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowPgsoDefaultsDialog(false);
+                setAutoSelectPgsoAfterStep3(false);
+                setNoDepartmentsNeeded(false);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="bg-blue-600 hover:bg-blue-700"
+              onClick={async () => {
+                setShowPgsoDefaultsDialog(false);
+                setNoDepartmentsNeeded(false);
+
+                if (!autoSelectPgsoAfterStep3) return;
+                setAutoSelectPgsoAfterStep3(false);
+
+                const pgsoDept = departments.find((d) => d.name?.toLowerCase().includes('pgso'));
+                if (!pgsoDept?.name) {
+                  toast.error('PGSO department was not found in the departments list');
+                  return;
+                }
+
+                await handleDepartmentToggle(pgsoDept.name);
+              }}
+            >
+              Continue
             </Button>
           </DialogFooter>
         </DialogContent>
