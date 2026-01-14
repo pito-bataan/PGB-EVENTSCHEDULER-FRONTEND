@@ -476,6 +476,16 @@ const RequestEventPage: React.FC = () => {
     return false;
   };
 
+  // For location-default pooled requirements (PAVILION_DEFAULT), treat all Pavilion locations
+  // as sharing the same inventory pool.
+  const locationsSharePavilionPool = (loc1: string, loc2: string): boolean => {
+    if (!loc1 || !loc2) return false;
+    const isPavilion1 = loc1.includes('Pavilion');
+    const isPavilion2 = loc2.includes('Pavilion');
+    if (isPavilion1 && isPavilion2) return true;
+    return locationsConflict(loc1, loc2);
+  };
+
   // Auto-check for venue conflicts when schedule changes in modal
   useEffect(() => {
     
@@ -1521,7 +1531,7 @@ const RequestEventPage: React.FC = () => {
       if (isLocationDefault) {
         const eventLoc = (event?.location || '').toString();
         if (!locationDefaultTarget || !eventLoc) return;
-        if (!locationsConflict(locationDefaultTarget, eventLoc)) return;
+        if (!locationsSharePavilionPool(locationDefaultTarget, eventLoc)) return;
       }
 
       // Check ALL departments in the event, not just the current department
@@ -1559,7 +1569,7 @@ const RequestEventPage: React.FC = () => {
       if (isLocationDefault) {
         const eventLoc = (event?.location || '').toString();
         if (!locationDefaultTarget || !eventLoc) return false;
-        if (!locationsConflict(locationDefaultTarget, eventLoc)) return false;
+        if (!locationsSharePavilionPool(locationDefaultTarget, eventLoc)) return false;
       }
 
       // Check ALL departments in the event, not just the current department

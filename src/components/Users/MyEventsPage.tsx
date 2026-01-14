@@ -1814,10 +1814,19 @@ const MyEventsPage: React.FC = () => {
                   .replace(/\s+/g, ' ')
                   .replace(/[’']/g, "'");
 
+              const locationsSharePavilionPool = (a: any, b: any): boolean => {
+                const aRaw = String(a || '');
+                const bRaw = String(b || '');
+                if (!aRaw || !bRaw) return false;
+                if (aRaw.includes('Pavilion') && bRaw.includes('Pavilion')) return true;
+                return normalizeLocation(aRaw) === normalizeLocation(bRaw);
+              };
+
               const selectedLocationsRaw: string[] = Array.isArray(addingToEvent?.locations) && addingToEvent.locations.length > 0
                 ? addingToEvent.locations
                 : (addingToEvent?.location ? [addingToEvent.location] : []);
               const selectedLocationsNorm = selectedLocationsRaw.map(normalizeLocation).filter((l) => l.length > 0);
+              const isSelectedPavilionPool = selectedLocationsRaw.some((l) => String(l || '').includes('Pavilion'));
 
               const conflictingEvents = allEvents.filter((event: any) => {
                 if (event._id === addingToEvent._id) return false;
@@ -1839,7 +1848,9 @@ const MyEventsPage: React.FC = () => {
                 const eventLocationsNorm = eventLocationsRaw.map(normalizeLocation).filter((l) => l.length > 0);
                 const hasLocationOverlap = selectedLocationsNorm.length === 0
                   ? true
-                  : eventLocationsNorm.some((l) => selectedLocationsNorm.includes(l));
+                  : isSelectedPavilionPool
+                    ? eventLocationsRaw.some((l) => locationsSharePavilionPool(selectedLocationsRaw[0], l))
+                    : eventLocationsNorm.some((l) => selectedLocationsNorm.includes(l));
 
                 return hasTimeOverlap && hasLocationOverlap;
               });
@@ -1926,6 +1937,27 @@ const MyEventsPage: React.FC = () => {
               : [];
           
           
+          const normalizeLocation = (s: any) =>
+            String(s || '')
+              .toLowerCase()
+              .trim()
+              .replace(/\s+/g, ' ')
+              .replace(/[’']/g, "'");
+
+          const locationsSharePavilionPool = (a: any, b: any): boolean => {
+            const aRaw = String(a || '');
+            const bRaw = String(b || '');
+            if (!aRaw || !bRaw) return false;
+            if (aRaw.includes('Pavilion') && bRaw.includes('Pavilion')) return true;
+            return normalizeLocation(aRaw) === normalizeLocation(bRaw);
+          };
+
+          const selectedLocationsRaw: string[] = Array.isArray(addingToEvent?.locations) && addingToEvent.locations.length > 0
+            ? addingToEvent.locations
+            : (addingToEvent?.location ? [addingToEvent.location] : []);
+          const selectedLocationsNorm = selectedLocationsRaw.map(normalizeLocation).filter((l) => l.length > 0);
+          const isSelectedPavilionPool = selectedLocationsRaw.some((l) => String(l || '').includes('Pavilion'));
+
           const conflictingEvents = allEvents.filter((event: any) => {
             if (event._id === addingToEvent._id) return false; // Exclude current event
             if (!event.startDate || !event.startTime || !event.endTime) return false;
@@ -1943,18 +1975,6 @@ const MyEventsPage: React.FC = () => {
               (addingToEvent.startTime <= event.startTime && addingToEvent.endTime >= event.endTime)
             );
             
-            const normalizeLocation = (s: any) =>
-              String(s || '')
-                .toLowerCase()
-                .trim()
-                .replace(/\s+/g, ' ')
-                .replace(/[’']/g, "'");
-
-            const selectedLocationsRaw: string[] = Array.isArray(addingToEvent?.locations) && addingToEvent.locations.length > 0
-              ? addingToEvent.locations
-              : (addingToEvent?.location ? [addingToEvent.location] : []);
-            const selectedLocationsNorm = selectedLocationsRaw.map(normalizeLocation).filter((l) => l.length > 0);
-
             const eventLocationsRaw: string[] = Array.isArray(event?.locations) && event.locations.length > 0
               ? event.locations
               : (event?.location ? [event.location] : []);
@@ -1962,7 +1982,9 @@ const MyEventsPage: React.FC = () => {
 
             const hasLocationOverlap = selectedLocationsNorm.length === 0
               ? true
-              : eventLocationsNorm.some((l) => selectedLocationsNorm.includes(l));
+              : isSelectedPavilionPool
+                ? eventLocationsRaw.some((l) => locationsSharePavilionPool(selectedLocationsRaw[0], l))
+                : eventLocationsNorm.some((l) => selectedLocationsNorm.includes(l));
 
             return hasTimeOverlap && hasLocationOverlap;
           });
