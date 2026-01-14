@@ -25,6 +25,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -101,6 +111,12 @@ interface Event {
       size: number;
     };
     programme?: {
+      filename: string;
+      originalName: string;
+      mimetype: string;
+      size: number;
+    };
+    availableForDL?: {
       filename: string;
       originalName: string;
       mimetype: string;
@@ -380,6 +396,49 @@ const MyEventsPage: React.FC = () => {
   const [editAttachments, setEditAttachments] = useState<File[]>([]);
   const [editBrieferTemplate, setEditBrieferTemplate] = useState<File[]>([]);
   const [editProgramme, setEditProgramme] = useState<File[]>([]);
+
+  const [pendingFileDelete, setPendingFileDelete] = useState<null | {
+    kind: 'attachment' | 'gov';
+    eventId: string;
+    filename: string;
+    label: string;
+    fileKey?: 'brieferTemplate' | 'programme' | 'availableForDL';
+  }>(null);
+  const [deletingFile, setDeletingFile] = useState(false);
+
+  const handleConfirmDeleteFile = async () => {
+    if (!pendingFileDelete) return;
+    try {
+      setDeletingFile(true);
+      const token = localStorage.getItem('authToken');
+
+      const url = pendingFileDelete.kind === 'attachment'
+        ? `${API_BASE_URL}/events/${pendingFileDelete.eventId}/attachment/${encodeURIComponent(pendingFileDelete.filename)}`
+        : `${API_BASE_URL}/events/${pendingFileDelete.eventId}/govfile/${pendingFileDelete.fileKey}/${encodeURIComponent(pendingFileDelete.filename)}`;
+
+      const response = await axios.delete(url, {
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : '',
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const updatedEvent = response.data?.data || response.data?.event;
+      if (updatedEvent?._id) {
+        setEvents(prev => prev.map(ev => (ev._id === updatedEvent._id ? updatedEvent : ev)));
+        setSelectedEditEvent(prev => (prev && prev._id === updatedEvent._id ? updatedEvent : prev));
+      } else {
+        fetchMyEvents();
+      }
+
+      toast.success('File deleted successfully');
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || 'Failed to delete file');
+    } finally {
+      setDeletingFile(false);
+      setPendingFileDelete(null);
+    }
+  };
   
   // Change Department Modal State
   const [showChangeDepartmentModal, setShowChangeDepartmentModal] = useState(false);
@@ -2581,8 +2640,8 @@ const MyEventsPage: React.FC = () => {
                                 className="gap-1 h-7 px-2 text-[10px] md:text-xs bg-blue-50 hover:bg-blue-100 whitespace-nowrap"
                               >
                                 <Edit className="w-3 h-3" />
-                                <span className="hidden sm:inline">Edit Details</span>
-                                <span className="sm:hidden">Details</span>
+                                <span className="hidden sm:inline">Edit Details/Files</span>
+                                <span className="sm:hidden">Edit</span>
                               </Button>
                             )}
                             {(event.status === 'draft' || event.status === 'rejected') && (
@@ -2947,6 +3006,25 @@ const MyEventsPage: React.FC = () => {
           )}
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!pendingFileDelete} onOpenChange={(open) => {
+        if (!open) setPendingFileDelete(null);
+      }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete file?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete{pendingFileDelete?.label ? ` "${pendingFileDelete.label}"` : ' this file'} from your event.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingFile}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmDeleteFile} disabled={deletingFile}>
+              {deletingFile ? 'Deleting...' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Cancel Event Modal */}
       <Dialog open={showCancelEventModal} onOpenChange={setShowCancelEventModal}>
@@ -5238,6 +5316,20 @@ const MyEventsPage: React.FC = () => {
                                 <Paperclip className="w-3 h-3" />
                                 <span className="flex-1 truncate">{file.originalName}</span>
                                 <span className="text-gray-400">{(file.size / 1024).toFixed(1)} KB</span>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 text-red-600 hover:text-red-700"
+                                  onClick={() => setPendingFileDelete({
+                                    kind: 'attachment',
+                                    eventId: selectedEditEvent._id,
+                                    filename: file.filename,
+                                    label: file.originalName
+                                  })}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </Button>
                               </div>
                             ))}
                           </div>
@@ -5254,6 +5346,21 @@ const MyEventsPage: React.FC = () => {
                                 <FileText className="w-3 h-3" />
                                 <span className="flex-1 truncate">Event Briefer: {selectedEditEvent.govFiles.brieferTemplate.originalName}</span>
                                 <span className="text-gray-400">{(selectedEditEvent.govFiles.brieferTemplate.size / 1024).toFixed(1)} KB</span>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 text-red-600 hover:text-red-700"
+                                  onClick={() => setPendingFileDelete({
+                                    kind: 'gov',
+                                    eventId: selectedEditEvent._id,
+                                    filename: selectedEditEvent.govFiles!.brieferTemplate!.filename,
+                                    fileKey: 'brieferTemplate',
+                                    label: selectedEditEvent.govFiles!.brieferTemplate!.originalName
+                                  })}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </Button>
                               </div>
                             )}
                             {selectedEditEvent.govFiles.programme && (
@@ -5261,6 +5368,43 @@ const MyEventsPage: React.FC = () => {
                                 <FileText className="w-3 h-3" />
                                 <span className="flex-1 truncate">Program Flow: {selectedEditEvent.govFiles.programme.originalName}</span>
                                 <span className="text-gray-400">{(selectedEditEvent.govFiles.programme.size / 1024).toFixed(1)} KB</span>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 text-red-600 hover:text-red-700"
+                                  onClick={() => setPendingFileDelete({
+                                    kind: 'gov',
+                                    eventId: selectedEditEvent._id,
+                                    filename: selectedEditEvent.govFiles!.programme!.filename,
+                                    fileKey: 'programme',
+                                    label: selectedEditEvent.govFiles!.programme!.originalName
+                                  })}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </Button>
+                              </div>
+                            )}
+                            {selectedEditEvent.govFiles.availableForDL && (
+                              <div className="flex items-center gap-2 text-xs text-gray-600 bg-white px-2 py-1 rounded">
+                                <FileText className="w-3 h-3" />
+                                <span className="flex-1 truncate">Available For DL: {selectedEditEvent.govFiles.availableForDL.originalName}</span>
+                                <span className="text-gray-400">{(selectedEditEvent.govFiles.availableForDL.size / 1024).toFixed(1)} KB</span>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 text-red-600 hover:text-red-700"
+                                  onClick={() => setPendingFileDelete({
+                                    kind: 'gov',
+                                    eventId: selectedEditEvent._id,
+                                    filename: selectedEditEvent.govFiles!.availableForDL!.filename,
+                                    fileKey: 'availableForDL',
+                                    label: selectedEditEvent.govFiles!.availableForDL!.originalName
+                                  })}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </Button>
                               </div>
                             )}
                           </div>
