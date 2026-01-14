@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { format } from 'date-fns';
+import { format, isWithinInterval, startOfDay, endOfDay } from 'date-fns';
 import { motion } from 'framer-motion';
 import jsPDF from 'jspdf';
 import { toast } from 'sonner';
+import type { DateRange } from 'react-day-picker';
 import { useSocket, getGlobalSocket } from '@/hooks/useSocket';
 import { useAllEventsStore, type Event } from '@/stores/allEventsStore';
 import {
@@ -38,6 +39,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { Calendar as CalendarPicker } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Tabs,
   TabsList,
@@ -101,7 +104,8 @@ import {
   Clock4,
   SortAsc,
   UserCheck,
-  Trash2
+  Trash2,
+  Calendar as CalendarIcon
 } from 'lucide-react';
 
 const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api`;
@@ -154,6 +158,9 @@ const AllEventsPage: React.FC = () => {
   const [showPdfOptions, setShowPdfOptions] = useState(false);
   const [showPdfPreview, setShowPdfPreview] = useState(false);
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string>('');
+  const [pdfDateRange, setPdfDateRange] = useState<DateRange | undefined>(undefined);
+  const [pdfIncludeRequirementsPages, setPdfIncludeRequirementsPages] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
   const [showStatusDialog, setShowStatusDialog] = useState(false);
   const [statusAction, setStatusAction] = useState<'approve' | 'disapprove' | null>(null);
   const [cancelReason, setCancelReason] = useState<string>('');
@@ -503,19 +510,66 @@ const AllEventsPage: React.FC = () => {
 
   // Handle PDF generation
   const handleGeneratePdf = (generateAll: boolean) => {
-    const eventsToGenerate = generateAll 
-      ? filteredEvents 
-      : filteredEvents.filter(event => selectedEvents.includes(event._id));
+    const matchesPdfDateRange = (event: Event) => {
+      if (!pdfDateRange?.from) return true;
+      const from = startOfDay(pdfDateRange.from);
+      const to = endOfDay(pdfDateRange.to || pdfDateRange.from);
+      const start = new Date(event.startDate);
+      return isWithinInterval(start, { start: from, end: to });
+    };
+
+    const getEventStartMs = (event: Event) => {
+      try {
+        const datePart = String(event.startDate || '');
+        const timePart = String((event as any).startTime || '00:00');
+        const dt = new Date(`${datePart}T${timePart}`);
+        const t = dt.getTime();
+        return Number.isFinite(t) ? t : new Date(datePart).getTime();
+      } catch {
+        return new Date(String(event.startDate || '')).getTime();
+      }
+    };
+
+    const eventsToGenerate = generateAll
+      ? filteredEvents.filter((event) => event.status === 'approved' && matchesPdfDateRange(event))
+      : filteredEvents.filter((event) => selectedEvents.includes(event._id));
+
+    // Always sort the export output by schedule (ascending)
+    const sortedEventsToGenerate = [...eventsToGenerate].sort((a, b) => {
+      const diff = getEventStartMs(a) - getEventStartMs(b);
+      if (diff !== 0) return diff;
+      return String(a.eventTitle || '').localeCompare(String(b.eventTitle || ''));
+    });
     
     setShowPdfOptions(false);
-    generatePdfPreview(eventsToGenerate);
+    generatePdfPreview(sortedEventsToGenerate, {
+      includeRequirementsPages: generateAll ? false : pdfIncludeRequirementsPages,
+      dateRange: pdfDateRange
+    });
   };
 
   // Generate actual PDF preview
-  const generatePdfPreview = async (events: Event[]) => {
+  const generatePdfPreview = async (events: Event[], opts?: { includeRequirementsPages?: boolean; dateRange?: DateRange }) => {
     try {
+      setExportingPdf(true);
+
+      const includeRequirementsPages = !!opts?.includeRequirementsPages;
+
+      if (!events || events.length === 0) {
+        toast.error('No events to export');
+        return;
+      }
+
+      const rangeText = (() => {
+        const from = opts?.dateRange?.from;
+        const to = opts?.dateRange?.to;
+        if (!from) return 'All dates';
+        if (!to) return format(from, 'MMM dd, yyyy');
+        return `${format(from, 'MMM dd, yyyy')} - ${format(to, 'MMM dd, yyyy')}`;
+      })();
+
       // Create new PDF document
-      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4', compress: true });
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
       const margin = 20;
@@ -570,6 +624,11 @@ const AllEventsPage: React.FC = () => {
         } else {
           yPos += 8;
         }
+
+        pdf.setFontSize(9);
+        pdf.setFont('helvetica', 'normal');
+        pdf.text(`Approved Events • Date Range: ${rangeText}`, pageWidth / 2, yPos, { align: 'center' });
+        yPos += 10;
         
         return yPos;
       };
@@ -750,7 +809,7 @@ const AllEventsPage: React.FC = () => {
         yPosition += 15;
 
         // Add new page for department requirements and notes
-        if (event.taggedDepartments && event.taggedDepartments.length > 0) {
+        if (includeRequirementsPages && event.taggedDepartments && event.taggedDepartments.length > 0) {
           pdf.addPage();
           yPosition = addHeader();
 
@@ -863,6 +922,8 @@ const AllEventsPage: React.FC = () => {
     } catch (error) {
       console.error('Error generating PDF preview:', error);
       toast.error('Failed to generate PDF preview');
+    } finally {
+      setExportingPdf(false);
     }
   };
 
@@ -1858,7 +1919,7 @@ const AllEventsPage: React.FC = () => {
               Generate PDF Report
             </DialogTitle>
             <DialogDescription>
-              Choose which events to include in your PDF report
+              Export is optimized to include approved events only when generating all, with optional date range.
             </DialogDescription>
           </DialogHeader>
           
@@ -1866,6 +1927,42 @@ const AllEventsPage: React.FC = () => {
             <div className="text-sm text-gray-600">
               <p>Selected Events: <span className="font-medium">{selectedEvents.length}</span></p>
               <p>Total Events: <span className="font-medium">{filteredEvents.length}</span></p>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-gray-700">Date Range (for Generate All)</p>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="w-full justify-start gap-2">
+                    <CalendarIcon className="w-4 h-4" />
+                    {pdfDateRange?.from ? (
+                      pdfDateRange.to ? (
+                        `${format(pdfDateRange.from, 'MMM dd, yyyy')} - ${format(pdfDateRange.to, 'MMM dd, yyyy')}`
+                      ) : (
+                        format(pdfDateRange.from, 'MMM dd, yyyy')
+                      )
+                    ) : (
+                      'Pick a date range'
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent
+                  align="start"
+                  className="w-auto max-w-[calc(100vw-2rem)] overflow-auto p-0"
+                >
+                  <CalendarPicker
+                    mode="range"
+                    numberOfMonths={2}
+                    selected={pdfDateRange}
+                    onSelect={setPdfDateRange}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+
+              <div className="text-xs text-gray-500">
+                If no range is selected, it will export all approved dates.
+              </div>
             </div>
             
             <div className="flex flex-col gap-3">
@@ -1882,9 +1979,10 @@ const AllEventsPage: React.FC = () => {
               <Button
                 onClick={() => handleGeneratePdf(true)}
                 className="gap-2 justify-start"
+                disabled={exportingPdf}
               >
                 <FileDown className="w-4 h-4" />
-                Generate All Events ({filteredEvents.length})
+                {exportingPdf ? 'Generating...' : 'Generate All Approved Events'}
               </Button>
             </div>
           </div>
