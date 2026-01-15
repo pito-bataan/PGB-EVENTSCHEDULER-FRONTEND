@@ -46,6 +46,8 @@ interface Conversation {
   groupName?: string;
   eventId?: string;
   eventTitle?: string;
+  eventStartDate?: string;
+  eventEndDate?: string;
 }
 
 interface MessagesState {
@@ -211,7 +213,10 @@ export const useMessagesStore = create<MessagesState>()(
           
           // Filter events where current user is involved
           const relevantEvents = events.filter((event: any) => {
-            return event.requestorDepartment === userDepartment || 
+            // Hide cancelled events from messaging list
+            if ((event?.status || '').toString().toLowerCase() === 'cancelled') return false;
+
+            return event.requestorDepartment === userDepartment ||
                    (event.taggedDepartments && event.taggedDepartments.includes(userDepartment));
           });
 
@@ -309,7 +314,9 @@ export const useMessagesStore = create<MessagesState>()(
               isGroup: true,
               groupName: event.eventTitle,
               eventId: event._id,
-              eventTitle: event.eventTitle
+              eventTitle: event.eventTitle,
+              eventStartDate: event.startDate || undefined,
+              eventEndDate: event.endDate || undefined
             };
           });
 

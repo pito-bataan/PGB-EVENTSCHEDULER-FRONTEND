@@ -138,6 +138,8 @@ interface Conversation {
   groupName?: string;
   eventId?: string;
   eventTitle?: string;
+  eventStartDate?: string;
+  eventEndDate?: string;
 }
 
 const MessagesPage: React.FC = () => {
@@ -507,6 +509,21 @@ const MessagesPage: React.FC = () => {
     }
   };
 
+  const formatEventScheduleDate = (start?: string, end?: string) => {
+    try {
+      if (!start) return '';
+      const startDate = new Date(start);
+      if (!end) return format(startDate, 'MMM dd');
+      const endDate = new Date(end);
+      if (Number.isNaN(endDate.getTime()) || startDate.toDateString() === endDate.toDateString()) {
+        return format(startDate, 'MMM dd');
+      }
+      return `${format(startDate, 'MMM dd')} - ${format(endDate, 'MMM dd')}`;
+    } catch {
+      return '';
+    }
+  };
+
   // This function is now handled by the Zustand store
 
   return (
@@ -601,7 +618,8 @@ const MessagesPage: React.FC = () => {
                           })()}
                         </div>
                         <span className="text-xs text-gray-500">
-                          {formatMessageTime(new Date(conv.lastMessage.timestamp))}
+                          {formatEventScheduleDate(conv.eventStartDate, conv.eventEndDate) ||
+                            formatMessageTime(new Date(conv.lastMessage.timestamp))}
                         </span>
                       </div>
                       

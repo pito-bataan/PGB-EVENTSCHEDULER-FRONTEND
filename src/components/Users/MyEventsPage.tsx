@@ -2390,7 +2390,6 @@ const MyEventsPage: React.FC = () => {
           </CardContent>
         </Card>
       </motion.div>
-
       {/* Filters */}
       <motion.div
         initial={{ opacity: 0, y: 10 }}
@@ -2399,22 +2398,40 @@ const MyEventsPage: React.FC = () => {
       >
         <Card className="bg-white border border-gray-200">
           <CardContent className="p-4 md:p-6">
-            <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-4 justify-between">
-              {/* Search Input - Left Side */}
-              <div className="w-full lg:w-96">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6">
+              {/* Search + Legend */}
+              <div className="lg:col-span-5">
+                <div className="text-sm font-semibold text-gray-900 mb-2">Search</div>
                 <div className="relative">
                   <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                   <Input
-                    placeholder="Search events, location, requestor..."
+                    placeholder="Type event title, location, or requestor"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-12 pr-4 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="pl-12 pr-4 py-3 text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
+                </div>
+
+                <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                  <div className="text-sm font-semibold text-gray-900">Tagged Requirements Color Guide</div>
+                  <div className="mt-1 text-xs text-gray-600 leading-snug">Card background is based on the status of tagged requirements.</div>
+                  <div className="mt-2 flex items-center gap-2 overflow-x-auto whitespace-nowrap [-ms-overflow-style:'none'] [scrollbar-width:'none'] [&::-webkit-scrollbar]:hidden">
+                    <div className="flex items-center gap-2 rounded-full border border-green-200 bg-green-50 px-3 py-1 text-sm text-green-900 shrink-0">
+                      <span className="h-2.5 w-2.5 rounded-full bg-green-500" />
+                      <span>All confirmed</span>
+                    </div>
+                    <div className="flex items-center gap-2 rounded-full border border-yellow-200 bg-yellow-50 px-3 py-1 text-sm text-yellow-900 shrink-0">
+                      <span className="h-2.5 w-2.5 rounded-full bg-yellow-500" />
+                      <span>Has pending</span>
+                    </div>
+                  </div>
                 </div>
               </div>
               
               {/* Filter and Sort - Right Side */}
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 lg:gap-4">
+              <div className="lg:col-span-7 rounded-xl border border-gray-200 bg-gray-50 p-3 md:p-4">
+                <div className="text-sm font-semibold text-gray-900 mb-3">Filters</div>
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 lg:gap-4">
                 {/* Status Filter */}
                 <div className="flex items-center gap-2 lg:gap-3">
                   <Filter className="w-5 h-5 text-gray-600 flex-shrink-0 hidden sm:block" />
@@ -2496,6 +2513,7 @@ const MyEventsPage: React.FC = () => {
                       <SelectItem value="title">Title (A-Z)</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
                 </div>
               </div>
             </div>
