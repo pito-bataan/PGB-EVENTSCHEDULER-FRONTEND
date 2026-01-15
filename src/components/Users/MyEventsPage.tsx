@@ -1109,6 +1109,63 @@ const MyEventsPage: React.FC = () => {
     return times;
   };
 
+  const timeToMinutes = (time: string) => {
+    const [hours, minutes] = String(time || '').split(':').map(Number);
+    if (Number.isNaN(hours) || Number.isNaN(minutes)) return 0;
+    return hours * 60 + minutes;
+  };
+
+  const getBookedVenueIntervals = (checkDate?: Date) => {
+    const dateToCheck = checkDate || (editFormData.startDate ? new Date(editFormData.startDate) : null);
+    if (!dateToCheck || !editFormData.location || venueConflictingEvents.length === 0) {
+      return [] as Array<[number, number]>;
+    }
+
+    const checkDateStr = dateToCheck.toDateString();
+    const intervals: Array<[number, number]> = [];
+
+    venueConflictingEvents.forEach((event) => {
+      // Ignore the event being edited
+      if (selectedEditEvent && (event._id === selectedEditEvent._id || event.id === selectedEditEvent._id)) return;
+      if (event.location !== editFormData.location) return;
+
+      const pushInterval = (start: string, end: string) => {
+        if (!start || !end) return;
+        const s = timeToMinutes(start);
+        const e = timeToMinutes(end);
+        if (e > s) intervals.push([s, e]);
+      };
+
+      // Main event date
+      if (event.startDate && new Date(event.startDate).toDateString() === checkDateStr) {
+        pushInterval(event.startTime, event.endTime);
+      }
+
+      // Multi-day time slots (if present)
+      const slots = Array.isArray(event.dateTimeSlots) ? event.dateTimeSlots : [];
+      slots.forEach((slot: any) => {
+        if (!slot?.startDate) return;
+        const slotDateStr = new Date(slot.startDate).toDateString();
+        if (slotDateStr !== checkDateStr) return;
+        pushInterval(slot.startTime, slot.endTime);
+      });
+    });
+
+    return intervals;
+  };
+
+  const isVenueRangeBooked = (startTime: string, endTime: string, checkDate?: Date) => {
+    if (!startTime || !endTime) return false;
+    const startMinutes = timeToMinutes(startTime);
+    const endMinutes = timeToMinutes(endTime);
+    if (endMinutes <= startMinutes) return true;
+
+    const intervals = getBookedVenueIntervals(checkDate);
+    if (intervals.length === 0) return false;
+
+    return intervals.some(([s, e]) => startMinutes < e && endMinutes > s);
+  };
+
   // Check if a specific time slot is booked for the selected location and date
   const isTimeSlotBooked = (timeSlot: string, checkDate?: Date) => {
     const dateToCheck = checkDate || (editFormData.startDate ? new Date(editFormData.startDate) : null);
@@ -1149,18 +1206,16 @@ const MyEventsPage: React.FC = () => {
   // Get available end times based on selected start time
   const getAvailableEndTimes = () => {
     if (!editFormData.startTime) return generateTimeOptions();
-    
-    const timeToMinutes = (time: string) => {
-      const [hours, minutes] = time.split(':').map(Number);
-      return hours * 60 + minutes;
-    };
-    
+
     const startMinutes = timeToMinutes(editFormData.startTime);
+    const dateToCheck = editFormData.startDate ? new Date(editFormData.startDate) : undefined;
     
     return generateTimeOptions().filter(timeOption => {
       const optionMinutes = timeToMinutes(timeOption.value);
       // End time must be after start time
-      return optionMinutes > startMinutes;
+      if (optionMinutes <= startMinutes) return false;
+      // Must not overlap/bridge across any booked venue interval
+      return !isVenueRangeBooked(editFormData.startTime, timeOption.value, dateToCheck);
     });
   };
 

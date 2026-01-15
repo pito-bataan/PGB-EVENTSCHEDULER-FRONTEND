@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { toast } from 'sonner'
 import { motion } from 'framer-motion'
-import { FileText } from 'lucide-react'
+import { CalendarClock, FileText } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { getGlobalSocket } from '@/hooks/useSocket'
 import { useAllEventsStore } from '@/stores/allEventsStore'
@@ -10,6 +10,8 @@ import { useAllEventsStore } from '@/stores/allEventsStore'
 export default function AdminNotificationSystem() {
   const [shownNotifications, setShownNotifications] = useState<Set<string>>(new Set());
   const processedEventsRef = useRef<Set<string>>(new Set()); // Track processed events to prevent duplicates
+
+  const adminUserIdRef = useRef<string | null>(null);
 
   // Request notification permission on mount
   useEffect(() => {
@@ -54,11 +56,121 @@ export default function AdminNotificationSystem() {
         id: socket.id
       });
 
+      // IMPORTANT: join admin's personal room so backend can target io.to(`user-<adminId>`)
+      // (AdminNotificationSystem uses getGlobalSocket directly, so it must join manually)
+      if (!adminUserIdRef.current) {
+        try {
+          const userData = localStorage.getItem('userData');
+          if (userData) {
+            const parsed = JSON.parse(userData);
+            adminUserIdRef.current = parsed?._id || parsed?.id || null;
+          }
+        } catch (e) {
+          adminUserIdRef.current = null;
+        }
+      }
+
+      if (adminUserIdRef.current) {
+        socket.emit('join-user-room', adminUserIdRef.current);
+      }
+
       // Use onAny to catch all events and handle them directly
       socket.onAny((eventName, ...args) => {
         console.log('🔍 Caught event via onAny:', eventName, args);
         
-        if (eventName === 'event-created') {
+        if (eventName === 'new-notification') {
+          const data = args[0] || {};
+          const notificationType = data.notificationType || data.type;
+
+          if (notificationType === 'event-rescheduled') {
+            const now = Date.now();
+            const eventId = data.eventId || data._id;
+            const eventTitle = data.eventTitle || data.title || 'Event';
+            const department = data.requestorDepartment || data.department || 'Unknown Department';
+            const oldSchedule = data.oldSchedule || '';
+            const newSchedule = data.newSchedule || '';
+
+            const notificationId = `admin-event-rescheduled-${eventId}-${data.timestamp ? new Date(data.timestamp).getTime() : now}`;
+
+            if (!Array.from(shownNotifications).includes(notificationId)) {
+              setShownNotifications(prev => new Set([...prev, notificationId]));
+
+              if ('Notification' in window && Notification.permission === 'granted') {
+                try {
+                  const notification = new Notification('🗓️ Event Rescheduled', {
+                    body: `${eventTitle}\nDepartment: ${department}\n${newSchedule || 'Schedule updated'}`,
+                    icon: `${window.location.origin}/images/bataanlogo.png`,
+                    badge: `${window.location.origin}/images/bataanlogo.png`,
+                    tag: 'event-rescheduled-' + String(eventId || 'unknown'),
+                    requireInteraction: false
+                  });
+                  setTimeout(() => notification.close(), 15000);
+                } catch (e) {
+                  console.error('❌ Notification failed:', e);
+                }
+              }
+
+              toast.custom((t) => (
+                <motion.div
+                  initial={{ opacity: 0, y: 20, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 20, scale: 0.95 }}
+                  transition={{ duration: 0.3, ease: "easeOut" }}
+                  className="bg-white rounded-xl shadow-2xl overflow-hidden w-80 cursor-pointer hover:shadow-3xl transition-all duration-200 border border-gray-100"
+                  onClick={() => {
+                    toast.dismiss(t);
+                    window.location.href = '/admin/all-events';
+                  }}
+                >
+                  <div className="bg-gradient-to-r from-amber-600 to-amber-700 px-6 py-4 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-white/20 rounded-lg">
+                        <CalendarClock className="h-5 w-5 text-white" />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-white text-sm">Event Rescheduled</h3>
+                        <p className="text-amber-100 text-xs">Just now</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="px-6 py-4 space-y-3">
+                    <div>
+                      <p className="text-gray-500 text-xs font-semibold uppercase tracking-wide">Event</p>
+                      <p className="text-gray-900 font-bold text-base mt-1">{eventTitle}</p>
+                    </div>
+
+                    <div>
+                      <p className="text-gray-500 text-xs font-semibold uppercase tracking-wide">Department</p>
+                      <p className="text-gray-700 text-sm mt-1">{department}</p>
+                    </div>
+
+                    {(oldSchedule || newSchedule) && (
+                      <div>
+                        <p className="text-gray-500 text-xs font-semibold uppercase tracking-wide">Schedule</p>
+                        {oldSchedule && (
+                          <p className="text-gray-700 text-sm mt-1">From: {oldSchedule}</p>
+                        )}
+                        {newSchedule && (
+                          <p className="text-gray-700 text-sm mt-1">To: {newSchedule}</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="bg-gray-50 px-6 py-3 border-t border-gray-100 flex items-center justify-between">
+                    <span className="text-xs text-gray-500">Click to review</span>
+                    <Badge className="text-xs bg-amber-600 hover:bg-amber-700 text-white">Review</Badge>
+                  </div>
+                </motion.div>
+              ), {
+                id: notificationId,
+                duration: Infinity,
+                position: 'bottom-right',
+              });
+            }
+          }
+        } else if (eventName === 'event-created') {
           const data = args[0];
           
           // Prevent duplicate processing of the same event

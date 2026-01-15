@@ -265,7 +265,22 @@ export default function GlobalNotificationSystem() {
       const now = Date.now();
       
       // Create unique ID based on notification type and content
-      const eventTitle = notificationData.eventTitle || notificationData.title || 'unknown';
+      const extractQuotedTitle = (msg: any) => {
+        if (typeof msg !== 'string') return '';
+        const match = msg.match(/"([^"]+)"/);
+        return match?.[1] || '';
+      };
+
+      const inferEventStatusFromMessage = (msg: any): string | null => {
+        if (typeof msg !== 'string') return null;
+        const m = msg.toLowerCase();
+        if (m.includes('has been approved')) return 'approved';
+        if (m.includes('has been rejected')) return 'rejected';
+        if (m.includes('has been cancelled') || m.includes('has been canceled')) return 'cancelled';
+        return null;
+      };
+
+      const eventTitle = notificationData.eventTitle || notificationData.title || extractQuotedTitle(notificationData.message) || 'unknown';
       const eventId = notificationData.eventId || notificationData.id;
       const notificationType = notificationData.type || notificationData.notificationType || 'event';
       const timestamp = notificationData.timestamp || now;
@@ -333,9 +348,12 @@ export default function GlobalNotificationSystem() {
       
       // Fallback: Check if this is an event status update by looking at the data
       // If notification has eventStatus field or status field with approved/rejected/cancelled
+      const inferredStatus = inferEventStatusFromMessage(notificationData.message);
+      const statusValue = typeof notificationData.status === 'string' ? notificationData.status.toLowerCase() : notificationData.status;
       const hasEventStatus = notificationData.eventStatus || 
-                            (notificationData.status && ['approved', 'rejected', 'cancelled'].includes(notificationData.status));
-      const isEventStatusUpdateFallback = !isStatusUpdate && hasEventStatus && isUserEvent;
+                            (statusValue && ['approved', 'rejected', 'cancelled'].includes(statusValue)) ||
+                            inferredStatus;
+      const isEventStatusUpdateFallback = !isStatusUpdate && hasEventStatus;
       
       // Determine notification title and message
       let notificationTitle = "New Event Notification";
@@ -343,7 +361,7 @@ export default function GlobalNotificationSystem() {
       
       if (isEventStatusUpdate || isEventStatusUpdateFallback) {
         // Event status update (approved/rejected/cancelled by admin)
-        const eventStatus = notificationData.eventStatus || notificationData.status || notificationData.newStatus || 'updated';
+        const eventStatus = notificationData.eventStatus || statusValue || notificationData.newStatus || inferredStatus || 'updated';
         const adminName = notificationData.adminName || notificationData.updatedBy || 'Admin';
         
         if (eventStatus === 'approved') {
@@ -358,6 +376,20 @@ export default function GlobalNotificationSystem() {
         } else {
           notificationTitle = "Event Status Updated";
           notificationMessage = `Your event "${eventTitle}" status changed to "${eventStatus}" by ${adminName}`;
+        }
+
+        const extras: string[] = [];
+        if (notificationData.requestorDepartment) {
+          extras.push(`Department: ${notificationData.requestorDepartment}`);
+        }
+        if (notificationData.schedule) {
+          extras.push(`Schedule: ${notificationData.schedule}`);
+        }
+        if (notificationData.location) {
+          extras.push(`Location: ${notificationData.location}`);
+        }
+        if (extras.length > 0) {
+          notificationMessage = `${notificationMessage}\n${extras.join('\n')}`;
         }
       } else if (isStatusUpdate) {
         // Requirement status update
@@ -418,10 +450,10 @@ export default function GlobalNotificationSystem() {
             </div>
 
             {/* Event Title if available */}
-            {notificationData.eventTitle && (
+            {eventTitle && eventTitle !== 'unknown' && (
               <div>
                 <p className="text-gray-500 text-xs font-semibold uppercase tracking-wide">Event</p>
-                <p className="text-gray-900 font-bold text-base mt-1">{notificationData.eventTitle}</p>
+                <p className="text-gray-900 font-bold text-base mt-1">{eventTitle}</p>
               </div>
             )}
 
@@ -430,6 +462,20 @@ export default function GlobalNotificationSystem() {
               <div>
                 <p className="text-gray-500 text-xs font-semibold uppercase tracking-wide">Requestor</p>
                 <p className="text-gray-700 text-sm mt-1">{notificationData.requestor}</p>
+              </div>
+            )}
+
+            {notificationData.requestorDepartment && (
+              <div>
+                <p className="text-gray-500 text-xs font-semibold uppercase tracking-wide">Department</p>
+                <p className="text-gray-700 text-sm mt-1">{notificationData.requestorDepartment}</p>
+              </div>
+            )}
+
+            {notificationData.schedule && (
+              <div>
+                <p className="text-gray-500 text-xs font-semibold uppercase tracking-wide">Schedule</p>
+                <p className="text-gray-700 text-sm mt-1">{notificationData.schedule}</p>
               </div>
             )}
           </div>
