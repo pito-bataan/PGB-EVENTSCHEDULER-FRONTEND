@@ -240,6 +240,36 @@ const ManageLocationPage: React.FC = () => {
     }
   };
 
+  const deleteLocationRequirement = async (locationKey: string, requirementName: string) => {
+    try {
+      const token = localStorage.getItem('authToken');
+      if (!token) {
+        toast.error('Please login to delete requirements');
+        return;
+      }
+
+      const response = await fetch(
+        `${API_BASE_URL}/location-requirements/${encodeURIComponent(locationKey)}/requirements/${encodeURIComponent(requirementName)}`,
+        {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
+
+      if (response.ok) {
+        toast.success(`Deleted "${requirementName}"`);
+        await loadAllLocationRequirements();
+      } else {
+        const error = await response.json().catch(() => ({}));
+        toast.error(error.message || 'Failed to delete requirement');
+      }
+    } catch (error) {
+      toast.error('Failed to delete requirement');
+    }
+  };
+
 
   // Generate PDF preview for specific event (instead of showing modal)
   const generateEventPdfPreview = async (eventId: string) => {
@@ -2871,6 +2901,37 @@ const ManageLocationPage: React.FC = () => {
                                   />
                                 ) : (
                                   <span className="text-sm text-gray-500">×{req.quantity}</span>
+                                )}
+
+                                {!isEditing && (
+                                  <AlertDialog>
+                                    <AlertDialogTrigger asChild>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-8 w-8 p-0 hover:bg-red-50 hover:text-red-600"
+                                      >
+                                        <Trash2 className="w-4 h-4" />
+                                      </Button>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent>
+                                      <AlertDialogHeader>
+                                        <AlertDialogTitle>Delete requirement?</AlertDialogTitle>
+                                        <AlertDialogDescription>
+                                          This will remove "{req.name}" from "{locationNamesArray.join(' + ')}".
+                                        </AlertDialogDescription>
+                                      </AlertDialogHeader>
+                                      <AlertDialogFooter>
+                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                        <AlertDialogAction
+                                          onClick={() => deleteLocationRequirement(locationKey, req.name)}
+                                        >
+                                          Delete
+                                        </AlertDialogAction>
+                                      </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                  </AlertDialog>
                                 )}
                               </div>
                             ))}

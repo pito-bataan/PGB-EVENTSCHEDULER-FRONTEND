@@ -2232,6 +2232,90 @@ const MyEventsPage: React.FC = () => {
   const handleSaveEditedEvent = async () => {
     if (!selectedEditEvent) return;
 
+    const dateTimeToLocalDate = (dateStr: string, timeStr: string) => {
+      const safeDate = String(dateStr || '').split('T')[0];
+      const safeTime = String(timeStr || '').trim();
+      return new Date(`${safeDate}T${safeTime}:00`);
+    };
+
+    const normalizeSlots = (slots: Array<{ startDate: string; startTime: string; endDate: string; endTime: string }>) => {
+      return [...slots]
+        .map((s) => ({
+          startDate: String(s.startDate || '').split('T')[0],
+          startTime: String(s.startTime || ''),
+          endDate: String(s.endDate || '').split('T')[0],
+          endTime: String(s.endTime || '')
+        }))
+        .sort((a, b) => {
+          const aKey = `${a.startDate} ${a.startTime} ${a.endTime}`;
+          const bKey = `${b.startDate} ${b.startTime} ${b.endTime}`;
+          return aKey.localeCompare(bKey);
+        });
+    };
+
+    if (selectedEditEvent.startDate && selectedEditEvent.startTime) {
+      const now = new Date();
+      const currentStart = dateTimeToLocalDate(selectedEditEvent.startDate, selectedEditEvent.startTime);
+      if (!Number.isNaN(currentStart.getTime()) && now >= currentStart) {
+        toast.error('Reschedule blocked: event is already ongoing', {
+          description: 'You cannot reschedule an event that has already started.'
+        });
+        return;
+      }
+    }
+
+    const convertedSlotsForComparison = editFormData.dateTimeSlots
+      .filter(slot => {
+        if (!slot.startTime || !slot.endTime) return false;
+        const slotDate = new Date(slot.date);
+        const startDateObj = new Date(editFormData.startDate);
+        const endDateObj = new Date(editFormData.endDate);
+        slotDate.setHours(0, 0, 0, 0);
+        startDateObj.setHours(0, 0, 0, 0);
+        endDateObj.setHours(0, 0, 0, 0);
+        return slotDate > startDateObj && slotDate <= endDateObj;
+      })
+      .map(slot => ({
+        startDate: slot.date.toISOString().split('T')[0],
+        startTime: slot.startTime,
+        endDate: slot.date.toISOString().split('T')[0],
+        endTime: slot.endTime
+      }));
+
+    const currentSlotsForComparison = (selectedEditEvent.dateTimeSlots || [])
+      .filter((slot: any) => {
+        if (!slot?.startDate || !slot?.startTime || !slot?.endTime) return false;
+        const slotDate = new Date(slot.startDate);
+        const startDateObj = new Date(selectedEditEvent.startDate);
+        const endDateObj = new Date(selectedEditEvent.endDate);
+        slotDate.setHours(0, 0, 0, 0);
+        startDateObj.setHours(0, 0, 0, 0);
+        endDateObj.setHours(0, 0, 0, 0);
+        return slotDate > startDateObj && slotDate <= endDateObj;
+      })
+      .map((slot: any) => ({
+        startDate: String(slot.startDate).split('T')[0],
+        startTime: String(slot.startTime),
+        endDate: String(slot.endDate || slot.startDate).split('T')[0],
+        endTime: String(slot.endTime)
+      }));
+
+    const isSameSchedule = (
+      String(editFormData.location || '') === String(selectedEditEvent.location || '') &&
+      String(editFormData.startDate || '').split('T')[0] === String(selectedEditEvent.startDate || '').split('T')[0] &&
+      String(editFormData.startTime || '') === String(selectedEditEvent.startTime || '') &&
+      String(editFormData.endDate || '').split('T')[0] === String(selectedEditEvent.endDate || '').split('T')[0] &&
+      String(editFormData.endTime || '') === String(selectedEditEvent.endTime || '') &&
+      JSON.stringify(normalizeSlots(convertedSlotsForComparison)) === JSON.stringify(normalizeSlots(currentSlotsForComparison))
+    );
+
+    if (isSameSchedule) {
+      toast.error('No changes detected', {
+        description: 'Your selected schedule is the same as your current schedule. Please pick a different date/time.'
+      });
+      return;
+    }
+
     // Check for time conflicts before saving
     if (editFormData.startDate && editFormData.startTime && editFormData.endTime && editFormData.location) {
       const hasConflict = venueConflictingEvents.some(event => {
