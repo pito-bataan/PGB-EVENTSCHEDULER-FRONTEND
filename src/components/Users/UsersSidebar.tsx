@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import EventCountBadge from '@/components/ui/event-count-badge';
 import { useUnreadMessages } from '@/hooks/useUnreadMessages';
 import { useMessagesStore } from '@/stores/messagesStore';
-import { useSocket } from '@/hooks/useSocket';
+import { useSocket, getGlobalSocket } from '@/hooks/useSocket';
 import { 
   Calendar, 
   CalendarDays,
@@ -23,7 +23,8 @@ import {
   FileText,
   BookOpen,
   ChevronDown,
-  ChevronRight
+  ChevronRight,
+  ClipboardList
 } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 
@@ -113,6 +114,9 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
 
   // Event Reports badge count (pending reports count)
   const [eventReportsBadgeCount, setEventReportsBadgeCount] = useState(0);
+
+  // BAC Requests pending badge count
+  const [bacRequestsPendingCount, setBacRequestsPendingCount] = useState(0);
   
   // Track if Event Reports badge has been viewed
   const [eventReportsBadgeViewed, setEventReportsBadgeViewed] = useState(
@@ -763,6 +767,29 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
     };
   };
 
+  const fetchBacPendingCount = async () => {
+    try {
+      const token = localStorage.getItem('authToken');
+      if (!token) return;
+
+      const isBAC = (currentUser.department || '').trim().toLowerCase() === 'bac';
+      if (!isBAC) {
+        setBacRequestsPendingCount(0);
+        return;
+      }
+
+      const resp = await fetch(`${API_BASE_URL}/events/bac/requests?status=pending&page=1&limit=1`, {
+        headers: getAuthHeaders()
+      });
+      const json = await resp.json().catch(() => null);
+      if (resp.ok && json?.success) {
+        setBacRequestsPendingCount(typeof json.total === 'number' ? json.total : 0);
+      }
+    } catch {
+      // keep existing count if fetch fails
+    }
+  };
+
   // Fetch department permissions
   useEffect(() => {
     const fetchPermissions = async () => {
@@ -783,9 +810,45 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
       fetchPermissions();
     }
   }, [currentUser.department]);
+
+  // Fetch BAC pending count on mount / when department changes
+  useEffect(() => {
+    if (!currentUser.id || currentUser.id === 'unknown') return;
+    fetchBacPendingCount();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser.id, currentUser.department]);
+
+  // Realtime refresh BAC pending count
+  useEffect(() => {
+    const socket = getGlobalSocket();
+    const isBAC = (currentUser.department || '').trim().toLowerCase() === 'bac';
+    if (!socket || !isBAC) return;
+
+    const handleBacRequestUpdated = () => {
+      fetchBacPendingCount();
+    };
+
+    const handleNewNotification = (data: any) => {
+      const t = data?.notificationType || data?.type;
+      if (t === 'bac-location-request') {
+        fetchBacPendingCount();
+      }
+    };
+
+    socket.on('bac-request-updated', handleBacRequestUpdated);
+    socket.on('new-notification', handleNewNotification);
+
+    return () => {
+      socket.off('bac-request-updated', handleBacRequestUpdated);
+      socket.off('new-notification', handleNewNotification);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser.department]);
   
   // Dynamic navigation items based on permissions - GROUPED
   const getNavigationGroups = () => {
+    const isBAC = (currentUser.department || '').trim().toLowerCase() === 'bac';
+
     // Group 1: Requesting of Event
     const group1 = {
       label: 'Requesting of Event',
@@ -798,6 +861,7 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
         { icon: Calendar, label: 'My Events', href: '/users/my-events' },
         { icon: MessageSquare, label: 'Messages', href: '/users/messages' },
         { icon: FileText, label: 'Event Reports', href: '/users/event-reports' },
+        ...(isBAC ? [{ icon: ClipboardList, label: 'BAC Requests', href: '/users/bac-requests' }] : []),
       ]
     };
 
@@ -949,6 +1013,7 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
               const isRequestEvent = item.label === 'Request Event';
               const isMyEvents = item.label === 'My Events';
               const isEventReports = item.label === 'Event Reports';
+              const isBacRequests = item.label === 'BAC Requests';
               const totalEventCount = isMyCalendar ? eventCount : 0;
               const hasSubmenu = item.hasSubmenu && item.submenu;
               const isSubmenuOpen = isRequestEvent && requestEventOpen;
@@ -1043,6 +1108,13 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
                   {isEventReports && eventReportsBadgeCount > 0 && !isCollapsed && (
                     <div className="absolute -top-1 -right-1 bg-red-500 text-white text-xs px-1.5 py-0.5 min-w-[20px] h-5 flex items-center justify-center rounded-full">
                       {eventReportsBadgeCount > 99 ? '99+' : eventReportsBadgeCount}
+                    </div>
+                  )}
+
+                  {/* BAC Requests Pending Count Badge */}
+                  {isBacRequests && bacRequestsPendingCount > 0 && !isCollapsed && (
+                    <div className="absolute -top-1 -right-1 bg-red-500 text-white text-xs px-1.5 py-0.5 min-w-[20px] h-5 flex items-center justify-center rounded-full">
+                      {bacRequestsPendingCount > 99 ? '99+' : bacRequestsPendingCount}
                     </div>
                   )}
                   </div>

@@ -147,6 +147,9 @@ const AllEventsPage: React.FC = () => {
 
   // Local state for UI
   const [showDescription, setShowDescription] = useState(false);
+  const [showBacReasonDialog, setShowBacReasonDialog] = useState(false);
+  const [bacReasonEventTitle, setBacReasonEventTitle] = useState('');
+  const [bacReasonText, setBacReasonText] = useState('');
   const [selectedEvents, setSelectedEvents] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<string>('all');
   const [enableEventDeletion, setEnableEventDeletion] = useState(false);
@@ -382,6 +385,50 @@ const AllEventsPage: React.FC = () => {
           className: 'bg-gray-100 text-gray-700'
         };
     }
+  };
+
+  const isBacLocation = (location?: string) => {
+    return String(location || '').trim() === '5th Flr. Training Room 1 (BAC)';
+  };
+
+  const renderBacApprovalBadge = (event: any) => {
+    if (!isBacLocation(event?.location)) {
+      return <span className="text-xs text-gray-400">—</span>;
+    }
+
+    const raw = typeof event?.bacApprovalStatus === 'string' ? event.bacApprovalStatus.toLowerCase() : 'pending';
+
+    if (raw === 'approved') {
+      return (
+        <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200">
+          BAC Approved
+        </Badge>
+      );
+    }
+
+    if (raw === 'rejected') {
+      return (
+        <button
+          type="button"
+          className="inline-flex"
+          onClick={() => {
+            setBacReasonEventTitle(String(event?.eventTitle || 'Event'));
+            setBacReasonText(String(event?.bacNotes || 'No reason provided.'));
+            setShowBacReasonDialog(true);
+          }}
+        >
+          <Badge variant="outline" className="text-xs bg-red-50 text-red-700 border-red-200 cursor-pointer">
+            BAC Rejected
+          </Badge>
+        </button>
+      );
+    }
+
+    return (
+      <Badge variant="outline" className="text-xs bg-amber-50 text-amber-800 border-amber-200">
+        BAC Pending
+      </Badge>
+    );
   };
 
   // Format time
@@ -954,6 +1001,23 @@ const AllEventsPage: React.FC = () => {
 
   return (
     <div className="p-6 max-w-full mx-auto">
+      <Dialog open={showBacReasonDialog} onOpenChange={setShowBacReasonDialog}>
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>BAC Rejection Reason</DialogTitle>
+            <DialogDescription>{bacReasonEventTitle}</DialogDescription>
+          </DialogHeader>
+          <div className="rounded-md border bg-white p-3 text-sm text-gray-800 whitespace-pre-wrap">
+            {bacReasonText}
+          </div>
+          <div className="flex justify-end">
+            <Button type="button" variant="outline" onClick={() => setShowBacReasonDialog(false)}>
+              Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Card className="shadow-lg">
         <CardHeader className="pb-4">
           <div className="flex items-center justify-between">
@@ -1201,7 +1265,8 @@ const AllEventsPage: React.FC = () => {
                     <TableHead className="w-[200px]">Event</TableHead>
                     <TableHead>Requestor</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead>Date & Time</TableHead>
+                    <TableHead>BAC</TableHead>
+                    <TableHead>Date &amp; Time</TableHead>
                     <TableHead>Location</TableHead>
                     <TableHead>Participants</TableHead>
                     <TableHead className="w-[90px]">WITH GOV</TableHead>
@@ -1211,7 +1276,7 @@ const AllEventsPage: React.FC = () => {
                 <TableBody>
                   {filteredEvents.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={enableEventDeletion ? 10 : 9} className="text-center py-8 text-gray-500">
+                      <TableCell colSpan={enableEventDeletion ? 11 : 10} className="text-center py-8 text-gray-500">
                         No events found
                       </TableCell>
                     </TableRow>
@@ -1308,6 +1373,9 @@ const AllEventsPage: React.FC = () => {
                                 {statusInfo.label}
                               </Badge>
                             )}
+                          </TableCell>
+                          <TableCell>
+                            {renderBacApprovalBadge(event)}
                           </TableCell>
                           <TableCell>
                             <div className="text-sm">

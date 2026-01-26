@@ -345,6 +345,8 @@ export default function GlobalNotificationSystem() {
       // Check notification type
       const isStatusUpdate = notificationData.type === 'status_update' || notificationData.notificationType === 'status_update';
       const isEventStatusUpdate = notificationData.type === 'event_status_update' || notificationData.notificationType === 'event_status_update';
+
+      const isBacLocationRequest = notificationType === 'bac-location-request';
       
       // Fallback: Check if this is an event status update by looking at the data
       // If notification has eventStatus field or status field with approved/rejected/cancelled
@@ -358,6 +360,11 @@ export default function GlobalNotificationSystem() {
       // Determine notification title and message
       let notificationTitle = "New Event Notification";
       let notificationMessage = notificationData.message || `New event "${eventTitle}" notification`;
+
+      if (isBacLocationRequest && String(userDepartment || '').trim().toLowerCase() === 'bac') {
+        notificationTitle = 'New BAC Location Request';
+        notificationMessage = `"${eventTitle}"\nDepartment: ${notificationData.requestorDepartment || 'Unknown'}\nSchedule: ${notificationData.schedule || 'N/A'}\nLocation: ${notificationData.location || 'N/A'}`;
+      } else
       
       if (isEventStatusUpdate || isEventStatusUpdateFallback) {
         // Event status update (approved/rejected/cancelled by admin)
@@ -426,7 +433,7 @@ export default function GlobalNotificationSystem() {
           onClick={() => {
             toast.dismiss(t);
             // Navigate to dashboard or open notification
-            window.location.href = '/users/dashboard';
+            window.location.href = isBacLocationRequest ? '/users/bac-requests' : '/users/dashboard';
           }}
         >
           {/* Header with gradient background */}

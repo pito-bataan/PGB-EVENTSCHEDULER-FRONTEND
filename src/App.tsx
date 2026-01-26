@@ -17,6 +17,7 @@ import UserAllEventsPage from './components/Users/AllEventsPage'
 import EventReportsPage from './components/Users/EventReportsPage'
 import RequestEventGuidePage from './components/Users/RequestEventGuidePage'
 import LocationAvailabilityCalendarPage from './components/Users/LocationAvailabilityCalendarPage'
+import BacRequestsPage from './components/Users/BacRequestsPage'
 import AdminMainLayout from './components/Admin/AdminMainLayout'
 import AdminDashboard from './components/Admin/AdminDashboard'
 import AllEventsPage from './components/Admin/AllEventsPage'
@@ -155,6 +156,7 @@ function App() {
                   <Route path="tagged-departments" element={<TaggedDepartmentPage />} />
                   <Route path="event-reports" element={<EventReportsPage />} />
                   <Route path="request-event-guide" element={<RequestEventGuidePage />} />
+                  <Route path="bac-requests" element={<BacRequestsPage />} />
                   <Route path="" element={<Navigate to="dashboard" replace />} />
                 </Routes>
               </MainLayout>

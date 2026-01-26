@@ -60,6 +60,11 @@ export interface Event {
   status: 'draft' | 'submitted' | 'approved' | 'rejected' | 'completed' | 'cancelled';
   reason?: string;
   submittedAt?: string;
+
+  bacApprovalStatus?: 'pending' | 'approved' | 'rejected';
+  bacApprovedAt?: string;
+  bacApprovedBy?: string;
+  bacNotes?: string;
   createdBy: {
     _id: string;
     name: string;
