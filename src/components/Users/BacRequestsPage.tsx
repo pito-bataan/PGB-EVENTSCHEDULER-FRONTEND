@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { toast } from 'sonner';
+import { format } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -19,6 +20,7 @@ import {
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
 import { useSocket, getGlobalSocket } from '@/hooks/useSocket';
 import { Check, X, ChevronLeft, ChevronRight, Search, RefreshCw } from 'lucide-react';
 
@@ -31,6 +33,12 @@ type BacRequestRow = {
   requestorName: string;
   eventTitle: string;
   location: string;
+  startDate: string;
+  endDate: string;
+  startTime: string;
+  endTime: string;
+  isMultiDay: boolean;
+  dateTimeSlots?: Array<{ date: string; startTime: string; endTime: string }>;
   scheduleLabel: string;
   status: BacRequestStatus;
   submittedAtLabel: string;
@@ -111,14 +119,58 @@ const BacRequestsPage: React.FC = () => {
     };
   };
 
+  const formatTime12h = (time: string) => {
+    if (!time) return '';
+    const [hours, minutes] = time.split(':');
+    const hour = parseInt(hours, 10);
+    if (Number.isNaN(hour) || !minutes) return time;
+    const ampm = hour >= 12 ? 'PM' : 'AM';
+    const displayHour = hour % 12 || 12;
+    return `${displayHour}:${minutes} ${ampm}`;
+  };
+
+  const safeFormatDate = (dateStr: string) => {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    if (Number.isNaN(d.getTime())) return dateStr;
+    return format(d, 'MMM dd, yyyy');
+  };
+
+  const buildMultiDaySlots = (row: BacRequestRow) => {
+    const slotsFromApi = Array.isArray(row.dateTimeSlots) ? row.dateTimeSlots : [];
+    if (slotsFromApi.length > 0) return slotsFromApi;
+
+    if (!row.startDate || !row.endDate) return [];
+    const start = new Date(row.startDate);
+    const end = new Date(row.endDate);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return [];
+
+    const out: Array<{ date: string; startTime: string; endTime: string }> = [];
+    const d = new Date(start);
+    d.setDate(d.getDate() + 1);
+    while (d <= end) {
+      out.push({
+        date: d.toISOString().split('T')[0],
+        startTime: row.startTime,
+        endTime: row.endTime
+      });
+      d.setDate(d.getDate() + 1);
+    }
+    return out;
+  };
+
   const formatScheduleLabel = (evt: any) => {
     const startDate = evt?.startDate ? String(evt.startDate).split('T')[0] : '';
     const endDate = evt?.endDate ? String(evt.endDate).split('T')[0] : '';
     const startTime = String(evt?.startTime || '');
     const endTime = String(evt?.endTime || '');
     if (!startDate || !startTime || !endDate || !endTime) return 'N/A';
-    if (startDate === endDate) return `${startDate} ${startTime} - ${endTime}`;
-    return `${startDate} ${startTime} - ${endDate} ${endTime}`;
+    const startDateLabel = safeFormatDate(startDate);
+    const endDateLabel = safeFormatDate(endDate);
+    const startTimeLabel = formatTime12h(startTime);
+    const endTimeLabel = formatTime12h(endTime);
+    if (startDate === endDate) return `${startDateLabel} ${startTimeLabel} - ${endTimeLabel}`;
+    return `${startDateLabel} ${startTimeLabel} - ${endDateLabel} ${endTimeLabel}`;
   };
 
   const formatSubmittedAtLabel = (evt: any) => {
@@ -131,6 +183,21 @@ const BacRequestsPage: React.FC = () => {
     const bacStatusRaw = typeof evt?.bacApprovalStatus === 'string' ? evt.bacApprovalStatus.toLowerCase() : 'pending';
     const status: BacRequestStatus = (bacStatusRaw === 'approved' || bacStatusRaw === 'rejected') ? bacStatusRaw : 'pending';
 
+    const startDate = evt?.startDate ? String(evt.startDate).split('T')[0] : '';
+    const endDate = evt?.endDate ? String(evt.endDate).split('T')[0] : '';
+    const startTime = String(evt?.startTime || '');
+    const endTime = String(evt?.endTime || '');
+    const isMultiDay = Boolean(startDate && endDate && startDate !== endDate);
+    const dateTimeSlots = Array.isArray(evt?.dateTimeSlots)
+      ? evt.dateTimeSlots
+          .map((s: any) => ({
+            date: s?.date ? String(s.date).split('T')[0] : '',
+            startTime: String(s?.startTime || ''),
+            endTime: String(s?.endTime || ''),
+          }))
+          .filter((s: any) => s.date && s.startTime && s.endTime)
+      : undefined;
+
     return {
       id: String(evt?._id || evt?.id || ''),
       eventId: String(evt?._id || evt?.id || ''),
@@ -138,6 +205,12 @@ const BacRequestsPage: React.FC = () => {
       requestorName: String(evt?.requestor || ''),
       eventTitle: String(evt?.eventTitle || 'Untitled'),
       location: String(evt?.location || ''),
+      startDate,
+      endDate,
+      startTime,
+      endTime,
+      isMultiDay,
+      dateTimeSlots,
       scheduleLabel: formatScheduleLabel(evt),
       status,
       submittedAtLabel: formatSubmittedAtLabel(evt)
@@ -474,7 +547,44 @@ const BacRequestsPage: React.FC = () => {
                           <div className="text-xs text-gray-500">{row.location}</div>
                         </div>
                       </TableCell>
-                      <TableCell className="text-sm text-gray-700">{row.scheduleLabel}</TableCell>
+                      <TableCell className="text-sm text-gray-700">
+                        {row.isMultiDay ? (
+                          <div className="flex items-center gap-2">
+                            <span>
+                              {safeFormatDate(row.startDate)} {formatTime12h(row.startTime)}
+                            </span>
+                            <HoverCard openDelay={200}>
+                              <HoverCardTrigger asChild>
+                                <Badge
+                                  variant="secondary"
+                                  className="text-[10px] bg-blue-100 text-blue-700 border border-blue-200 cursor-pointer hover:bg-blue-200 whitespace-nowrap px-2 py-0"
+                                >
+                                  Multi-day
+                                </Badge>
+                              </HoverCardTrigger>
+                              <HoverCardContent className="w-72" side="right" align="start" sideOffset={6}>
+                                <div className="space-y-2">
+                                  <div className="text-[12px] font-semibold text-slate-900">Multi-Day Event Schedule</div>
+                                  <div className="space-y-1.5 text-xs text-slate-700">
+                                    <div>
+                                      <span className="font-medium">Day 1:</span> {safeFormatDate(row.startDate)} at {formatTime12h(row.startTime)} - {formatTime12h(row.endTime)}
+                                    </div>
+                                    {buildMultiDaySlots(row).map((slot, idx) => (
+                                      <div key={`${slot.date}-${idx}`}>
+                                        <span className="font-medium">Day {idx + 2}:</span> {safeFormatDate(slot.date)} at {formatTime12h(slot.startTime)} - {formatTime12h(slot.endTime)}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              </HoverCardContent>
+                            </HoverCard>
+                          </div>
+                        ) : (
+                          <span>
+                            {safeFormatDate(row.startDate)} {formatTime12h(row.startTime)} - {formatTime12h(row.endTime)}
+                          </span>
+                        )}
+                      </TableCell>
                       <TableCell>
                         {row.status === 'pending' && (
                           <Badge variant="secondary" className="bg-amber-100 text-amber-800">
