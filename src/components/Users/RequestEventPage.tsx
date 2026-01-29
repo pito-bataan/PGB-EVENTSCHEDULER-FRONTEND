@@ -180,6 +180,7 @@ const RequestEventPage: React.FC = () => {
   });
   const [conflictingEvents, setConflictingEvents] = useState<any[]>([]);
   const [venueConflictingEvents, setVenueConflictingEvents] = useState<any[]>([]);
+  const [eventsByDate, setEventsByDate] = useState<Record<string, any[]>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [noDepartmentsNeeded, setNoDepartmentsNeeded] = useState(false);
   const [showPgsoDefaultsDialog, setShowPgsoDefaultsDialog] = useState(false);
@@ -243,6 +244,36 @@ const RequestEventPage: React.FC = () => {
 
 
   const defaultRequirements: DepartmentRequirements = {};
+
+  // Compute list of dates currently selected for the event (for multi-day checks)
+  const getDatesToCheck = () => {
+    const dates: Date[] = [];
+    if (!formData.startDate) return dates;
+    dates.push(new Date(formData.startDate));
+    if (formData.endDate && formData.endDate.getTime() !== formData.startDate.getTime()) {
+      const cur = new Date(formData.startDate);
+      const end = new Date(formData.endDate);
+      cur.setDate(cur.getDate() + 1);
+      while (cur <= end) {
+        dates.push(new Date(cur));
+        cur.setDate(cur.getDate() + 1);
+      }
+    }
+    return dates;
+  };
+
+  // Check if a named room is unavailable on any selected date (ignores time; date-level blocking)
+  const isRoomUnavailableOnSelectedDates = (roomName: string) => {
+    const dates = getDatesToCheck();
+    if (dates.length === 0) return false;
+    return dates.some((d) => {
+      const dayEvents = eventsByDate[d.toDateString()] || [];
+      return dayEvents.some((e: any) => {
+        const eventLocations = e.locations && Array.isArray(e.locations) && e.locations.length > 0 ? e.locations : [e.location];
+        return eventLocations.some((loc: string) => locationsConflict(loc, roomName));
+      });
+    });
+  };
 
   // Fetch departments from API on component mount
   useEffect(() => {
@@ -449,28 +480,37 @@ const RequestEventPage: React.FC = () => {
       return loc1 === loc2;
     }
     
-    // Check Conference Room hierarchy (4th Conference Room 1, 2, 3)
+    // Check Conference Room hierarchy (e.g., "4th Flr. Conference Room 1/2/3" and optional "(Entire)")
     const isConferenceRoom1 = loc1.includes('Conference Room');
     const isConferenceRoom2 = loc2.includes('Conference Room');
-    
+
     if (isConferenceRoom1 && isConferenceRoom2) {
-      // Extract the base conference room name (e.g., "4th Conference Room")
-      const getBaseRoom = (loc: string) => {
-        // Match patterns like "4th Conference Room 1", "4th Conference Room 2", etc.
-        const match = loc.match(/(.+Conference Room)\s*\d+/);
-        if (match) return match[1].trim();
-        // If no number, it might be the entire room
-        return loc.trim();
+      // Parse base, number, and entire flag
+      const parseConfRoom = (loc: string) => {
+        const entire = /\(\s*Entire\s*\)/i.test(loc);
+        // Capture base like "4th Flr. Conference Room" and optional number
+        const m = loc.match(/^(.*?Conference Room)(?:\s*(\d+))?(?:\s*\(\s*Entire\s*\))?$/i);
+        const base = m ? m[1].trim() : loc.trim();
+        const num = m && m[2] ? parseInt(m[2], 10) : undefined;
+        return { base, num, entire };
       };
-      
-      const baseRoom1 = getBaseRoom(loc1);
-      const baseRoom2 = getBaseRoom(loc2);
-      
-      // Different conference rooms don't conflict
-      if (baseRoom1 !== baseRoom2) return false;
-      
-      // Same base room - they conflict (e.g., "4th Conference Room 1" conflicts with "4th Conference Room 2")
-      return true;
+
+      const a = parseConfRoom(loc1);
+      const b = parseConfRoom(loc2);
+
+      // Different conference room groups do not conflict
+      if (a.base !== b.base) return false;
+
+      // If either is the Entire room, it conflicts with any room in the same base
+      if (a.entire || b.entire) return true;
+
+      // If both are numbered rooms, only same number conflicts
+      if (a.num !== undefined && b.num !== undefined) {
+        return a.num === b.num;
+      }
+
+      // If one has no number and is not marked Entire, be conservative: treat as exact mismatch (no conflict)
+      return false;
     }
     
     return false;
@@ -523,6 +563,26 @@ const RequestEventPage: React.FC = () => {
           }
           
           
+          // Build a map of events by each date in the range (regardless of location)
+          const map: Record<string, any[]> = {};
+          datesToCheck.forEach((d) => {
+            map[d.toDateString()] = [];
+          });
+
+          events.forEach((event: any) => {
+            if (!event.startDate || !event.startTime || !event.endTime) return;
+            const mainDateStr = new Date(event.startDate).toDateString();
+            if (map[mainDateStr]) map[mainDateStr].push(event);
+            if (event.dateTimeSlots && Array.isArray(event.dateTimeSlots)) {
+              event.dateTimeSlots.forEach((slot: any) => {
+                if (!slot.startDate || !slot.startTime || !slot.endTime) return;
+                const slotDateStr = new Date(slot.startDate).toDateString();
+                if (map[slotDateStr]) map[slotDateStr].push({ ...event, startDate: slot.startDate, startTime: slot.startTime, endTime: slot.endTime });
+              });
+            }
+          });
+          setEventsByDate(map);
+
           // Filter events that are on ANY of the dates in the range AND have location conflicts
           const conflicts = events.filter((event: any) => {
             if (!event.startDate || !event.location) return false;
@@ -570,6 +630,7 @@ const RequestEventPage: React.FC = () => {
         if (!showScheduleModal) {
           // Clear conflicts when modal is closed
           setVenueConflictingEvents([]);
+          setEventsByDate({});
         }
       }
     };
@@ -4021,42 +4082,78 @@ const RequestEventPage: React.FC = () => {
                   
                   {/* Add Room Buttons */}
                   <div className="flex flex-wrap gap-2">
-                    {!formData.locations.includes('4th Flr. Conference Room 1') && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleAddConferenceRoom(1)}
-                        className="text-xs h-8 px-3 hover:bg-gray-50"
-                      >
-                        <Plus className="w-3.5 h-3.5 mr-1.5" />
-                        4th Flr. Conference Room 1
-                      </Button>
-                    )}
-                    {!formData.locations.includes('4th Flr. Conference Room 2') && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleAddConferenceRoom(2)}
-                        className="text-xs h-8 px-3 hover:bg-gray-50"
-                      >
-                        <Plus className="w-3.5 h-3.5 mr-1.5" />
-                        4th Flr. Conference Room 2
-                      </Button>
-                    )}
-                    {!formData.locations.includes('4th Flr. Conference Room 3') && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleAddConferenceRoom(3)}
-                        className="text-xs h-8 px-3 hover:bg-gray-50"
-                      >
-                        <Plus className="w-3.5 h-3.5 mr-1.5" />
-                        4th Flr. Conference Room 3
-                      </Button>
-                    )}
+                    {!formData.locations.includes('4th Flr. Conference Room 1') && (() => {
+                      const roomName = '4th Flr. Conference Room 1';
+                      const unavailable = isRoomUnavailableOnSelectedDates(roomName);
+                      return (
+                        <div className="relative">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleAddConferenceRoom(1)}
+                            disabled={unavailable}
+                            className={`text-xs h-8 px-3 ${unavailable ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-50'}`}
+                          >
+                            <Plus className="w-3.5 h-3.5 mr-1.5" />
+                            4th Flr. Conference Room 1
+                          </Button>
+                          {unavailable && (
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                              <span className="text-[10px] font-medium bg-red-100 text-red-700 border border-red-200 rounded px-2 py-0.5">Unavailable on this date</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                    {!formData.locations.includes('4th Flr. Conference Room 2') && (() => {
+                      const roomName = '4th Flr. Conference Room 2';
+                      const unavailable = isRoomUnavailableOnSelectedDates(roomName);
+                      return (
+                        <div className="relative">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleAddConferenceRoom(2)}
+                            disabled={unavailable}
+                            className={`text-xs h-8 px-3 ${unavailable ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-50'}`}
+                          >
+                            <Plus className="w-3.5 h-3.5 mr-1.5" />
+                            4th Flr. Conference Room 2
+                          </Button>
+                          {unavailable && (
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                              <span className="text-[10px] font-medium bg-red-100 text-red-700 border border-red-200 rounded px-2 py-0.5">Unavailable on this date</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                    {!formData.locations.includes('4th Flr. Conference Room 3') && (() => {
+                      const roomName = '4th Flr. Conference Room 3';
+                      const unavailable = isRoomUnavailableOnSelectedDates(roomName);
+                      return (
+                        <div className="relative">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleAddConferenceRoom(3)}
+                            disabled={unavailable}
+                            className={`text-xs h-8 px-3 ${unavailable ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-50'}`}
+                          >
+                            <Plus className="w-3.5 h-3.5 mr-1.5" />
+                            4th Flr. Conference Room 3
+                          </Button>
+                          {unavailable && (
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                              <span className="text-[10px] font-medium bg-red-100 text-red-700 border border-red-200 rounded px-2 py-0.5">Unavailable on this date</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               )}
@@ -4093,60 +4190,96 @@ const RequestEventPage: React.FC = () => {
                   
                   {/* Add Section Buttons */}
                   <div className="flex flex-wrap gap-2">
-                    {!formData.locations.includes('Pavilion - Kagitingan Hall - Section A') && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={async () => {
-                          const sectionName = 'Pavilion - Kagitingan Hall - Section A';
-                          if (!formData.locations.includes(sectionName)) {
-                            await fetchAvailableDatesForLocation(sectionName);
-                            handleInputChange('locations', [...formData.locations, sectionName]);
-                          }
-                        }}
-                        className="text-xs h-8 px-3 hover:bg-gray-50"
-                      >
-                        <Plus className="w-3.5 h-3.5 mr-1.5" />
-                        Section A
-                      </Button>
-                    )}
-                    {!formData.locations.includes('Pavilion - Kagitingan Hall - Section B') && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={async () => {
-                          const sectionName = 'Pavilion - Kagitingan Hall - Section B';
-                          if (!formData.locations.includes(sectionName)) {
-                            await fetchAvailableDatesForLocation(sectionName);
-                            handleInputChange('locations', [...formData.locations, sectionName]);
-                          }
-                        }}
-                        className="text-xs h-8 px-3 hover:bg-gray-50"
-                      >
-                        <Plus className="w-3.5 h-3.5 mr-1.5" />
-                        Section B
-                      </Button>
-                    )}
-                    {!formData.locations.includes('Pavilion - Kagitingan Hall - Section C') && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={async () => {
-                          const sectionName = 'Pavilion - Kagitingan Hall - Section C';
-                          if (!formData.locations.includes(sectionName)) {
-                            await fetchAvailableDatesForLocation(sectionName);
-                            handleInputChange('locations', [...formData.locations, sectionName]);
-                          }
-                        }}
-                        className="text-xs h-8 px-3 hover:bg-gray-50"
-                      >
-                        <Plus className="w-3.5 h-3.5 mr-1.5" />
-                        Section C
-                      </Button>
-                    )}
+                    {!formData.locations.includes('Pavilion - Kagitingan Hall - Section A') && (() => {
+                      const section = 'Pavilion - Kagitingan Hall - Section A';
+                      const unavailable = isRoomUnavailableOnSelectedDates(section);
+                      return (
+                        <div className="relative">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={unavailable}
+                            onClick={async () => {
+                              if (unavailable) return;
+                              if (!formData.locations.includes(section)) {
+                                await fetchAvailableDatesForLocation(section);
+                                handleInputChange('locations', [...formData.locations, section]);
+                              }
+                            }}
+                            className={`text-xs h-8 px-3 ${unavailable ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-50'}`}
+                          >
+                            <Plus className="w-3.5 h-3.5 mr-1.5" />
+                            Section A
+                          </Button>
+                          {unavailable && (
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                              <span className="text-[10px] font-medium bg-red-100 text-red-700 border border-red-200 rounded px-2 py-0.5">Unavailable on this date</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                    {!formData.locations.includes('Pavilion - Kagitingan Hall - Section B') && (() => {
+                      const section = 'Pavilion - Kagitingan Hall - Section B';
+                      const unavailable = isRoomUnavailableOnSelectedDates(section);
+                      return (
+                        <div className="relative">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={unavailable}
+                            onClick={async () => {
+                              if (unavailable) return;
+                              if (!formData.locations.includes(section)) {
+                                await fetchAvailableDatesForLocation(section);
+                                handleInputChange('locations', [...formData.locations, section]);
+                              }
+                            }}
+                            className={`text-xs h-8 px-3 ${unavailable ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-50'}`}
+                          >
+                            <Plus className="w-3.5 h-3.5 mr-1.5" />
+                            Section B
+                          </Button>
+                          {unavailable && (
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                              <span className="text-[10px] font-medium bg-red-100 text-red-700 border border-red-200 rounded px-2 py-0.5">Unavailable on this date</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                    {!formData.locations.includes('Pavilion - Kagitingan Hall - Section C') && (() => {
+                      const section = 'Pavilion - Kagitingan Hall - Section C';
+                      const unavailable = isRoomUnavailableOnSelectedDates(section);
+                      return (
+                        <div className="relative">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={unavailable}
+                            onClick={async () => {
+                              if (unavailable) return;
+                              if (!formData.locations.includes(section)) {
+                                await fetchAvailableDatesForLocation(section);
+                                handleInputChange('locations', [...formData.locations, section]);
+                              }
+                            }}
+                            className={`text-xs h-8 px-3 ${unavailable ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-50'}`}
+                          >
+                            <Plus className="w-3.5 h-3.5 mr-1.5" />
+                            Section C
+                          </Button>
+                          {unavailable && (
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                              <span className="text-[10px] font-medium bg-red-100 text-red-700 border border-red-200 rounded px-2 py-0.5">Unavailable on this date</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               )}
@@ -4183,60 +4316,96 @@ const RequestEventPage: React.FC = () => {
                   
                   {/* Add Section Buttons */}
                   <div className="flex flex-wrap gap-2">
-                    {!formData.locations.includes('Pavilion - Kalayaan Ballroom - Section A') && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={async () => {
-                          const sectionName = 'Pavilion - Kalayaan Ballroom - Section A';
-                          if (!formData.locations.includes(sectionName)) {
-                            await fetchAvailableDatesForLocation(sectionName);
-                            handleInputChange('locations', [...formData.locations, sectionName]);
-                          }
-                        }}
-                        className="text-xs h-8 px-3 hover:bg-gray-50"
-                      >
-                        <Plus className="w-3.5 h-3.5 mr-1.5" />
-                        Section A
-                      </Button>
-                    )}
-                    {!formData.locations.includes('Pavilion - Kalayaan Ballroom - Section B') && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={async () => {
-                          const sectionName = 'Pavilion - Kalayaan Ballroom - Section B';
-                          if (!formData.locations.includes(sectionName)) {
-                            await fetchAvailableDatesForLocation(sectionName);
-                            handleInputChange('locations', [...formData.locations, sectionName]);
-                          }
-                        }}
-                        className="text-xs h-8 px-3 hover:bg-gray-50"
-                      >
-                        <Plus className="w-3.5 h-3.5 mr-1.5" />
-                        Section B
-                      </Button>
-                    )}
-                    {!formData.locations.includes('Pavilion - Kalayaan Ballroom - Section C') && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={async () => {
-                          const sectionName = 'Pavilion - Kalayaan Ballroom - Section C';
-                          if (!formData.locations.includes(sectionName)) {
-                            await fetchAvailableDatesForLocation(sectionName);
-                            handleInputChange('locations', [...formData.locations, sectionName]);
-                          }
-                        }}
-                        className="text-xs h-8 px-3 hover:bg-gray-50"
-                      >
-                        <Plus className="w-3.5 h-3.5 mr-1.5" />
-                        Section C
-                      </Button>
-                    )}
+                    {!formData.locations.includes('Pavilion - Kalayaan Ballroom - Section A') && (() => {
+                      const section = 'Pavilion - Kalayaan Ballroom - Section A';
+                      const unavailable = isRoomUnavailableOnSelectedDates(section);
+                      return (
+                        <div className="relative">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={unavailable}
+                            onClick={async () => {
+                              if (unavailable) return;
+                              if (!formData.locations.includes(section)) {
+                                await fetchAvailableDatesForLocation(section);
+                                handleInputChange('locations', [...formData.locations, section]);
+                              }
+                            }}
+                            className={`text-xs h-8 px-3 ${unavailable ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-50'}`}
+                          >
+                            <Plus className="w-3.5 h-3.5 mr-1.5" />
+                            Section A
+                          </Button>
+                          {unavailable && (
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                              <span className="text-[10px] font-medium bg-red-100 text-red-700 border border-red-200 rounded px-2 py-0.5">Unavailable on this date</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                    {!formData.locations.includes('Pavilion - Kalayaan Ballroom - Section B') && (() => {
+                      const section = 'Pavilion - Kalayaan Ballroom - Section B';
+                      const unavailable = isRoomUnavailableOnSelectedDates(section);
+                      return (
+                        <div className="relative">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={unavailable}
+                            onClick={async () => {
+                              if (unavailable) return;
+                              if (!formData.locations.includes(section)) {
+                                await fetchAvailableDatesForLocation(section);
+                                handleInputChange('locations', [...formData.locations, section]);
+                              }
+                            }}
+                            className={`text-xs h-8 px-3 ${unavailable ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-50'}`}
+                          >
+                            <Plus className="w-3.5 h-3.5 mr-1.5" />
+                            Section B
+                          </Button>
+                          {unavailable && (
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                              <span className="text-[10px] font-medium bg-red-100 text-red-700 border border-red-200 rounded px-2 py-0.5">Unavailable on this date</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                    {!formData.locations.includes('Pavilion - Kalayaan Ballroom - Section C') && (() => {
+                      const section = 'Pavilion - Kalayaan Ballroom - Section C';
+                      const unavailable = isRoomUnavailableOnSelectedDates(section);
+                      return (
+                        <div className="relative">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={unavailable}
+                            onClick={async () => {
+                              if (unavailable) return;
+                              if (!formData.locations.includes(section)) {
+                                await fetchAvailableDatesForLocation(section);
+                                handleInputChange('locations', [...formData.locations, section]);
+                              }
+                            }}
+                            className={`text-xs h-8 px-3 ${unavailable ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-50'}`}
+                          >
+                            <Plus className="w-3.5 h-3.5 mr-1.5" />
+                            Section C
+                          </Button>
+                          {unavailable && (
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                              <span className="text-[10px] font-medium bg-red-100 text-red-700 border border-red-200 rounded px-2 py-0.5">Unavailable on this date</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               )}
