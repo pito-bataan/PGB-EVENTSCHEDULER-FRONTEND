@@ -585,7 +585,7 @@ const RequestEventPage: React.FC = () => {
 
           // Filter events that are on ANY of the dates in the range AND have location conflicts
           const conflicts = events.filter((event: any) => {
-            if (!event.startDate || !event.location) return false;
+            if (!event.startDate || (!event.location && !(event.locations && Array.isArray(event.locations)))) return false;
             
             // Only check approved or submitted events
             if (event.status !== 'approved' && event.status !== 'submitted') return false;
@@ -593,8 +593,12 @@ const RequestEventPage: React.FC = () => {
             // Must have time information for requirement conflict checking
             if (!event.startTime || !event.endTime) return false;
             
-            // Check if locations conflict (Entire vs Sections logic)
-            if (!locationsConflict(formData.location, event.location)) {
+            // Check if locations conflict (Entire vs Sections logic) against ANY of the event's locations
+            const eventLocations = event.locations && Array.isArray(event.locations) && event.locations.length > 0
+              ? event.locations
+              : [event.location];
+            const hasConflict = eventLocations.some((loc: string) => locationsConflict(formData.location, loc));
+            if (!hasConflict) {
               return false; // No location conflict, skip this event
             }
             
@@ -808,59 +812,73 @@ const RequestEventPage: React.FC = () => {
   // Add additional conference room to locations array
   const handleAddConferenceRoom = async (roomNumber: 1 | 2 | 3) => {
     const roomName = `4th Flr. Conference Room ${roomNumber}`;
-    if (!formData.locations.includes(roomName)) {
-      // Fetch availability for the new conference room
-      await fetchAvailableDatesForLocation(roomName);
-      
-      const updatedLocations = [...formData.locations, roomName];
-      handleInputChange('locations', updatedLocations);
-      handleInputChange('multipleLocations', true);
-      
-      // Check if these multiple locations are grouped together with shared requirements
-      try {
-        setLoadingLocationRequirements(true);
-        setShowLocationRequirementsModal(true);
-        
-        const token = localStorage.getItem('authToken');
-        if (token) {
-          const response = await fetch(`${API_BASE_URL}/location-requirements`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-          });
-          
-          if (response.ok) {
-            const allRequirements = await response.json();
-            // Find a requirement group that contains ALL the selected locations
-            const groupedRequirement = allRequirements.find((req: any) => {
-              if (!req.locationNames || !Array.isArray(req.locationNames)) return false;
-              // Check if all updatedLocations are in this group
-              return updatedLocations.every(loc => req.locationNames.includes(loc));
-            });
-            
-            setLoadingLocationRequirements(false);
-            
-            if (groupedRequirement && groupedRequirement.requirements.length > 0) {
-              // Show grouped requirements modal
-              setLocationRequirements(groupedRequirement.requirements);
-              setSelectedLocation(updatedLocations.join(' + '));
-              toast.success(`${roomName} added - viewing shared requirements`);
-            } else {
-              setShowLocationRequirementsModal(false);
-              toast.success(`${roomName} added to your booking`);
-            }
-          } else {
-            setLoadingLocationRequirements(false);
-            setShowLocationRequirementsModal(false);
-          }
-        }
-      } catch (error) {
-        console.error('Error checking grouped requirements:', error);
-        setLoadingLocationRequirements(false);
-        setShowLocationRequirementsModal(false);
-        toast.success(`${roomName} added to your booking`);
-      }
-      
-      // Note: All conference rooms share the same availability since they're in the same building
+    // Always fetch availability for context
+    await fetchAvailableDatesForLocation(roomName);
+
+    // If current primary is a conference room and different from new one, switch primary and remove old from list
+    const primary = formData.location;
+    const isPrimaryConference = typeof primary === 'string' && primary.includes('4th Flr. Conference Room');
+
+    let updatedLocations = [...formData.locations];
+    if (isPrimaryConference && primary !== roomName) {
+      // Remove old primary from selections if present
+      updatedLocations = updatedLocations.filter((loc) => loc !== primary);
+      // Switch primary to the new room
+      handleInputChange('location', roomName);
     }
+
+    // Ensure the new room is in selections (avoid duplicates)
+    if (!updatedLocations.includes(roomName)) {
+      updatedLocations.push(roomName);
+    }
+
+    handleInputChange('locations', updatedLocations);
+    handleInputChange('multipleLocations', true);
+
+    // Check if these multiple locations are grouped together with shared requirements
+    try {
+      setLoadingLocationRequirements(true);
+      setShowLocationRequirementsModal(true);
+
+      const token = localStorage.getItem('authToken');
+      if (token) {
+        const response = await fetch(`${API_BASE_URL}/location-requirements`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (response.ok) {
+          const allRequirements = await response.json();
+          // Find a requirement group that contains ALL the selected locations
+          const groupedRequirement = allRequirements.find((req: any) => {
+            if (!req.locationNames || !Array.isArray(req.locationNames)) return false;
+            // Check if all updatedLocations are in this group
+            return updatedLocations.every(loc => req.locationNames.includes(loc));
+          });
+
+          setLoadingLocationRequirements(false);
+
+          if (groupedRequirement && groupedRequirement.requirements.length > 0) {
+            // Show grouped requirements modal
+            setLocationRequirements(groupedRequirement.requirements);
+            setSelectedLocation(updatedLocations.join(' + '));
+            toast.success(`${roomName} added - viewing shared requirements`);
+          } else {
+            setShowLocationRequirementsModal(false);
+            toast.success(`${roomName} added to your booking`);
+          }
+        } else {
+          setLoadingLocationRequirements(false);
+          setShowLocationRequirementsModal(false);
+        }
+      }
+    } catch (error) {
+      console.error('Error checking grouped requirements:', error);
+      setLoadingLocationRequirements(false);
+      setShowLocationRequirementsModal(false);
+      toast.success(`${roomName} added to your booking`);
+    }
+
+    // Note: All conference rooms share the same availability since they're in the same building
   };
 
   // Remove conference room from locations array
@@ -4418,27 +4436,30 @@ const RequestEventPage: React.FC = () => {
               {formData.startDate && venueConflictingEvents.length > 0 && (
                 <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
                   {(() => {
-                    // Filter events that actually booked THIS venue/location
+                    // Filter events that actually booked THIS venue/location using ANY of their locations
                     const currentLocation = formData.location || selectedLocation;
                     const venueBookers = venueConflictingEvents
                       .filter(e => {
                         if (!currentLocation) return false;
-                        if (!e.location) return false;
-                        return locationsConflict(currentLocation, e.location);
+                        const eventLocations = e.locations && Array.isArray(e.locations) && e.locations.length > 0
+                          ? e.locations
+                          : [e.location].filter(Boolean);
+                        return eventLocations.some((loc: string) => locationsConflict(currentLocation, loc));
                       })
                       .map(e => e.requestorDepartment || e.department || e.departmentName || 'Unknown Department')
                       .filter(Boolean);
 
                     // Remove duplicates
                     const uniqueBookers = Array.from(new Set(venueBookers));
+                    const displayNames = uniqueBookers.length > 0 ? uniqueBookers : ['Another department'];
 
-                    return uniqueBookers.length > 0 && (
+                    return (
                       <div className="flex items-center gap-2">
                         <Badge className="bg-orange-600 text-white text-xs px-2 py-0.5 h-5 flex-shrink-0 whitespace-nowrap">
                           VENUE
                         </Badge>
                         <p className="text-xs text-amber-900">
-                          <strong>{uniqueBookers.join(', ')}</strong> has booked this venue. Select a different time.
+                          <strong>{displayNames.join(', ')}</strong> has booked this venue. Select a different time.
                         </p>
                       </div>
                     );
