@@ -2834,7 +2834,7 @@ const MyEventsPage: React.FC = () => {
                                 Delete
                               </Button>
                             )}
-                            {(event.status === 'draft' || event.status === 'submitted') && (
+                            {(event.status === 'draft' || event.status === 'submitted' || event.status === 'approved') && (
                               <Button
                                 variant="outline"
                                 size="sm"
