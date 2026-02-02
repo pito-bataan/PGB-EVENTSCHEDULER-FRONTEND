@@ -340,11 +340,19 @@ const RequestEventPage: React.FC = () => {
           });
           
           const uniqueLocations = Array.from(locationMap.values());
-          setLocationData(uniqueLocations); // Store full location data
+          // Remove Pavilion - Kalayaan Ballroom sections A/B/C from selectable locations
+          const uniqueLocationsFiltered = uniqueLocations.filter(loc => 
+            !/^Pavilion\s-\sKalayaan\sBallroom\s-\sSection\s[ABC]$/i.test(loc.name)
+          );
+          setLocationData(uniqueLocationsFiltered); // Store filtered location data
           
-          // Extract just names for backward compatibility
-          const locationNames = uniqueLocations.map(loc => loc.name);
-          setLocations(['Add Custom Location', ...locationNames]);
+          // Extract just names for backward compatibility and filter out Kalayaan sections A/B/C
+          const locationNames = uniqueLocationsFiltered.map(loc => loc.name);
+          const filteredLocationNames = locationNames.filter(name => {
+            // Remove Pavilion - Kalayaan Ballroom sections A/B/C; keep only (Entire)
+            return !/^Pavilion\s-\sKalayaan\sBallroom\s-\sSection\s[ABC]$/i.test(name);
+          });
+          setLocations(['Add Custom Location', ...filteredLocationNames]);
         }
       } catch (error) {
         // Keep default "Add Custom Location" if fetch fails
