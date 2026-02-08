@@ -139,6 +139,7 @@ const RequestEventPage: React.FC = () => {
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(1);
   const [showCustomLocation, setShowCustomLocation] = useState(false);
+  const [pgsoCustomLocationAck, setPgsoCustomLocationAck] = useState(false);
   const [departmentSearch, setDepartmentSearch] = useState('');
   const [showRequirementsModal, setShowRequirementsModal] = useState(false);
   const [requirementsRefreshKey, setRequirementsRefreshKey] = useState(0);
@@ -241,6 +242,27 @@ const RequestEventPage: React.FC = () => {
   const [locations, setLocations] = useState<string[]>(['Add Custom Location']);
   const [locationData, setLocationData] = useState<{name: string, isCustom: boolean}[]>([]);
   const [availableDates, setAvailableDates] = useState<Date[]>([]);
+
+  const isCustomLocationSelected = React.useMemo(() => {
+    const loc = (formData.location || '').trim();
+    if (!loc) return false;
+
+    if (!locationData.length) {
+      return showCustomLocation;
+    }
+
+    const match = locationData.find((x) => x.name.toLowerCase() === loc.toLowerCase());
+    if (match) return !!match.isCustom;
+
+    // If it's not in the system list, treat it as a custom location.
+    return true;
+  }, [formData.location, locationData, showCustomLocation]);
+
+  useEffect(() => {
+    if (!isCustomLocationSelected && pgsoCustomLocationAck) {
+      setPgsoCustomLocationAck(false);
+    }
+  }, [isCustomLocationSelected, pgsoCustomLocationAck]);
 
 
   const defaultRequirements: DepartmentRequirements = {};
@@ -1692,6 +1714,12 @@ const RequestEventPage: React.FC = () => {
       formData.contactNumber.length === 11 &&
       formData.contactEmail.includes('@')
     );
+
+    // For custom locations: allow submission without tagging departments/requirements
+    // as long as the user acknowledged the manual coordination step.
+    if (isCustomLocationSelected) {
+      return basicFieldsValid && pgsoCustomLocationAck && !hasQuantityOverRequests();
+    }
     
     // For Simple Meeting: allow submission without departments if noDepartmentsNeeded is checked
     if (formData.eventType === 'simple-meeting') {
@@ -1714,6 +1742,85 @@ const RequestEventPage: React.FC = () => {
       !hasQuantityOverRequests()
     );
   };
+
+  const getSubmitBlockers = () => {
+    const blockers: string[] = [];
+
+    if (!formData.eventTitle) blockers.push('Event Title is required');
+    if (!formData.requestor) blockers.push('Requestor is required');
+    if (!formData.location) blockers.push('Location is required');
+    if (!formData.participants) blockers.push('Participants is required');
+    if (!formData.startDate) blockers.push('Start Date is required');
+    if (!formData.startTime) blockers.push('Start Time is required');
+    if (!formData.endDate) blockers.push('End Date is required');
+    if (!formData.endTime) blockers.push('End Time is required');
+
+    if (!formData.contactNumber) {
+      blockers.push('Contact Number is required');
+    } else if (formData.contactNumber.length !== 11) {
+      blockers.push('Contact Number must be 11 digits');
+    }
+
+    if (!formData.contactEmail) {
+      blockers.push('Email Address is required');
+    } else if (!formData.contactEmail.includes('@')) {
+      blockers.push('Email Address must be valid (must include @)');
+    }
+
+    if (isCustomLocationSelected && !pgsoCustomLocationAck) {
+      blockers.push('Acknowledge custom location manual coordination');
+    }
+
+    if (isCustomLocationSelected && pgsoCustomLocationAck) {
+      if (hasQuantityOverRequests()) {
+        blockers.push('Some requested quantities exceed available resources');
+      }
+      return blockers;
+    }
+
+    if (formData.eventType === 'simple-meeting') {
+      if (!noDepartmentsNeeded) {
+        if (!formData.taggedDepartments.length) {
+          blockers.push('Tag at least 1 department (or check “No departments needed”)');
+        }
+        if (formData.taggedDepartments.length > 0 && !hasRequirementsForDepartments()) {
+          blockers.push('Select at least 1 requirement for your tagged department(s)');
+        }
+      }
+    } else {
+      if (!formData.taggedDepartments.length) {
+        blockers.push('Tag at least 1 department');
+      }
+      if (formData.taggedDepartments.length > 0 && !hasRequirementsForDepartments()) {
+        blockers.push('Select at least 1 requirement for your tagged department(s)');
+      }
+    }
+
+    if (hasQuantityOverRequests()) {
+      blockers.push('Some requested quantities exceed available resources');
+    }
+
+    return blockers;
+  };
+
+  const submitBlockers = React.useMemo(() => {
+    return getSubmitBlockers();
+  }, [
+    formData.eventTitle,
+    formData.requestor,
+    formData.location,
+    formData.participants,
+    formData.startDate,
+    formData.startTime,
+    formData.endDate,
+    formData.endTime,
+    formData.contactNumber,
+    formData.contactEmail,
+    formData.taggedDepartments,
+    formData.departmentRequirements,
+    formData.eventType,
+    noDepartmentsNeeded
+  ]);
 
   // Calculate completed steps count
   const getCompletedStepsCount = () => {
@@ -2912,6 +3019,29 @@ const RequestEventPage: React.FC = () => {
                   </div>
                 )}
 
+                {/* Custom Location PGSO Acknowledgment */}
+                {isCustomLocationSelected && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                    <div className="flex items-start gap-3">
+                      <Checkbox
+                        id="pgsoCustomLocationAck"
+                        checked={pgsoCustomLocationAck}
+                        onCheckedChange={(checked) => setPgsoCustomLocationAck(checked as boolean)}
+                        className="mt-0.5"
+                      />
+                      <div className="flex-1">
+                        <Label htmlFor="pgsoCustomLocationAck" className="text-sm font-medium text-amber-900 cursor-pointer">
+                          Custom location: requirements must be coordinated manually with PGSO
+                        </Label>
+                        <p className="text-xs text-amber-700 mt-1">
+                          Since you selected a custom location, please contact PGSO directly for any requirements needed at this venue.
+                          You must acknowledge this before continuing to schedule.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Search Input */}
                 <div>
                   <Label htmlFor="departmentSearch" className="text-sm font-medium">Search Departments</Label>
@@ -3340,6 +3470,27 @@ const RequestEventPage: React.FC = () => {
               </CardContent>
             </Card>
 
+            {!isFormReadyToSubmit() && submitBlockers.length > 0 && (
+              <Card className="border-red-200 bg-red-50">
+                <CardHeader className="pb-4">
+                  <CardTitle className="text-lg text-red-900">Cannot submit yet</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2 text-sm">
+                  <p className="text-xs text-red-700">
+                    Fill out the following to enable Review &amp; Submit:
+                  </p>
+                  <div className="space-y-1">
+                    {submitBlockers.map((reason) => (
+                      <div key={reason} className="flex items-start gap-2 text-xs text-red-800">
+                        <div className="w-1.5 h-1.5 bg-red-600 rounded-full mt-1" />
+                        <span>{reason}</span>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
           </div>
         </motion.div>
       )}
@@ -3361,10 +3512,14 @@ const RequestEventPage: React.FC = () => {
           <Button 
             onClick={() => setCurrentStep(5)} 
             disabled={
-              // For Simple Meeting: allow if noDepartmentsNeeded OR has departments with requirements
-              formData.eventType === 'simple-meeting' 
-                ? !(noDepartmentsNeeded || (formData.taggedDepartments.length > 0 && hasRequirementsForDepartments()))
-                : (!formData.taggedDepartments.length || !hasRequirementsForDepartments())
+              // For custom locations: checkbox acknowledgment is the only gate.
+              isCustomLocationSelected
+                ? !pgsoCustomLocationAck
+                : (
+                    formData.eventType === 'simple-meeting'
+                      ? !(noDepartmentsNeeded || (formData.taggedDepartments.length > 0 && hasRequirementsForDepartments()))
+                      : (!formData.taggedDepartments.length || !hasRequirementsForDepartments())
+                  )
             }
             className="gap-2"
           >

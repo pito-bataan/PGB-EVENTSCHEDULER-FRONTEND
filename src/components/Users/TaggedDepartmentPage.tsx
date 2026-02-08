@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import axios from 'axios';
 import { useTaggedDepartmentsStore } from '@/stores/taggedDepartmentsStore';
 import { useSocket, getGlobalSocket } from '@/hooks/useSocket';
+import TaggedDepartmentTableView from '@/components/Users/TaggedDepartmentTableView';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -153,6 +154,8 @@ const TaggedDepartmentPage: React.FC = () => {
   const [eventSearch, setEventSearch] = React.useState('');
   const [eventFilter, setEventFilter] = React.useState<'all' | 'has-declined' | 'all-declined' | 'no-declined'>('all');
   const [eventSort, setEventSort] = React.useState<'date-desc' | 'date-asc' | 'title-asc' | 'title-desc' | 'declined-first'>('date-asc');
+
+  const [showTableView, setShowTableView] = React.useState(false);
   
   // Zustand store - replaces all useState calls above!
   const {
@@ -575,6 +578,11 @@ const TaggedDepartmentPage: React.FC = () => {
     return applyEventSearchFilterSort(doneList);
   }, [events, currentUserDepartment, eventSearch, eventFilter, eventSort, activeEventTab]);
 
+  const visibleCancelledEvents = useMemo(() => {
+    const cancelledList = events.filter(event => (event.status || '').toLowerCase() === 'cancelled');
+    return applyEventSearchFilterSort(cancelledList);
+  }, [events, currentUserDepartment, eventSearch, eventFilter, eventSort, activeEventTab]);
+
   const lastSearchToastRef = useRef<string>('');
 
   useEffect(() => {
@@ -637,11 +645,12 @@ const TaggedDepartmentPage: React.FC = () => {
       const matchedId = getEventIdString(matchedEvent);
       const inList = (list: Event[]) => list.some(e => getEventIdString(e) === matchedId);
 
-      const tabOrder: Array<{ tab: 'ongoing' | 'completed' | 'declined' | 'done'; list: Event[] }> = [
+      const tabOrder: Array<{ tab: 'ongoing' | 'completed' | 'declined' | 'done' | 'cancelled'; list: Event[] }> = [
         { tab: 'ongoing', list: getOngoingEvents() },
         { tab: 'completed', list: getCompletedEvents() },
         { tab: 'declined', list: declinedList },
         { tab: 'done', list: doneList },
+        { tab: 'cancelled', list: events.filter(e => (e.status || '').toLowerCase() === 'cancelled') },
       ];
 
       const targetTab = tabOrder.find(({ list }) => inList(list))?.tab;
@@ -669,11 +678,12 @@ const TaggedDepartmentPage: React.FC = () => {
       return isDoneByStatus || isDoneByDate;
     });
 
-    const tabOrder: Array<{ tab: 'ongoing' | 'completed' | 'declined' | 'done'; list: Event[] }> = [
+    const tabOrder: Array<{ tab: 'ongoing' | 'completed' | 'declined' | 'done' | 'cancelled'; list: Event[] }> = [
       { tab: 'ongoing', list: getOngoingEvents() },
       { tab: 'completed', list: getCompletedEvents() },
       { tab: 'declined', list: declinedList },
       { tab: 'done', list: doneList },
+      { tab: 'cancelled', list: events.filter(e => (e.status || '').toLowerCase() === 'cancelled') },
     ];
 
     const firstMatch = tabOrder.find(({ list }) => list.some(matchesQuery));
@@ -739,6 +749,9 @@ const TaggedDepartmentPage: React.FC = () => {
   return (
     <>
       {statusDialogContent}
+      {showTableView ? (
+        <TaggedDepartmentTableView onBack={() => setShowTableView(false)} />
+      ) : (
     <div className="h-screen flex flex-col overflow-hidden">
       {/* Header Section */}
       <motion.div
@@ -753,6 +766,12 @@ const TaggedDepartmentPage: React.FC = () => {
             <p className="text-xs md:text-sm text-muted-foreground">
               Manage and track requirements for events you're tagged in
             </p>
+          </div>
+
+          <div className="flex items-center justify-end">
+            <Button variant="outline" onClick={() => setShowTableView(true)}>
+              Table View
+            </Button>
           </div>
         </div>
       </motion.div>
@@ -806,8 +825,8 @@ const TaggedDepartmentPage: React.FC = () => {
             </div>
             
             {/* Event Tabs */}
-            <Tabs value={activeEventTab} onValueChange={(value) => setActiveEventTab(value as 'ongoing' | 'completed' | 'declined' | 'done')} className="w-full">
-              <TabsList className="grid w-full grid-cols-4 gap-2 bg-transparent p-0">
+            <Tabs value={activeEventTab} onValueChange={(value) => setActiveEventTab(value as 'ongoing' | 'completed' | 'declined' | 'done' | 'cancelled')} className="w-full">
+              <TabsList className="grid w-full grid-cols-5 gap-2 bg-transparent p-0">
                 <TabsTrigger 
                   value="ongoing" 
                   className="flex items-center justify-center gap-1.5 px-3 py-2 bg-yellow-50 text-yellow-800 data-[state=active]:bg-yellow-100 data-[state=active]:text-yellow-900 hover:bg-yellow-100"
@@ -815,12 +834,7 @@ const TaggedDepartmentPage: React.FC = () => {
                   <Clock className="h-3.5 w-3.5 flex-shrink-0" />
                   <span className="text-xs font-medium">Pending</span>
                   {(() => {
-                    const pendingCount = events.filter(event => {
-                      const userDeptReqs = event.departmentRequirements[currentUserDepartment] || [];
-                      const totalCount = userDeptReqs.length;
-                      const pendingCountInner = userDeptReqs.filter(r => getRequirementStatus(r) === 'pending').length;
-                      return totalCount > 0 && pendingCountInner > 0;
-                    }).length;
+                    const pendingCount = getOngoingEvents().length;
                     return pendingCount > 0 ? (
                       <Badge variant="secondary" className="text-[10px] h-4 px-1.5 ml-auto bg-red-500 text-white">
                         {pendingCount}
@@ -892,6 +906,22 @@ const TaggedDepartmentPage: React.FC = () => {
                     return doneCount > 0 ? (
                       <Badge variant="secondary" className="text-[10px] h-4 px-1.5 ml-auto bg-red-500 text-white">
                         {doneCount}
+                      </Badge>
+                    ) : null;
+                  })()}
+                </TabsTrigger>
+
+                <TabsTrigger
+                  value="cancelled"
+                  className="flex items-center justify-center gap-1.5 px-3 py-2 bg-orange-50 text-orange-800 data-[state=active]:bg-orange-100 data-[state=active]:text-orange-900 hover:bg-orange-100"
+                >
+                  <XCircle className="h-3.5 w-3.5 flex-shrink-0" />
+                  <span className="text-xs font-medium">Cancelled</span>
+                  {(() => {
+                    const cancelledCount = events.filter(event => (event.status || '').toLowerCase() === 'cancelled').length;
+                    return cancelledCount > 0 ? (
+                      <Badge variant="secondary" className="text-[10px] h-4 px-1.5 ml-auto bg-red-500 text-white">
+                        {cancelledCount}
                       </Badge>
                     ) : null;
                   })()}
@@ -1278,9 +1308,9 @@ const TaggedDepartmentPage: React.FC = () => {
                         const doneList = events.filter(event => {
                           const userDeptReqs = event.departmentRequirements[currentUserDepartment] || [];
                           const totalCount = userDeptReqs.length;
-                          const pendingCountInner = userDeptReqs.filter(r => getRequirementStatus(r) === 'pending').length;
-                          const declinedCountInner = userDeptReqs.filter(r => getRequirementStatus(r) === 'declined').length;
-                          const isResolved = totalCount > 0 && pendingCountInner === 0 && declinedCountInner < totalCount;
+                          const pendingCount = userDeptReqs.filter(r => getRequirementStatus(r) === 'pending').length;
+                          const declinedCount = userDeptReqs.filter(r => getRequirementStatus(r) === 'declined').length;
+                          const isResolved = totalCount > 0 && pendingCount === 0 && declinedCount < totalCount;
 
                           const isDoneByStatus = (event.status || '').toLowerCase() === 'completed';
                           const isDoneByDate = new Date(event.endDate) < startOfToday;
@@ -1329,6 +1359,78 @@ const TaggedDepartmentPage: React.FC = () => {
                                         </span>
                                     </div>
                                   </div>
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        </motion.div>
+                      ))}
+                    </AnimatePresence>
+                    </div>
+                  )}
+                </div>
+            </TabsContent>
+
+            <TabsContent value="cancelled" className="flex-1 mt-0 bg-white">
+                <div className="p-3">
+                  {loading ? (
+                    <div className="flex items-center justify-center h-24">
+                      <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : (
+                    <div className="flex gap-3 overflow-x-auto pb-2">
+                    <AnimatePresence>
+                      {applyEventSearchFilterSort(
+                        events.filter(event => (event.status || '').toLowerCase() === 'cancelled')
+                      ).map((event) => (
+                        <motion.div
+                          key={event._id}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, x: -20 }}
+                          transition={{ duration: 0.2 }}
+                          className="flex-shrink-0 w-[280px]"
+                        >
+                          <Card
+                            className={`transition-all hover:shadow-md cursor-pointer overflow-hidden border-l-4 border ${
+                              selectedEvent?._id === event._id ? 'border-l-orange-500 border-blue-400 shadow-lg bg-blue-50/30' : 'border-l-orange-500 border-gray-200'
+                            }`}
+                            onClick={() => setSelectedEvent(event)}
+                          >
+                            <CardContent className="p-4">
+                              <div className="space-y-4">
+                                <div className="overflow-hidden">
+                                  <div className="flex items-start gap-2 mb-2">
+                                    <h3 className="font-semibold text-sm leading-tight flex-1 truncate" title={event.eventTitle}>
+                                      {event.eventTitle}{' '}
+                                      <span className="font-mono text-[10px] text-muted-foreground">
+                                        ({toInvoiceId(event)})
+                                      </span>
+                                    </h3>
+                                    <Badge className="text-[10px] h-4 bg-orange-600 text-white flex-shrink-0">
+                                      Cancelled
+                                    </Badge>
+                                  </div>
+                                  <div className="space-y-1">
+                                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                        <CalendarDays className="w-3 h-3" />
+                                        <span>
+                                          {new Date(event.startDate).toLocaleDateString()} - {new Date(event.endDate).toLocaleDateString()}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                        <Clock className="w-3 h-3" />
+                                        <span>
+                                          {formatTime(event.startTime)} - {formatTime(event.endTime)}
+                                        </span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-3 text-xs">
+                                  <Badge variant="outline" className="text-[10px] h-4 whitespace-nowrap bg-orange-50 text-orange-700 border-orange-200">
+                                    {(event.departmentRequirements[currentUserDepartment] || []).length} requirements
+                                  </Badge>
                                 </div>
                               </div>
                             </CardContent>
@@ -1859,12 +1961,9 @@ const TaggedDepartmentPage: React.FC = () => {
                     <TabsContent key={status} value={status} className="flex-1">
                         <div className="px-6 py-4 space-y-4">
                           <AnimatePresence>
-                            {Object.entries(selectedEvent.departmentRequirements)
-                              .filter(([department, requirements]) => department === currentUserDepartment)
-                              .map(([department, requirements]) => 
-                              requirements
-                                .filter(req => getRequirementStatus(req) === status)
-                                .map((req: Requirement) => (
+                            {(selectedEvent.departmentRequirements[currentUserDepartment] || [])
+                              .filter((req: Requirement) => getRequirementStatus(req) === status)
+                              .map((req: Requirement) => (
                                   <motion.div
                                     key={req.id}
                                     initial={{ opacity: 0, y: 10 }}
@@ -2210,8 +2309,7 @@ const TaggedDepartmentPage: React.FC = () => {
                                       </CardContent>
                                     </Card>
                                   </motion.div>
-                                ))
-                            )}
+                                ))}
                     </AnimatePresence>
                   </div>
                     </TabsContent>
@@ -2286,6 +2384,7 @@ const TaggedDepartmentPage: React.FC = () => {
         </DialogContent>
       </Dialog>
     </div>
+      )}
     </>
   );
 };

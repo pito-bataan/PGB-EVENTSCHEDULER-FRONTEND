@@ -18,6 +18,17 @@ interface Requirement {
   departmentNotes?: string;
   lastUpdated?: string;
   requirementsStatus?: 'on-hold' | 'released'; // Track if requirements are on-hold or released
+  declineReason?: string;
+  yesNoAnswer?: 'yes' | 'no';
+  isCustom?: boolean;
+  replies?: Array<{
+    userId: string;
+    userName: string;
+    role: 'requestor' | 'department';
+    message: string;
+    createdAt: string;
+    isRead?: boolean;
+  }>;
 }
 
 interface Event {
@@ -59,7 +70,7 @@ interface TaggedDepartmentsState {
   loading: boolean;
   showNotesMap: Record<string, boolean>;
   notesMap: Record<string, string>;
-  activeEventTab: 'ongoing' | 'completed' | 'declined' | 'done';
+  activeEventTab: 'ongoing' | 'completed' | 'declined' | 'done' | 'cancelled';
   statusDialog: {
     isOpen: boolean;
     eventId: string;
@@ -75,10 +86,10 @@ interface TaggedDepartmentsState {
   // Actions
   fetchTaggedEvents: (force?: boolean) => Promise<void>;
   setSelectedEvent: (event: Event | null) => void;
-  setActiveEventTab: (tab: 'ongoing' | 'completed' | 'declined' | 'done') => void;
+  setActiveEventTab: (tab: 'ongoing' | 'completed' | 'declined' | 'done' | 'cancelled') => void;
   setShowNotes: (requirementId: string, show: boolean) => void;
   setNotes: (requirementId: string, notes: string) => void;
-  setStatusDialog: (dialog: { isOpen: boolean; eventId: string; requirementId: string; status: string }) => void;
+  setStatusDialog: (dialog: { isOpen: boolean; eventId: string; requirementId: string; status: string; requirementName?: string }) => void;
   updateRequirementStatus: (eventId: string, requirementId: string, status: string, declineReason?: string) => Promise<void>;
   updateRequirementNotes: (eventId: string, requirementId: string, notes: string) => Promise<void>;
   clearCache: () => void;
@@ -180,8 +191,9 @@ export const useTaggedDepartmentsStore = create<TaggedDepartmentsState>()(
             const filteredEvents = data.data
               .filter((event: Event) => {
                 // CRITICAL: Only show events that are APPROVED or COMPLETED (keep completed events for records)
-                if (event.status !== 'approved' && event.status !== 'completed') {
-                  console.log(`🚫 Hiding event "${event.eventTitle}" - status: ${event.status} (not approved or completed)`);
+                const st = String(event.status || '').toLowerCase();
+                if (!['approved', 'completed', 'cancelled'].includes(st)) {
+                  console.log(`🚫 Hiding event "${event.eventTitle}" - status: ${event.status} (not approved/completed/cancelled)`);
                   return false;
                 }
                 return true;
@@ -235,7 +247,7 @@ export const useTaggedDepartmentsStore = create<TaggedDepartmentsState>()(
         set({ selectedEvent: event });
       },
       
-      setActiveEventTab: (tab: 'ongoing' | 'completed' | 'declined' | 'done') => {
+      setActiveEventTab: (tab: 'ongoing' | 'completed' | 'declined' | 'done' | 'cancelled') => {
         set({ activeEventTab: tab });
       },
       
@@ -374,6 +386,8 @@ export const useTaggedDepartmentsStore = create<TaggedDepartmentsState>()(
       getOngoingEvents: () => {
         const state = get();
         return state.events.filter(event => {
+          const st = String(event.status || '').toLowerCase();
+          if (st === 'cancelled') return false;
           const userDeptReqs = event.departmentRequirements[state.currentUserDepartment] || [];
           const totalCount = userDeptReqs.length;
           const pendingCount = userDeptReqs.filter(r => (r.status || 'pending') === 'pending').length;
