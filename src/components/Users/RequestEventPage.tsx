@@ -68,6 +68,7 @@ interface DepartmentRequirement {
   selected: boolean;
   notes: string;
   quantity?: number;  // For physical requirements
+  quantitiesByDate?: Record<string, number>; // Per-day quantities for multi-day events
   type?: 'physical' | 'service' | 'yesno';
   serviceType?: 'notes' | 'yesno'; // Service type: notes or yesno
   totalQuantity?: number;
@@ -89,7 +90,7 @@ interface DateTimeSlot {
   endTime: string;
 }
 
-interface FormData {
+interface EventFormData {
   eventTitle: string;
   requestor: string;
   location: string;
@@ -197,7 +198,7 @@ const RequestEventPage: React.FC = () => {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
   // Remove unused state - we fetch availabilities directly when needed
-  const [formData, setFormData] = useState<FormData>({
+  const [formData, setFormData] = useState<EventFormData>({
     eventTitle: '',
     requestor: '',
     location: '',
@@ -683,7 +684,7 @@ const RequestEventPage: React.FC = () => {
     return true;
   };
 
-  const handleInputChange = (field: keyof FormData, value: string | boolean | File[] | string[] | DepartmentRequirements | Date | undefined | DateTimeSlot[]) => {
+  const handleInputChange = (field: keyof EventFormData, value: string | boolean | File[] | string[] | DepartmentRequirements | Date | undefined | DateTimeSlot[]) => {
     // Block changes if event type not selected (except for eventType field itself)
     if (field !== 'eventType' && !checkEventTypeSelected()) {
       return;
@@ -1313,6 +1314,25 @@ const RequestEventPage: React.FC = () => {
     handleInputChange('departmentRequirements', newDeptReqs);
   };
 
+  const handleRequirementQuantityForDate = (requirementId: string, dateKey: string, quantity: number) => {
+    const currentReqs = formData.departmentRequirements[selectedDepartment] || [];
+    const updatedReqs = currentReqs.map((req) => {
+      if (req.id !== requirementId) return req;
+      const currentMap = req.quantitiesByDate || {};
+      const nextMap = { ...currentMap, [dateKey]: quantity };
+      const maxForDisplay = Object.values(nextMap).reduce((m, v) => Math.max(m, v || 0), 0);
+      return {
+        ...req,
+        quantitiesByDate: nextMap,
+        quantity: maxForDisplay || undefined
+      };
+    });
+
+    const newDeptReqs = { ...formData.departmentRequirements };
+    newDeptReqs[selectedDepartment] = updatedReqs;
+    handleInputChange('departmentRequirements', newDeptReqs);
+  };
+
   const handleRequirementNotes = (requirementId: string, notes: string) => {
     const currentReqs = formData.departmentRequirements[selectedDepartment] || [];
     const updatedReqs = currentReqs.map(req => 
@@ -1395,10 +1415,89 @@ const RequestEventPage: React.FC = () => {
       return;
     }
 
-    // Check if physical requirements have quantity specified
-    const physicalReqsWithoutQuantity = selectedReqs.filter(req => 
-      req.type === 'physical' && (!req.quantity || req.quantity === 0)
-    );
+    const dates = getEventDatesInRange();
+    const isMultiDay = dates.length > 1;
+    const dateKeys = dates.map((d) => format(d, 'yyyy-MM-dd'));
+
+    // If a physical requirement has 0 availability for a day (or for the whole single-day),
+    // allow saving by auto-setting quantity to 0.
+    if (selectedReqs.some((r) => r.type === 'physical')) {
+      const currentReqs = formData.departmentRequirements[selectedDepartment] || [];
+      let didChange = false;
+
+      const updatedReqs = currentReqs.map((req) => {
+        if (!req.selected || req.type !== 'physical') return req;
+
+        const hasConflicts =
+          conflictingEvents.length > 0 &&
+          formData.startDate &&
+          formData.startTime &&
+          hasRequirementConflict(req, selectedDepartment);
+
+        if (!isMultiDay) {
+          const maxAvailable = hasConflicts ? getAvailableQuantity(req, selectedDepartment) : (typeof req.totalQuantity === 'number' ? req.totalQuantity : undefined);
+          if (maxAvailable === 0 && (req.quantity == null || req.quantity === 0) === false) {
+            didChange = true;
+            return { ...req, quantity: 0 };
+          }
+          if (maxAvailable === 0 && (req.quantity == null)) {
+            didChange = true;
+            return { ...req, quantity: 0 };
+          }
+          return req;
+        }
+
+        const map = req.quantitiesByDate || {};
+        const nextMap: Record<string, number> = { ...map };
+        let changedLocal = false;
+
+        dates.forEach((d) => {
+          const k = format(d, 'yyyy-MM-dd');
+          const maxAvailable = hasConflicts ? getAvailableQuantityForDate(req, d) : (typeof req.totalQuantity === 'number' ? req.totalQuantity : undefined);
+          if (maxAvailable === 0 && typeof nextMap[k] !== 'number') {
+            nextMap[k] = 0;
+            changedLocal = true;
+          }
+        });
+
+        if (!changedLocal) return req;
+
+        didChange = true;
+        const maxForDisplay = Object.values(nextMap).reduce((m, v) => Math.max(m, v || 0), 0);
+        return { ...req, quantitiesByDate: nextMap, quantity: maxForDisplay };
+      });
+
+      if (didChange) {
+        const newDeptReqs = { ...formData.departmentRequirements };
+        newDeptReqs[selectedDepartment] = updatedReqs;
+        handleInputChange('departmentRequirements', newDeptReqs);
+      }
+    }
+
+    // Check if physical requirements have quantity specified (except when max available is 0)
+    const physicalReqsWithoutQuantity = selectedReqs.filter((req) => {
+      if (req.type !== 'physical') return false;
+
+      const hasConflicts =
+        conflictingEvents.length > 0 &&
+        formData.startDate &&
+        formData.startTime &&
+        hasRequirementConflict(req, selectedDepartment);
+
+      if (!isMultiDay) {
+        const maxAvailable = hasConflicts ? getAvailableQuantity(req, selectedDepartment) : (typeof req.totalQuantity === 'number' ? req.totalQuantity : undefined);
+        if (maxAvailable === 0) return false;
+        return req.quantity == null || req.quantity === 0;
+      }
+
+      const map = req.quantitiesByDate || {};
+      return dates.some((d) => {
+        const k = format(d, 'yyyy-MM-dd');
+        const maxAvailable = hasConflicts ? getAvailableQuantityForDate(req, d) : (typeof req.totalQuantity === 'number' ? req.totalQuantity : undefined);
+        if (maxAvailable === 0) return false;
+        return map[k] == null;
+      });
+    });
     
     if (physicalReqsWithoutQuantity.length > 0) {
       const reqNames = physicalReqsWithoutQuantity.map(req => req.name).join(', ');
@@ -1410,28 +1509,56 @@ const RequestEventPage: React.FC = () => {
     }
 
     // Check for quantity over-requests (considering conflicts)
-    const overRequests = selectedReqs.filter(req => {
-      if (req.type !== 'physical' || !req.quantity) return false;
-      
-      // If there are conflicts and we have schedule info, check against available quantity
-      if (conflictingEvents.length > 0 && formData.startDate && formData.startTime && 
-          hasRequirementConflict(req, selectedDepartment)) {
-        const availableQty = getAvailableQuantity(req, selectedDepartment);
-        return req.quantity > availableQty;
+    const overRequests = selectedReqs.filter((req) => {
+      if (req.type !== 'physical') return false;
+
+      if (!isMultiDay) {
+        if (!req.quantity) return false;
+        if (conflictingEvents.length > 0 && formData.startDate && formData.startTime && hasRequirementConflict(req, selectedDepartment)) {
+          const availableQty = getAvailableQuantity(req, selectedDepartment);
+          return req.quantity > availableQty;
+        }
+        return req.totalQuantity && req.quantity > req.totalQuantity;
       }
-      
-      // Otherwise check against total quantity
-      return req.totalQuantity && req.quantity > req.totalQuantity;
+
+      const map = req.quantitiesByDate || {};
+      // Validate each day independently
+      return dates.some((d) => {
+        const k = format(d, 'yyyy-MM-dd');
+        const dayQty = map[k] || 0;
+        if (!dayQty) return false;
+
+        let dayAvail: number | undefined;
+        if (conflictingEvents.length > 0 && formData.startDate && formData.startTime && hasRequirementConflict(req, selectedDepartment)) {
+          dayAvail = getAvailableQuantityForDate(req, d);
+        } else if (typeof req.totalQuantity === 'number') {
+          dayAvail = req.totalQuantity;
+        }
+
+        if (typeof dayAvail !== 'number') return false;
+        return dayQty > dayAvail;
+      });
     });
     
     if (overRequests.length > 0) {
-      const overRequestDetails = overRequests.map(req => {
-        const availableQty = conflictingEvents.length > 0 && formData.startDate && formData.startTime && 
-                            hasRequirementConflict(req, selectedDepartment)
-          ? getAvailableQuantity(req, selectedDepartment)
-          : req.totalQuantity || 0;
-        
-        return `${req.name} (requested: ${req.quantity}, available: ${availableQty})`;
+      const overRequestDetails = overRequests.map((req) => {
+        if (!isMultiDay) {
+          const availableQty = conflictingEvents.length > 0 && formData.startDate && formData.startTime && hasRequirementConflict(req, selectedDepartment)
+            ? getAvailableQuantity(req, selectedDepartment)
+            : req.totalQuantity || 0;
+          return `${req.name} (requested: ${req.quantity}, available: ${availableQty})`;
+        }
+
+        const map = req.quantitiesByDate || {};
+        const parts = dates.map((d) => {
+          const k = format(d, 'yyyy-MM-dd');
+          const dayQty = map[k] || 0;
+          const dayAvail = conflictingEvents.length > 0 && formData.startDate && formData.startTime && hasRequirementConflict(req, selectedDepartment)
+            ? getAvailableQuantityForDate(req, d)
+            : (req.totalQuantity || 0);
+          return `${format(d, 'MMM dd')}: requested ${dayQty}, available ${dayAvail}`;
+        });
+        return `${req.name} (${parts.join(' | ')})`;
       });
       
       toast.error(`Cannot save! Requested quantities exceed available resources:`, {
@@ -1451,7 +1578,7 @@ const RequestEventPage: React.FC = () => {
     setShowRequirementsModal(false);
     
     const requirementCount = selectedReqs.length;
-    const physicalCount = selectedReqs.filter(req => req.type === 'physical' && req.quantity).length;
+    const physicalCount = selectedReqs.filter(req => req.type === 'physical' && (req.quantity || req.quantitiesByDate)).length;
     const notesCount = selectedReqs.filter(req => req.type === 'service' && req.notes && req.notes.trim()).length;
     
     const details = [];
@@ -1627,16 +1754,38 @@ const RequestEventPage: React.FC = () => {
     }
   };
 
+  const getEventDatesInRange = React.useCallback((): Date[] => {
+    if (!formData.startDate) return [];
+
+    const start = new Date(formData.startDate);
+    const end = formData.endDate ? new Date(formData.endDate) : new Date(formData.startDate);
+    const dates: Date[] = [];
+
+    const cursor = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+    const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+
+    while (cursor <= endDay) {
+      dates.push(new Date(cursor));
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    return dates;
+  }, [formData.startDate, formData.endDate]);
+
   // Calculate available quantity after subtracting conflicting bookings from ALL departments
-  const getAvailableQuantity = (requirement: any, departmentName: string) => {
+  const getAvailableQuantityForDate = React.useCallback((requirement: any, checkDate: Date) => {
     let usedQuantity = 0;
 
     const notes = (requirement?.availabilityNotes || '').toString();
     const isLocationDefault = notes.startsWith('PAVILION_DEFAULT:');
     const locationDefaultTarget = isLocationDefault ? notes.split(':').slice(2).join(':') : '';
-    
-    
-    conflictingEvents.forEach(event => {
+
+    const checkDateStr = new Date(checkDate).toDateString();
+
+    conflictingEvents.forEach((event: any) => {
+      // Only subtract bookings that overlap the specific day we're checking
+      if (!event?.startDate || new Date(event.startDate).toDateString() !== checkDateStr) return;
+
       if (isLocationDefault) {
         const eventLoc = (event?.location || '').toString();
         if (!locationDefaultTarget || !eventLoc) return;
@@ -1648,7 +1797,7 @@ const RequestEventPage: React.FC = () => {
         event.taggedDepartments.forEach((taggedDept: string) => {
           const eventReqs = event.departmentRequirements[taggedDept];
           if (Array.isArray(eventReqs)) {
-            const matchingReq = eventReqs.find((req: any) => 
+            const matchingReq = eventReqs.find((req: any) =>
               req.name === requirement.name && req.selected && req.quantity
             );
             if (matchingReq) {
@@ -1658,15 +1807,28 @@ const RequestEventPage: React.FC = () => {
         });
       }
     });
-    
-    // Use the totalQuantity from the requirement object (which now contains the actual availability data)
-    // This should be the updated quantity from resourceavailabilities collection (200) not the default (100)
+
     const totalAvailable = requirement.totalQuantity || 0;
-    const availableQuantity = Math.max(0, totalAvailable - usedQuantity);
-    
-    
-    return availableQuantity;
-  };
+    return Math.max(0, totalAvailable - usedQuantity);
+  }, [conflictingEvents, locationsSharePavilionPool]);
+
+  const getAvailableQuantity = React.useCallback((requirement: any, departmentName: string) => {
+    const totalAvailable = requirement.totalQuantity || 0;
+
+    const dates = getEventDatesInRange();
+    const isMultiDay = dates.length > 1;
+
+    // Single-day: behave as before (but still date-aware)
+    if (!isMultiDay) {
+      const day = dates[0] || formData.startDate;
+      if (!day) return totalAvailable;
+      return getAvailableQuantityForDate(requirement, day);
+    }
+
+    // Multi-day: equipment is booked per-day. Validate against the worst day.
+    const perDayAvail = dates.map((d) => getAvailableQuantityForDate(requirement, d));
+    return perDayAvail.length ? Math.min(...perDayAvail) : totalAvailable;
+  }, [formData.startDate, getAvailableQuantityForDate, getEventDatesInRange]);
 
   // Check if a specific requirement has conflicts (is actually booked by other events from ANY department)
   const hasRequirementConflict = (requirement: any, departmentName: string) => {
@@ -1880,37 +2042,6 @@ const RequestEventPage: React.FC = () => {
         return;
       }
 
-      // Prepare form data for submission
-      const formDataToSubmit = new FormData();
-      
-      // Basic event information
-      formDataToSubmit.append('eventTitle', formData.eventTitle);
-      formDataToSubmit.append('requestor', formData.requestor);
-      
-      // Location handling: single location uses 'location', multiple uses 'locations' array
-      if (formData.locations.length > 1) {
-        // Multiple conference rooms - send as locations array
-        formDataToSubmit.append('locations', JSON.stringify(formData.locations));
-        formDataToSubmit.append('location', formData.locations[0]);
-        formDataToSubmit.append('multipleLocations', 'true');
-      } else {
-        // Single location - use default location field
-        formDataToSubmit.append('location', formData.location);
-        formDataToSubmit.append('multipleLocations', 'false');
-      }
-      
-      if (formData.roomType) {
-        formDataToSubmit.append('roomType', formData.roomType);
-      }
-      
-      formDataToSubmit.append('participants', formData.participants);
-      formDataToSubmit.append('vip', formData.vip || '0');
-      formDataToSubmit.append('vvip', formData.vvip || '0');
-      formDataToSubmit.append('withoutGov', formData.withoutGov.toString());
-      formDataToSubmit.append('description', formData.description || '');
-      formDataToSubmit.append('eventType', formData.eventType);
-      
-      // Schedule information - Use date-only format to avoid timezone issues
       const formatDateOnly = (date: Date | null | undefined) => {
         if (!date) return '';
         const year = date.getFullYear();
@@ -1918,78 +2049,186 @@ const RequestEventPage: React.FC = () => {
         const day = String(date.getDate()).padStart(2, '0');
         return `${year}-${month}-${day}`;
       };
-      
-      formDataToSubmit.append('startDate', formatDateOnly(formData.startDate));
-      formDataToSubmit.append('startTime', formData.startTime);
-      formDataToSubmit.append('endDate', formatDateOnly(formData.endDate));
-      formDataToSubmit.append('endTime', formData.endTime);
-      
-      // Multiple date/time slots (for multi-day events with different times per day)
-      // Only send fully configured slots (with both start and end times)
-      if (formData.dateTimeSlots && formData.dateTimeSlots.length > 0) {
-        const fullyConfiguredSlots = formData.dateTimeSlots.filter(slot => 
-          slot.startTime && slot.endTime
-        );
-        if (fullyConfiguredSlots.length > 0) {
-          const formattedSlots = fullyConfiguredSlots.map(slot => ({
-            startDate: formatDateOnly(slot.date),
-            startTime: slot.startTime,
-            endDate: formatDateOnly(slot.date), // Same day for each slot
-            endTime: slot.endTime
-          }));
-          formDataToSubmit.append('dateTimeSlots', JSON.stringify(formattedSlots));
+
+      const selectedEventDates = getEventDatesInRange();
+      const isMultiDay = selectedEventDates.length > 1;
+      const dateKeys = selectedEventDates.map((d) => format(d, 'yyyy-MM-dd'));
+
+      const shouldSplitByRequirements = (() => {
+        if (!isMultiDay) return false;
+
+        return formData.taggedDepartments.some((dept) => {
+          const reqs = (formData.departmentRequirements[dept] || []).filter((r) => r.selected && r.type === 'physical');
+          return reqs.some((r) => {
+            const map = r.quantitiesByDate;
+            if (!map) return false;
+            const values = dateKeys.map((k) => map[k]).filter((v) => typeof v === 'number') as number[];
+            if (values.length <= 1) return false;
+            return values.some((v) => v !== values[0]);
+          });
+        });
+      })();
+
+      const getTimesForDate = (d: Date) => {
+        const dayStr = new Date(d).toDateString();
+        const startOfRange = formData.startDate ? new Date(formData.startDate).toDateString() : '';
+
+        if (dayStr === startOfRange) {
+          return { startTime: formData.startTime, endTime: formData.endTime };
         }
-      }
-      
-      // Contact information
-      formDataToSubmit.append('contactNumber', formData.contactNumber);
-      formDataToSubmit.append('contactEmail', formData.contactEmail);
-      
-      // Add current user's department information
-      const userData = localStorage.getItem('userData');
-      if (userData) {
-        try {
-          const user = JSON.parse(userData);
-          const userDepartment = user.department || user.departmentName || 'Unknown';
-          formDataToSubmit.append('requestorDepartment', userDepartment);
-        } catch (error) {
-          formDataToSubmit.append('requestorDepartment', 'Unknown');
+
+        const slot = (formData.dateTimeSlots || []).find((s) => new Date(s.date).toDateString() === dayStr);
+        if (slot?.startTime && slot?.endTime) {
+          return { startTime: slot.startTime, endTime: slot.endTime };
         }
+
+        // Fallback: reuse Day 1 time if user didn't configure slot
+        return { startTime: formData.startTime, endTime: formData.endTime };
+      };
+
+      const getRequestorDepartment = () => {
+        const userData = localStorage.getItem('userData');
+        if (userData) {
+          try {
+            const user = JSON.parse(userData);
+            return user.department || user.departmentName || 'Unknown';
+          } catch (error) {
+            return 'Unknown';
+          }
+        }
+        return 'Unknown';
+      };
+
+      const buildSelectedRequirementsOnly = (dateKey?: string): DepartmentRequirements => {
+        const selectedOnly: DepartmentRequirements = {};
+        Object.keys(formData.departmentRequirements).forEach((deptName) => {
+          const selectedReqs = formData.departmentRequirements[deptName]?.filter((req) => req.selected) || [];
+          if (selectedReqs.length === 0) return;
+
+          selectedOnly[deptName] = selectedReqs.map((req: any) => {
+            // If we are splitting per-day, use that day's quantity when provided.
+            let quantity = req.quantity;
+            if (dateKey && req.type === 'physical' && req.quantitiesByDate && typeof req.quantitiesByDate[dateKey] === 'number') {
+              quantity = req.quantitiesByDate[dateKey];
+            }
+
+            const { quantitiesByDate, ...rest } = req;
+            return {
+              ...rest,
+              quantity,
+              requirementsStatus: 'on-hold'
+            };
+          });
+        });
+
+        return selectedOnly;
+      };
+
+      const buildFormDataToSubmit = (opts?: {
+        startDate: Date | undefined;
+        endDate: Date | undefined;
+        startTime: string;
+        endTime: string;
+        includeDateTimeSlots: boolean;
+        requirementsDateKey?: string;
+      }): globalThis.FormData => {
+        const fd = new globalThis.FormData();
+
+        // Basic event information
+        fd.append('eventTitle', formData.eventTitle);
+        fd.append('requestor', formData.requestor);
+
+        // Location handling
+        if (formData.locations.length > 1) {
+          fd.append('locations', JSON.stringify(formData.locations));
+          fd.append('location', formData.locations[0]);
+          fd.append('multipleLocations', 'true');
+        } else {
+          fd.append('location', formData.location);
+          fd.append('multipleLocations', 'false');
+        }
+
+        if (formData.roomType) {
+          fd.append('roomType', formData.roomType);
+        }
+
+        fd.append('participants', formData.participants);
+        fd.append('vip', formData.vip || '0');
+        fd.append('vvip', formData.vvip || '0');
+        fd.append('withoutGov', formData.withoutGov.toString());
+        fd.append('description', formData.description || '');
+        fd.append('eventType', formData.eventType);
+
+        fd.append('startDate', formatDateOnly(opts?.startDate));
+        fd.append('startTime', opts?.startTime || formData.startTime);
+        fd.append('endDate', formatDateOnly(opts?.endDate));
+        fd.append('endTime', opts?.endTime || formData.endTime);
+
+        if (opts?.includeDateTimeSlots && formData.dateTimeSlots && formData.dateTimeSlots.length > 0) {
+          const fullyConfiguredSlots = formData.dateTimeSlots.filter((slot) => slot.startTime && slot.endTime);
+          if (fullyConfiguredSlots.length > 0) {
+            const formattedSlots = fullyConfiguredSlots.map((slot) => ({
+              startDate: formatDateOnly(slot.date),
+              startTime: slot.startTime,
+              endDate: formatDateOnly(slot.date),
+              endTime: slot.endTime
+            }));
+            fd.append('dateTimeSlots', JSON.stringify(formattedSlots));
+          }
+        }
+
+        fd.append('contactNumber', formData.contactNumber);
+        fd.append('contactEmail', formData.contactEmail);
+        fd.append('requestorDepartment', getRequestorDepartment());
+
+        fd.append('taggedDepartments', JSON.stringify(formData.taggedDepartments));
+        fd.append('departmentRequirements', JSON.stringify(buildSelectedRequirementsOnly(opts?.requirementsDateKey)));
+
+        // Attachments
+        fd.append('noAttachments', formData.noAttachments.toString());
+        formData.attachments.forEach((file) => {
+          fd.append('attachments', file);
+        });
+
+        // Government files (if w/o gov is true)
+        if (formData.withoutGov && govFiles.brieferTemplate) {
+          fd.append('brieferTemplate', govFiles.brieferTemplate);
+        }
+        if (formData.withoutGov && govFiles.programme) {
+          fd.append('programme', govFiles.programme);
+        }
+
+        return fd;
+      };
+
+      const requestsToSubmit: { label: string; payload: globalThis.FormData }[] = [];
+      if (shouldSplitByRequirements) {
+        selectedEventDates.forEach((d) => {
+          const key = format(d, 'yyyy-MM-dd');
+          const { startTime, endTime } = getTimesForDate(d);
+          requestsToSubmit.push({
+            label: format(d, 'MMM dd'),
+            payload: buildFormDataToSubmit({
+              startDate: d,
+              endDate: d,
+              startTime,
+              endTime,
+              includeDateTimeSlots: false,
+              requirementsDateKey: key
+            })
+          });
+        });
       } else {
-        formDataToSubmit.append('requestorDepartment', 'Unknown');
-      }
-      
-      // Department and requirements information
-      formDataToSubmit.append('taggedDepartments', JSON.stringify(formData.taggedDepartments));
-      
-      // Filter to only include SELECTED requirements for each department
-      // Add requirementsStatus: 'on-hold' to all requirements (will be released when admin approves)
-      const selectedRequirementsOnly: DepartmentRequirements = {};
-      Object.keys(formData.departmentRequirements).forEach(deptName => {
-        const selectedReqs = formData.departmentRequirements[deptName]?.filter(req => req.selected) || [];
-        if (selectedReqs.length > 0) {
-          // Add 'on-hold' status to each requirement
-          selectedRequirementsOnly[deptName] = selectedReqs.map(req => ({
-            ...req,
-            requirementsStatus: 'on-hold' // Requirements are on-hold until admin approves the event
-          }));
-        }
-      });
-      
-      formDataToSubmit.append('departmentRequirements', JSON.stringify(selectedRequirementsOnly));
-      
-      // File attachments
-      formDataToSubmit.append('noAttachments', formData.noAttachments.toString());
-      formData.attachments.forEach((file) => {
-        formDataToSubmit.append('attachments', file);
-      });
-      
-      // Government files (if w/o gov is true)
-      if (formData.withoutGov && govFiles.brieferTemplate) {
-        formDataToSubmit.append('brieferTemplate', govFiles.brieferTemplate);
-      }
-      if (formData.withoutGov && govFiles.programme) {
-        formDataToSubmit.append('programme', govFiles.programme);
+        requestsToSubmit.push({
+          label: 'event',
+          payload: buildFormDataToSubmit({
+            startDate: formData.startDate,
+            endDate: formData.endDate,
+            startTime: formData.startTime,
+            endTime: formData.endTime,
+            includeDateTimeSlots: true
+          })
+        });
       }
 
       const headers = {
@@ -2006,35 +2245,47 @@ const RequestEventPage: React.FC = () => {
         duration: Infinity, // Keep toast until we dismiss it
       });
       
-      // Add timeout for large file uploads (10 minutes for production)
-      const response = await axios.post(`${API_BASE_URL}/events`, formDataToSubmit, { 
-        headers,
-        timeout: 600000, // 10 minutes timeout (increased for production)
-        maxContentLength: Infinity,
-        maxBodyLength: Infinity,
-        onUploadProgress: (progressEvent) => {
-          if (progressEvent.total) {
-            const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-            const loadedMB = (progressEvent.loaded / 1024 / 1024).toFixed(2);
-            const totalMB = (progressEvent.total / 1024 / 1024).toFixed(2);
-            
-            // Update the SAME toast with new progress
-            toast.loading('Submitting event request...', {
-              id: uploadToastId,
-              description: `Upload progress: ${percentCompleted}% (${loadedMB}MB / ${totalMB}MB)`,
-              duration: Infinity,
-            });
+      let lastResponse: any = null;
+      for (let i = 0; i < requestsToSubmit.length; i++) {
+        const req = requestsToSubmit[i];
+        const currentLabel = requestsToSubmit.length > 1 ? `Submitting ${req.label} (${i + 1}/${requestsToSubmit.length})...` : 'Submitting event request...';
+
+        toast.loading(currentLabel, {
+          id: uploadToastId,
+          description: `Preparing your submission...`,
+          duration: Infinity
+        });
+
+        // Add timeout for large file uploads (10 minutes for production)
+        lastResponse = await axios.post(`${API_BASE_URL}/events`, req.payload, {
+          headers,
+          timeout: 600000,
+          maxContentLength: Infinity,
+          maxBodyLength: Infinity,
+          onUploadProgress: (progressEvent) => {
+            if (progressEvent.total) {
+              const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+              const loadedMB = (progressEvent.loaded / 1024 / 1024).toFixed(2);
+              const totalMB = (progressEvent.total / 1024 / 1024).toFixed(2);
+              toast.loading(currentLabel, {
+                id: uploadToastId,
+                description: `Upload progress: ${percentCompleted}% (${loadedMB}MB / ${totalMB}MB)`,
+                duration: Infinity
+              });
+            }
           }
-        }
-      });
+        });
+      }
       
       // Dismiss loading toast after upload completes
       toast.dismiss(uploadToastId);
 
 
-      if (response.data.success) {
+      if (lastResponse?.data?.success) {
         toast.success('Event request submitted successfully!', {
-          description: 'Your event request has been sent for approval.'
+          description: requestsToSubmit.length > 1
+            ? `Your multi-day request was submitted as ${requestsToSubmit.length} separate events (per-day requirements).`
+            : 'Your event request has been sent for approval.'
         });
         
         // Navigate to My Events page after successful submission
@@ -2042,7 +2293,7 @@ const RequestEventPage: React.FC = () => {
           navigate('/users/my-events');
         }, 1500); // Wait 1.5 seconds to show the success toast
       } else {
-        throw new Error(response.data.message || 'Submission failed');
+        throw new Error(lastResponse?.data?.message || 'Submission failed');
       }
     } catch (error: any) {
       console.error('❌ [EVENT SUBMISSION] Error:', error);
@@ -3818,12 +4069,32 @@ const RequestEventPage: React.FC = () => {
                               ) : (
                                 <>
                                   <span className="font-medium">Available Quantity:</span>
-                                  {conflictingEvents.length > 0 && formData.startDate && formData.startTime && 
+                                  {conflictingEvents.length > 0 && formData.startDate && formData.startTime &&
                                    hasRequirementConflict(requirement, selectedDepartment) ? (
-                                    <span className="text-blue-600 font-medium">
-                                      {getAvailableQuantity(requirement, selectedDepartment)}
-                                      <span className="text-gray-500 ml-1">(of {requirement.totalQuantity || 0})</span>
-                                    </span>
+                                    (() => {
+                                      const dates = getEventDatesInRange();
+                                      const isMultiDay = dates.length > 1;
+
+                                      if (!isMultiDay) {
+                                        return (
+                                          <span className="text-blue-600 font-medium">
+                                            {getAvailableQuantity(requirement, selectedDepartment)}
+                                            <span className="text-gray-500 ml-1">(of {requirement.totalQuantity || 0})</span>
+                                          </span>
+                                        );
+                                      }
+
+                                      return (
+                                        <div className="flex flex-col gap-0.5">
+                                          {dates.map((d) => (
+                                            <span key={d.toISOString()} className="text-blue-600 font-medium">
+                                              {format(d, 'MMM dd')}: {getAvailableQuantityForDate(requirement, d)}
+                                              <span className="text-gray-500 ml-1">(of {requirement.totalQuantity || 0})</span>
+                                            </span>
+                                          ))}
+                                        </div>
+                                      );
+                                    })()
                                   ) : (
                                     <span className={requirement.totalQuantity ? 'text-gray-900' : 'text-gray-400'}>
                                       {requirement.totalQuantity || 'N/A'}
@@ -4124,6 +4395,70 @@ const RequestEventPage: React.FC = () => {
                   {(() => {
                     const currentReqs = formData.departmentRequirements[selectedDepartment] || [];
                     const current = currentReqs.find(r => r.id === activeRequirement.id) || activeRequirement;
+
+                    const dates = getEventDatesInRange();
+                    const isMultiDay = dates.length > 1;
+
+                    if (isMultiDay) {
+                      return (
+                        <div className="space-y-2">
+                          {dates.map((d) => {
+                            const k = format(d, 'yyyy-MM-dd');
+                            const value = (current.quantitiesByDate?.[k] ?? '').toString();
+
+                            let maxAvailable: number | undefined;
+                            if (
+                              conflictingEvents.length > 0 &&
+                              formData.startDate &&
+                              formData.startTime &&
+                              hasRequirementConflict(current, selectedDepartment)
+                            ) {
+                              maxAvailable = getAvailableQuantityForDate(current, d);
+                            } else if (typeof current.totalQuantity === 'number') {
+                              maxAvailable = current.totalQuantity;
+                            }
+
+                            return (
+                              <div key={k} className="flex items-center gap-2">
+                                <div className="w-20 text-xs text-gray-700 font-medium">{format(d, 'MMM dd')}</div>
+                                <Input
+                                  type="number"
+                                  placeholder="Qty"
+                                  value={value}
+                                  onChange={(e) => {
+                                    const raw = parseInt(e.target.value) || 0;
+                                    let qty = raw;
+                                    const allowZero = typeof maxAvailable === 'number' && maxAvailable === 0;
+                                    if (!allowZero && qty < 1) qty = 1;
+                                    if (allowZero && qty < 0) qty = 0;
+                                    if (typeof maxAvailable === 'number' && qty > maxAvailable) {
+                                      qty = maxAvailable;
+                                      setShowRequirementMaxWarning(true);
+                                    } else {
+                                      setShowRequirementMaxWarning(false);
+                                    }
+                                    handleRequirementQuantityForDate(activeRequirement.id, k, qty);
+                                  }}
+                                  className="text-sm"
+                                  min={typeof maxAvailable === 'number' && maxAvailable === 0 ? 0 : 1}
+                                  max={typeof maxAvailable === 'number' ? maxAvailable : undefined}
+                                />
+                                <div className="text-[11px] text-gray-500 whitespace-nowrap">
+                                  of {typeof maxAvailable === 'number' ? maxAvailable : (current.totalQuantity ?? 'N/A')}
+                                </div>
+                              </div>
+                            );
+                          })}
+
+                          {showRequirementMaxWarning && (
+                            <p className="text-[11px] text-red-600">
+                              One of the days reached the maximum available quantity. Please lower the quantity.
+                            </p>
+                          )}
+                        </div>
+                      );
+                    }
+
                     const value = current.quantity ?? '';
 
                     // Determine the maximum available quantity for this requirement
@@ -4148,7 +4483,9 @@ const RequestEventPage: React.FC = () => {
                           onChange={(e) => {
                             const raw = parseInt(e.target.value) || 0;
                             let qty = raw;
-                            if (qty < 1) qty = 1;
+                            const allowZero = typeof maxAvailable === 'number' && maxAvailable === 0;
+                            if (!allowZero && qty < 1) qty = 1;
+                            if (allowZero && qty < 0) qty = 0;
                             if (typeof maxAvailable === 'number' && qty > maxAvailable) {
                               qty = maxAvailable;
                               // User tried to go beyond max
@@ -4159,7 +4496,7 @@ const RequestEventPage: React.FC = () => {
                             handleRequirementQuantity(activeRequirement.id, qty);
                           }}
                           className="text-sm"
-                          min={1}
+                          min={typeof maxAvailable === 'number' && maxAvailable === 0 ? 0 : 1}
                           max={typeof maxAvailable === 'number' ? maxAvailable : undefined}
                         />
                         {typeof maxAvailable === 'number' && showRequirementMaxWarning && (
