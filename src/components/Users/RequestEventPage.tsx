@@ -289,11 +289,64 @@ const RequestEventPage: React.FC = () => {
   const isRoomUnavailableOnSelectedDates = (roomName: string) => {
     const dates = getDatesToCheck();
     if (dates.length === 0) return false;
+
+    const isRelevantStatus = (status: any) => status === 'approved' || status === 'submitted';
+    const toMinutes = (t: string) => {
+      const [h, m] = t.split(':').map(Number);
+      return h * 60 + m;
+    };
+
+    const selectionOverlapsEventOnDate = (event: any, d: Date) => {
+      const dayStr = new Date(d).toDateString();
+      const startDayStr = formData.startDate ? new Date(formData.startDate).toDateString() : '';
+
+      // Determine selected time range for this day
+      let selStart = '';
+      let selEnd = '';
+      if (dayStr === startDayStr) {
+        selStart = formData.startTime;
+        selEnd = formData.endTime;
+      } else {
+        const slot = (formData.dateTimeSlots || []).find((s) => new Date(s.date).toDateString() === dayStr);
+        selStart = slot?.startTime || '';
+        selEnd = slot?.endTime || '';
+      }
+
+      // If user hasn't chosen times yet, fall back to date-level blocking
+      if (!selStart || !selEnd) return true;
+      const selStartMin = toMinutes(selStart);
+      const selEndMin = toMinutes(selEnd);
+      if (selEndMin <= selStartMin) return true;
+
+      // Determine event time range on this day
+      let evStart = '';
+      let evEnd = '';
+      if (event?.startDate && new Date(event.startDate).toDateString() === dayStr) {
+        evStart = event.startTime;
+        evEnd = event.endTime;
+      } else if (event?.dateTimeSlots && Array.isArray(event.dateTimeSlots)) {
+        const matched = event.dateTimeSlots.find((s: any) => s?.startDate && new Date(s.startDate).toDateString() === dayStr);
+        evStart = matched?.startTime;
+        evEnd = matched?.endTime;
+      }
+
+      if (!evStart || !evEnd) return true;
+      const evStartMin = toMinutes(evStart);
+      const evEndMin = toMinutes(evEnd);
+      if (evEndMin <= evStartMin) return true;
+
+      // Overlap check (treat as [start, end))
+      return selStartMin < evEndMin && selEndMin > evStartMin;
+    };
+
     return dates.some((d) => {
       const dayEvents = eventsByDate[d.toDateString()] || [];
       return dayEvents.some((e: any) => {
+        if (!isRelevantStatus(e?.status)) return false;
         const eventLocations = e.locations && Array.isArray(e.locations) && e.locations.length > 0 ? e.locations : [e.location];
-        return eventLocations.some((loc: string) => locationsConflict(loc, roomName));
+        const hasLocationConflict = eventLocations.some((loc: string) => locationsConflict(loc, roomName));
+        if (!hasLocationConflict) return false;
+        return selectionOverlapsEventOnDate(e, d);
       });
     });
   };
@@ -367,15 +420,37 @@ const RequestEventPage: React.FC = () => {
           const uniqueLocationsFiltered = uniqueLocations.filter(loc => 
             !/^Pavilion\s-\sKalayaan\sBallroom\s-\sSection\s[ABC]$/i.test(loc.name)
           );
-          setLocationData(uniqueLocationsFiltered); // Store filtered location data
+          // Ensure a frontend-only option exists for Conference Room (Entire)
+          const withConferenceEntireData = uniqueLocationsFiltered.some((l: any) => l.name === '4th Flr. Conference Room (Entire)')
+            ? uniqueLocationsFiltered
+            : [...uniqueLocationsFiltered, { name: '4th Flr. Conference Room (Entire)', isCustom: false }];
+
+          // Sort so "(Entire)" option appears before individual conference rooms
+          const sortKey = (name: string) => {
+            if (name === '4th Flr. Conference Room (Entire)') return 0;
+            if (/^4th\s*Flr\.\s*Conference\s*Room\s*\d+$/i.test(name)) return 1;
+            return 2;
+          };
+
+          const withConferenceEntireDataSorted = [...withConferenceEntireData].sort((a: any, b: any) => {
+            const ka = sortKey(a.name);
+            const kb = sortKey(b.name);
+            if (ka !== kb) return ka - kb;
+            return a.name.localeCompare(b.name);
+          });
+
+          setLocationData(withConferenceEntireDataSorted); // Store filtered location data
           
           // Extract just names for backward compatibility and filter out Kalayaan sections A/B/C
-          const locationNames = uniqueLocationsFiltered.map(loc => loc.name);
+          const locationNames = withConferenceEntireDataSorted.map((loc: any) => loc.name);
           const filteredLocationNames = locationNames.filter(name => {
             // Remove Pavilion - Kalayaan Ballroom sections A/B/C; keep only (Entire)
             return !/^Pavilion\s-\sKalayaan\sBallroom\s-\sSection\s[ABC]$/i.test(name);
           });
-          setLocations(['Add Custom Location', ...filteredLocationNames]);
+          const withConferenceEntire = filteredLocationNames.includes('4th Flr. Conference Room (Entire)')
+            ? filteredLocationNames
+            : [...filteredLocationNames, '4th Flr. Conference Room (Entire)'];
+          setLocations(['Add Custom Location', ...withConferenceEntire]);
         }
       } catch (error) {
         // Keep default "Add Custom Location" if fetch fails
@@ -451,6 +526,31 @@ const RequestEventPage: React.FC = () => {
       }
     }
   };
+
+  // If Conference Room (Entire) is selected, auto-drop rooms that are unavailable
+  // for the chosen date/time so users can't accidentally submit blocked rooms.
+  useEffect(() => {
+    if (!showScheduleModal) return;
+    if (formData.location !== '4th Flr. Conference Room (Entire)') return;
+
+    const allRooms = ['4th Flr. Conference Room 1', '4th Flr. Conference Room 2', '4th Flr. Conference Room 3'];
+    if (!formData.locations || formData.locations.length === 0) return;
+
+    const unavailableRooms = allRooms.filter((r) => formData.locations.includes(r) && isRoomUnavailableOnSelectedDates(r));
+    if (unavailableRooms.length === 0) return;
+
+    const nextLocations = formData.locations.filter((loc) => !unavailableRooms.includes(loc));
+    if (nextLocations.length === formData.locations.length) return;
+
+    handleInputChange('locations', nextLocations);
+    if (nextLocations.length <= 1) {
+      handleInputChange('multipleLocations', false);
+    }
+    toast.error('Some rooms are unavailable on your selected schedule', {
+      description: `Removed: ${unavailableRooms.join(', ')}`,
+      duration: 6000
+    });
+  }, [showScheduleModal, formData.location, formData.startDate, formData.endDate, formData.startTime, formData.endTime, formData.dateTimeSlots, eventsByDate]);
 
   // Check if a date should be disabled (not available for the selected location)
   const isDateDisabled = (date: Date) => {
@@ -602,6 +702,9 @@ const RequestEventPage: React.FC = () => {
 
           events.forEach((event: any) => {
             if (!event.startDate || !event.startTime || !event.endTime) return;
+
+            // Only consider events that actually block availability
+            if (event.status !== 'approved' && event.status !== 'submitted') return;
             const mainDateStr = new Date(event.startDate).toDateString();
             if (map[mainDateStr]) map[mainDateStr].push(event);
             if (event.dateTimeSlots && Array.isArray(event.dateTimeSlots)) {
@@ -810,8 +913,17 @@ const RequestEventPage: React.FC = () => {
     } else {
       setShowCustomLocation(false);
       handleInputChange('location', value);
-      // Initialize locations array with the selected location
-      handleInputChange('locations', [value]);
+
+      // Special case: Conference Room (Entire) should behave like multi-location selection
+      if (value === '4th Flr. Conference Room (Entire)') {
+        const allRooms = ['4th Flr. Conference Room 1', '4th Flr. Conference Room 2', '4th Flr. Conference Room 3'];
+        handleInputChange('locations', allRooms);
+        handleInputChange('multipleLocations', true);
+      } else {
+        // Initialize locations array with the selected location
+        handleInputChange('locations', [value]);
+        handleInputChange('multipleLocations', false);
+      }
       handleInputChange('roomType', '');
       
       // Show loading state and modal IMMEDIATELY before any API calls
@@ -819,12 +931,53 @@ const RequestEventPage: React.FC = () => {
       setShowLocationRequirementsModal(true);
       
       // Fetch available dates for the selected location
-      await fetchAvailableDatesForLocation(value);
-      
-      // Check if this single location has requirements
+      await fetchAvailableDatesForLocation(
+        value === '4th Flr. Conference Room (Entire)' ? '4th Flr. Conference Room 1' : value
+      );
+
+      // Conference Room (Entire): load the grouped requirements for Rooms 1+2+3.
+      if (value === '4th Flr. Conference Room (Entire)') {
+        try {
+          const token = localStorage.getItem('authToken');
+          if (token) {
+            const response = await fetch(`${API_BASE_URL}/location-requirements`, {
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (response.ok) {
+              const allRequirements = await response.json();
+              const allRooms = ['4th Flr. Conference Room 1', '4th Flr. Conference Room 2', '4th Flr. Conference Room 3'];
+              const groupedRequirement = allRequirements.find((req: any) => {
+                if (!req.locationNames || !Array.isArray(req.locationNames)) return false;
+                return allRooms.every((loc) => req.locationNames.includes(loc));
+              });
+
+              setLoadingLocationRequirements(false);
+
+              if (groupedRequirement && Array.isArray(groupedRequirement.requirements) && groupedRequirement.requirements.length > 0) {
+                setLocationRequirements(groupedRequirement.requirements);
+                setLocationRoomTypes(groupedRequirement.roomTypes || []);
+                setSelectedLocation(allRooms.join(' + '));
+                return;
+              }
+            }
+          }
+        } catch (e) {
+          // fall through
+        }
+
+        // No grouped requirements found: close modal and continue to schedule
+        setLoadingLocationRequirements(false);
+        setShowLocationRequirementsModal(false);
+        setSelectedLocation('4th Flr. Conference Room 1 + 4th Flr. Conference Room 2 + 4th Flr. Conference Room 3');
+        setShowScheduleModal(true);
+        return;
+      }
+
+      // Other locations: behave as before
       const locationData = await fetchLocationRequirements(value);
       setLoadingLocationRequirements(false);
-      
+
       if (locationData && locationData.requirements && locationData.requirements.length > 0) {
         // Show requirements modal for single location
         setLocationRequirements(locationData.requirements);
@@ -846,16 +999,12 @@ const RequestEventPage: React.FC = () => {
     // Always fetch availability for context
     await fetchAvailableDatesForLocation(roomName);
 
-    // If current primary is a conference room and different from new one, switch primary and remove old from list
+    // Keep the user's primary dropdown location unchanged; only append rooms.
+    // Ensure the primary location is part of the locations list.
     const primary = formData.location;
-    const isPrimaryConference = typeof primary === 'string' && primary.includes('4th Flr. Conference Room');
-
     let updatedLocations = [...formData.locations];
-    if (isPrimaryConference && primary !== roomName) {
-      // Remove old primary from selections if present
-      updatedLocations = updatedLocations.filter((loc) => loc !== primary);
-      // Switch primary to the new room
-      handleInputChange('location', roomName);
+    if (primary && !updatedLocations.includes(primary)) {
+      updatedLocations = [primary, ...updatedLocations];
     }
 
     // Ensure the new room is in selections (avoid duplicates)
@@ -4571,7 +4720,8 @@ const RequestEventPage: React.FC = () => {
               {/* Multi-Conference Room Selection - Clean White Design */}
               {(formData.location === '4th Flr. Conference Room 1' || 
                 formData.location === '4th Flr. Conference Room 2' || 
-                formData.location === '4th Flr. Conference Room 3') && (
+                formData.location === '4th Flr. Conference Room 3' ||
+                formData.location === '4th Flr. Conference Room (Entire)') && (
                 <div className="mt-4 p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
                   {/* Header */}
                   <div className="flex items-center gap-2 mb-3">
