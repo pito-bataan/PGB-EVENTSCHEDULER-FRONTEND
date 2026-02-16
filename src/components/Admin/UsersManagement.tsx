@@ -412,10 +412,28 @@ const UsersManagement: React.FC = () => {
   };
 
   const handleInputChange = (field: keyof NewUser, value: string) => {
-    setNewUser(prev => ({
-      ...prev,
-      [field]: value
-    }));
+    setNewUser(prev => {
+      // If role is being changed to 'Admin', auto-set department to 'System Admin'
+      if (field === 'role' && value === 'Admin') {
+        return {
+          ...prev,
+          [field]: value,
+          department: 'System Admin'
+        };
+      }
+      // If role is being changed from 'Admin' to something else, clear department
+      if (field === 'role' && value !== 'Admin' && prev.role === 'Admin') {
+        return {
+          ...prev,
+          [field]: value,
+          department: ''
+        };
+      }
+      return {
+        ...prev,
+        [field]: value
+      };
+    });
   };
 
   const handleAddUser = async () => {
@@ -717,24 +735,36 @@ const UsersManagement: React.FC = () => {
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="department">Department</Label>
-                <Select value={newUser.department} onValueChange={(value) => handleInputChange('department', value)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select department" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {departments.length === 0 ? (
-                      <SelectItem value="__none" disabled>
-                        No departments found
-                      </SelectItem>
-                    ) : (
-                      departments.map((dept) => (
-                        <SelectItem key={dept._id} value={dept.name}>
-                          {dept.name}{dept.isVisible ? '' : ' (Hidden)'}
+                {newUser.role === 'Admin' ? (
+                  <div className="flex items-center h-9 px-3 rounded-md border border-gray-200 bg-gray-50 text-sm text-gray-900">
+                    System Admin
+                  </div>
+                ) : (
+                  <Select 
+                    value={newUser.department} 
+                    onValueChange={(value) => handleInputChange('department', value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select department" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {departments.length === 0 ? (
+                        <SelectItem value="__none" disabled>
+                          No departments found
                         </SelectItem>
-                      ))
-                    )}
-                  </SelectContent>
-                </Select>
+                      ) : (
+                        departments.map((dept) => (
+                          <SelectItem key={dept._id} value={dept.name}>
+                            {dept.name}{dept.isVisible ? '' : ' (Hidden)'}
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                )}
+                {newUser.role === 'Admin' && (
+                  <p className="text-xs text-gray-500 mt-1">Admins are automatically assigned to System Admin</p>
+                )}
               </div>
 
               <div className="space-y-2">

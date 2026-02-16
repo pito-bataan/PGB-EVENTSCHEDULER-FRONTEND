@@ -8,8 +8,18 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Calendar, MapPin, Clock, RefreshCw, FileText, Download } from 'lucide-react';
 import { format } from 'date-fns';
+import { toast } from 'sonner';
 import { getGlobalSocket } from '@/hooks/useSocket';
 import { useAdminCalendarStore, type Event } from '@/stores/adminCalendarStore';
+import { jsPDF } from 'jspdf';
+
+// Extend jsPDF with autotable
+declare module 'jspdf' {
+  interface jsPDF {
+    autoTable: (options: any) => jsPDF;
+    lastAutoTable: { finalY: number };
+  }
+}
 
 const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api`;
 
@@ -99,6 +109,97 @@ const AdminCalendarPage: React.FC = () => {
     return `${displayHour}:${minutes} ${ampm}`;
   };
 
+  // Generate Event Summary PDF for selected date
+  const generateEventSummaryPDF = (calEvents: CalendarEvent[], date: Date) => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    
+    // Header
+    doc.setFontSize(16);
+    doc.setTextColor(0, 0, 0);
+    doc.text('Event Summary Report', pageWidth / 2, 20, { align: 'center' });
+    
+    // Date
+    doc.setFontSize(12);
+    doc.text(`Date: ${format(date, 'MMMM dd, yyyy')}`, pageWidth / 2, 28, { align: 'center' });
+    
+    // Total events count
+    doc.setFontSize(10);
+    doc.text(`Total Events: ${calEvents.length}`, 14, 38);
+    
+    // Prepare table data
+    const tableData = calEvents.map((calEvent) => {
+      const baseId = calEvent.id.includes('-slot-') 
+        ? calEvent.id.split('-slot-')[0] 
+        : calEvent.id;
+      const event = events.find(e => e._id === baseId);
+      if (!event) return null;
+      
+      // Format time range
+      let timeRange = '';
+      if (calEvent.id.includes('-slot-') && event.dateTimeSlots) {
+        const slotIndex = parseInt(calEvent.id.split('-slot-')[1]);
+        const slot = event.dateTimeSlots[slotIndex];
+        if (slot) {
+          timeRange = `${formatTime(slot.startTime)} - ${formatTime(slot.endTime)}`;
+        }
+      } else {
+        timeRange = `${formatTime(event.startTime)} - ${formatTime(event.endTime)}`;
+      }
+      
+      return [
+        event.eventTitle,
+        event.requestor,
+        event.requestorDepartment,
+        timeRange,
+        event.status.charAt(0).toUpperCase() + event.status.slice(1)
+      ];
+    }).filter(Boolean);
+    
+    // Create table
+    (doc as any).autoTable({
+      startY: 45,
+      head: [['Event Title', 'Requestor', 'Department', 'Time', 'Status']],
+      body: tableData,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [220, 38, 38], // Red color
+        textColor: 255,
+        fontSize: 10,
+        fontStyle: 'bold'
+      },
+      bodyStyles: {
+        fontSize: 9,
+        textColor: 0
+      },
+      alternateRowStyles: {
+        fillColor: [249, 250, 251]
+      },
+      columnStyles: {
+        0: { cellWidth: 'auto' },
+        1: { cellWidth: 'auto' },
+        2: { cellWidth: 'auto' },
+        3: { cellWidth: 40 },
+        4: { cellWidth: 30 }
+      },
+      margin: { top: 45, right: 14, bottom: 20, left: 14 }
+    });
+    
+    // Footer
+    const pageCount = (doc as any).internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setFontSize(8);
+      doc.setTextColor(128, 128, 128);
+      doc.text(`Generated on ${format(new Date(), 'MMM dd, yyyy hh:mm a')}`, pageWidth / 2, doc.internal.pageSize.getHeight() - 10, { align: 'center' });
+    }
+    
+    // Download PDF
+    doc.save(`Event_Summary_${format(date, 'yyyy-MM-dd')}.pdf`);
+    
+    toast.success('Event Summary PDF generated successfully!');
+  };
+
   // Get status badge
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -140,12 +241,9 @@ const AdminCalendarPage: React.FC = () => {
       if (slot) {
         displayStartDate = slot.startDate;
         displayStartTime = slot.startTime;
-        displayEndDate = slot.endDate;
+        displayEndDate = slot.endDate || slot.startDate;
         displayEndTime = slot.endTime;
       }
-    } else if (!isSlot && event.dateTimeSlots && event.dateTimeSlots.length > 0) {
-      // For Day 1 of multi-day events, end date should be same as start date
-      displayEndDate = event.startDate;
     }
 
     // Determine badge color based on event status
@@ -204,27 +302,64 @@ const AdminCalendarPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Start Date & Time */}
-            <div className="flex items-start gap-2 text-sm">
-              <Calendar className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
-              <div>
-                <p className="font-medium text-gray-700">Start</p>
-                <p className="text-gray-600">
-                  {format(new Date(displayStartDate), 'MMM dd, yyyy')} at {formatTime(displayStartTime)}
-                </p>
-              </div>
-            </div>
-
-            {/* End Date & Time */}
-            <div className="flex items-start gap-2 text-sm">
-              <Clock className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
-              <div>
-                <p className="font-medium text-gray-700">End</p>
-                <p className="text-gray-600">
-                  {format(new Date(displayEndDate), 'MMM dd, yyyy')} at {formatTime(displayEndTime)}
-                </p>
-              </div>
-            </div>
+            {/* Date & Time - Day by Day for multi-day events */}
+            {(() => {
+              const hasMultipleDays = event.dateTimeSlots && event.dateTimeSlots.length > 0;
+              
+              if (!hasMultipleDays) {
+                // Single day event - show simple start/end
+                return (
+                  <>
+                    <div className="flex items-start gap-2 text-sm">
+                      <Calendar className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <p className="font-medium text-gray-700">Start</p>
+                        <p className="text-gray-600">
+                          {format(new Date(displayStartDate), 'MMM dd, yyyy')} at {formatTime(displayStartTime)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-2 text-sm">
+                      <Clock className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <p className="font-medium text-gray-700">End</p>
+                        <p className="text-gray-600">
+                          {format(new Date(displayEndDate), 'MMM dd, yyyy')} at {formatTime(displayEndTime)}
+                        </p>
+                      </div>
+                    </div>
+                  </>
+                );
+              }
+              
+              // Multi-day event - show Day 1, Day 2, etc.
+              return (
+                <div className="space-y-2">
+                  <p className="font-medium text-gray-700 text-sm flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-blue-600" />
+                    Event Schedule ({event.dateTimeSlots!.length + 1} days)
+                  </p>
+                  
+                  {/* Day 1 */}
+                  <div className="pl-6 border-l-2 border-blue-200">
+                    <p className="text-sm font-medium text-gray-800">Day 1</p>
+                    <p className="text-xs text-gray-600">
+                      {format(new Date(event.startDate), 'MMM dd, yyyy')} • {formatTime(event.startTime)} - {formatTime(event.endTime)}
+                    </p>
+                  </div>
+                  
+                  {/* Additional Days */}
+                  {event.dateTimeSlots!.map((slot, index) => (
+                    <div key={index} className="pl-6 border-l-2 border-blue-200">
+                      <p className="text-sm font-medium text-gray-800">Day {index + 2}</p>
+                      <p className="text-xs text-gray-600">
+                        {format(new Date(slot.startDate), 'MMM dd, yyyy')} • {formatTime(slot.startTime)} - {formatTime(slot.endTime)}
+                    </p>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
 
             {/* Requestor Info */}
             <div className="pt-2 border-t">
@@ -406,13 +541,26 @@ const AdminCalendarPage: React.FC = () => {
                   : 'Events'}
               </DialogTitle>
             </DialogHeader>
-            <div className="space-y-1 max-h-[60vh] overflow-y-auto">
+            <div className="space-y-4">
               {moreDateEvents.length === 0 ? (
                 <div className="text-sm text-gray-500 py-4">No events</div>
               ) : (
                 moreDateEvents.map((calEvent) => renderEventWithPopover(calEvent))
               )}
             </div>
+            {/* Generate PDF Button */}
+            {moreDateEvents.length > 0 && moreEventsDate && (
+              <div className="pt-4 border-t">
+                <Button
+                  onClick={() => generateEventSummaryPDF(moreDateEvents, moreEventsDate)}
+                  variant="outline"
+                  className="w-full gap-2"
+                >
+                  <FileText className="w-4 h-4" />
+                  Generate Event Summary PDF
+                </Button>
+              </div>
+            )}
           </DialogContent>
         </Dialog>
 
