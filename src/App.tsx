@@ -187,9 +187,9 @@ function App() {
                             try {
                               const parsed = JSON.parse(userData);
                               const role = (parsed.role || '').toLowerCase();
-                              // If admin role, redirect to all-events, if superadmin go to dashboard
+                              // If admin role, redirect to calendar, if superadmin go to dashboard
                               if (role === 'admin') {
-                                return 'all-events';
+                                return 'calendar';
                               } else if (role === 'superadmin') {
                                 return 'dashboard';
                               }
@@ -220,7 +220,9 @@ function App() {
               // User is logged in, redirect to appropriate dashboard
               if (user) {
                 const userRole = (user.role || '').toLowerCase();
-                if (userRole === 'admin' || userRole === 'superadmin') {
+                if (userRole === 'admin') {
+                  return <Navigate to="/admin/calendar" replace />;
+                } else if (userRole === 'superadmin') {
                   return <Navigate to="/admin/dashboard" replace />;
                 } else {
                   return <Navigate to="/users/dashboard" replace />;

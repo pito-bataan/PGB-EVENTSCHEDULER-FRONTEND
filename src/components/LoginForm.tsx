@@ -74,9 +74,9 @@ const LoginForm = () => {
         // Navigate based on user role
         if (userRole === 'admin' || userRole === 'superadmin') {
           toast.success(`Welcome back, ${user.username}! Redirecting to Admin Panel...`);
-          // Admin goes to all-events, SuperAdmin goes to dashboard
+          // Admin goes to calendar, SuperAdmin goes to dashboard
           if (userRole === 'admin') {
-            navigate('/admin/all-events');
+            navigate('/admin/calendar');
           } else {
             navigate('/admin/dashboard');
           }
