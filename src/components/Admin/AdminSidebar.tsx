@@ -16,7 +16,9 @@ import {
   LogOut,
   List,
   FileText,
-  Settings
+  Settings,
+  PlusCircle,
+  CalendarCheck
 } from 'lucide-react';
 
 const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api`;
@@ -76,6 +78,8 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ user }) => {
     { icon: Calendar, label: 'All Events', href: '/admin/all-events', roles: ['superadmin'] },
     { icon: List, label: 'Overall Events', href: '/admin/overall-events', roles: ['superadmin'] },
     { icon: CalendarDays, label: 'Calendar', href: '/admin/calendar', roles: ['superadmin', 'admin'] },
+    { icon: PlusCircle, label: 'Request Event', href: '/users/request-event', roles: ['superadmin', 'admin'] },
+    { icon: CalendarCheck, label: 'My Events', href: '/users/my-events', roles: ['superadmin', 'admin'] },
     { icon: FileText, label: 'Event Reports', href: '/admin/event-reports', roles: ['superadmin'] },
     { icon: Users, label: 'Users', href: '/admin/users', roles: ['superadmin'] },
     { icon: Activity, label: 'Users Logs', href: '/admin/users-logs', roles: ['superadmin'] },

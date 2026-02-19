@@ -24,7 +24,8 @@ import {
   BookOpen,
   ChevronDown,
   ChevronRight,
-  ClipboardList
+  ClipboardList,
+  ArrowLeft
 } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 
@@ -45,6 +46,24 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
     email: user?.email || "user@bataan.gov.ph",
     department: user?.department || "Department"
   });
+
+  // Check if user is admin
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [userRole, setUserRole] = useState('');
+
+  useEffect(() => {
+    const userData = localStorage.getItem('userData');
+    if (userData) {
+      try {
+        const parsedUser = JSON.parse(userData);
+        const role = parsedUser.role || '';
+        setUserRole(role);
+        setIsAdmin(role.toLowerCase() === 'admin' || role.toLowerCase() === 'superadmin');
+      } catch (error) {
+        // Error parsing user data
+      }
+    }
+  }, []);
 
   // Load user data from localStorage on mount
   useEffect(() => {
@@ -990,6 +1009,31 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
       
       {/* Navigation */}
       <nav className="flex-1 p-2 space-y-3 overflow-y-auto">
+        {/* Back to Admin Button - Only show for admin users */}
+        {isAdmin && (
+          <div className="mb-4">
+            <Button
+              variant="outline"
+              onClick={() => {
+                // Navigate to dashboard for superadmin, calendar for regular admin
+                const targetPath = userRole.toLowerCase() === 'superadmin' 
+                  ? '/admin/dashboard' 
+                  : '/admin/calendar';
+                navigate(targetPath);
+                setIsMobileMenuOpen(false);
+              }}
+              className="w-full h-10 justify-start gap-3 px-3 bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 hover:text-blue-800"
+              title="Back to Admin"
+            >
+              <ArrowLeft className="h-5 w-5 flex-shrink-0" />
+              <span className="flex-1 text-left truncate">
+                Back to Admin
+              </span>
+            </Button>
+            <div className="mt-2 border-b border-gray-200" />
+          </div>
+        )}
+        
         {navigationGroups.map((group, groupIndex) => (
           <div key={groupIndex} className="space-y-1">
             {/* Group Label */}
