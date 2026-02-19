@@ -421,8 +421,11 @@ const RequestEventPage: React.FC = () => {
             !/^Pavilion\s-\sKalayaan\sBallroom\s-\sSection\s[ABC]$/i.test(loc.name)
           );
           // Ensure a frontend-only option exists for Conference Room (Entire)
+          // and force isCustom: false for it regardless of database value
           const withConferenceEntireData = uniqueLocationsFiltered.some((l: any) => l.name === '4th Flr. Conference Room (Entire)')
-            ? uniqueLocationsFiltered
+            ? uniqueLocationsFiltered.map((l: any) => 
+                l.name === '4th Flr. Conference Room (Entire)' ? { ...l, isCustom: false } : l
+              )
             : [...uniqueLocationsFiltered, { name: '4th Flr. Conference Room (Entire)', isCustom: false }];
 
           // Sort so "(Entire)" option appears before individual conference rooms
