@@ -24,7 +24,7 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/h
 import { useSocket, getGlobalSocket } from '@/hooks/useSocket';
 import { Check, X, ChevronLeft, ChevronRight, Search, RefreshCw } from 'lucide-react';
 
-type BacRequestStatus = 'pending' | 'approved' | 'rejected';
+type BacRequestStatus = 'pending' | 'approved' | 'rejected' | 'completed';
 
 type BacRequestRow = {
   id: string;
@@ -77,7 +77,7 @@ const BacRequestsPage: React.FC = () => {
   const itemsPerPage = 10;
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState<BacRequestRow[]>([]);
-  const [totals, setTotals] = useState({ pending: 0, approved: 0, rejected: 0 });
+  const [totals, setTotals] = useState({ pending: 0, approved: 0, rejected: 0, completed: 0 });
 
   const [approveOpen, setApproveOpen] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
@@ -109,6 +109,7 @@ const BacRequestsPage: React.FC = () => {
   const pendingCount = totals.pending;
   const approvedCount = totals.approved;
   const rejectedCount = totals.rejected;
+  const completedCount = totals.completed;
 
   const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api`;
   const getAuthHeaders = () => {
@@ -180,8 +181,16 @@ const BacRequestsPage: React.FC = () => {
   };
 
   const mapEventToRow = (evt: any): BacRequestRow => {
-    const bacStatusRaw = typeof evt?.bacApprovalStatus === 'string' ? evt.bacApprovalStatus.toLowerCase() : 'pending';
-    const status: BacRequestStatus = (bacStatusRaw === 'approved' || bacStatusRaw === 'rejected') ? bacStatusRaw : 'pending';
+    // First check if event status is completed
+    const eventStatus = typeof evt?.status === 'string' ? evt.status.toLowerCase() : '';
+    let status: BacRequestStatus;
+    
+    if (eventStatus === 'completed') {
+      status = 'completed';
+    } else {
+      const bacStatusRaw = typeof evt?.bacApprovalStatus === 'string' ? evt.bacApprovalStatus.toLowerCase() : 'pending';
+      status = (bacStatusRaw === 'approved' || bacStatusRaw === 'rejected') ? bacStatusRaw : 'pending';
+    }
 
     const startDate = evt?.startDate ? String(evt.startDate).split('T')[0] : '';
     const endDate = evt?.endDate ? String(evt.endDate).split('T')[0] : '';
@@ -219,23 +228,26 @@ const BacRequestsPage: React.FC = () => {
 
   const fetchTotals = async () => {
     try {
-      const [p, a, r] = await Promise.all([
+      const [p, a, r, c] = await Promise.all([
         fetch(`${API_BASE_URL}/events/bac/requests?status=pending&page=1&limit=1`, { headers: getAuthHeaders() }),
         fetch(`${API_BASE_URL}/events/bac/requests?status=approved&page=1&limit=1`, { headers: getAuthHeaders() }),
-        fetch(`${API_BASE_URL}/events/bac/requests?status=rejected&page=1&limit=1`, { headers: getAuthHeaders() })
+        fetch(`${API_BASE_URL}/events/bac/requests?status=rejected&page=1&limit=1`, { headers: getAuthHeaders() }),
+        fetch(`${API_BASE_URL}/events/bac/requests?status=completed&page=1&limit=1`, { headers: getAuthHeaders() })
       ]);
 
       const pj = await p.json().catch(() => null);
       const aj = await a.json().catch(() => null);
       const rj = await r.json().catch(() => null);
+      const cj = await c.json().catch(() => null);
 
       setTotals({
         pending: typeof pj?.total === 'number' ? pj.total : 0,
         approved: typeof aj?.total === 'number' ? aj.total : 0,
-        rejected: typeof rj?.total === 'number' ? rj.total : 0
+        rejected: typeof rj?.total === 'number' ? rj.total : 0,
+        completed: typeof cj?.total === 'number' ? cj.total : 0
       });
     } catch {
-      setTotals({ pending: 0, approved: 0, rejected: 0 });
+      setTotals({ pending: 0, approved: 0, rejected: 0, completed: 0 });
     }
   };
 
@@ -422,7 +434,7 @@ const BacRequestsPage: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card className="border-amber-200/70 bg-gradient-to-br from-amber-50 via-amber-50/40 to-orange-50 shadow-sm">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">Pending</CardTitle>
@@ -448,6 +460,15 @@ const BacRequestsPage: React.FC = () => {
           <CardContent>
             <div className="text-3xl font-bold text-gray-900">{rejectedCount}</div>
             <p className="text-xs text-gray-500 mt-1">Rejected by BAC</p>
+          </CardContent>
+        </Card>
+        <Card className="border-gray-200/70 bg-gradient-to-br from-gray-50 via-gray-50/40 to-slate-50 shadow-sm">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-gray-600">Completed</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-gray-900">{completedCount}</div>
+            <p className="text-xs text-gray-500 mt-1">Events completed</p>
           </CardContent>
         </Card>
       </div>
@@ -489,6 +510,7 @@ const BacRequestsPage: React.FC = () => {
                   <SelectItem value="pending">Pending</SelectItem>
                   <SelectItem value="approved">Approved</SelectItem>
                   <SelectItem value="rejected">Rejected</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
                 </SelectContent>
               </Select>
 
@@ -596,6 +618,9 @@ const BacRequestsPage: React.FC = () => {
                         )}
                         {row.status === 'rejected' && (
                           <Badge variant="destructive">Rejected</Badge>
+                        )}
+                        {row.status === 'completed' && (
+                          <Badge className="bg-gray-600">Completed</Badge>
                         )}
                       </TableCell>
                       <TableCell className="hidden lg:table-cell text-xs text-gray-500">{row.submittedAtLabel}</TableCell>
