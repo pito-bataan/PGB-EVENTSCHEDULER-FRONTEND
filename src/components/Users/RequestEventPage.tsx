@@ -1802,6 +1802,51 @@ const RequestEventPage: React.FC = () => {
       
       const eventsData = await response.json();
       const events = eventsData.data || [];
+
+      const dayKey = (d: Date) => {
+        const dd = new Date(d);
+        return new Date(dd.getFullYear(), dd.getMonth(), dd.getDate()).toDateString();
+      };
+
+      const getSelectedTimeRangeForDate = (d: Date) => {
+        const dayStr = dayKey(d);
+        const startDayStr = formData.startDate ? dayKey(formData.startDate) : '';
+        if (dayStr === startDayStr) {
+          return { start: formData.startTime || startTime, end: formData.endTime || endTime };
+        }
+        const slot = (formData.dateTimeSlots || []).find((s) => s?.date && dayKey(new Date(s.date)) === dayStr);
+        return { start: slot?.startTime || '', end: slot?.endTime || '' };
+      };
+
+      const getEventTimeRangeForDate = (event: any, d: Date) => {
+        const dayStr = dayKey(d);
+
+        const evStartDateStr = event?.startDate ? dayKey(new Date(event.startDate)) : '';
+        if (evStartDateStr && evStartDateStr === dayStr) {
+          return { start: String(event?.startTime || ''), end: String(event?.endTime || '') };
+        }
+
+        if (Array.isArray(event?.dateTimeSlots)) {
+          const matched = event.dateTimeSlots.find((s: any) => s?.startDate && dayKey(new Date(s.startDate)) === dayStr);
+          if (matched) {
+            return { start: String(matched?.startTime || ''), end: String(matched?.endTime || '') };
+          }
+        }
+
+        // Fallback: if event spans this day (multi-day) but has no slots, treat it as occupying the same time range.
+        if (event?.startDate && event?.endDate) {
+          const start = new Date(event.startDate);
+          const end = new Date(event.endDate);
+          const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+          const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+          const checkDay = new Date(new Date(d).getFullYear(), new Date(d).getMonth(), new Date(d).getDate());
+          if (checkDay >= startDay && checkDay <= endDay) {
+            return { start: String(event?.startTime || ''), end: String(event?.endTime || '') };
+          }
+        }
+
+        return null;
+      };
       
       
       // Filter events that conflict with the selected time AND location (for venue booking)
@@ -1855,6 +1900,50 @@ const RequestEventPage: React.FC = () => {
       
       const eventsData = await response.json();
       const events = eventsData.data || [];
+
+      const dayKey = (d: Date) => {
+        const dd = new Date(d);
+        return new Date(dd.getFullYear(), dd.getMonth(), dd.getDate()).toDateString();
+      };
+
+      const getSelectedTimeRangeForDate = (d: Date) => {
+        const dayStr = dayKey(d);
+        const startDayStr = formData.startDate ? dayKey(formData.startDate) : '';
+        if (dayStr === startDayStr) {
+          return { start: formData.startTime || startTime, end: formData.endTime || endTime };
+        }
+        const slot = (formData.dateTimeSlots || []).find((s) => s?.date && dayKey(new Date(s.date)) === dayStr);
+        return { start: slot?.startTime || '', end: slot?.endTime || '' };
+      };
+
+      const getEventTimeRangeForDate = (event: any, d: Date) => {
+        const dayStr = dayKey(d);
+
+        const evStartDateStr = event?.startDate ? dayKey(new Date(event.startDate)) : '';
+        if (evStartDateStr && evStartDateStr === dayStr) {
+          return { start: String(event?.startTime || ''), end: String(event?.endTime || '') };
+        }
+
+        if (Array.isArray(event?.dateTimeSlots)) {
+          const matched = event.dateTimeSlots.find((s: any) => s?.startDate && dayKey(new Date(s.startDate)) === dayStr);
+          if (matched) {
+            return { start: String(matched?.startTime || ''), end: String(matched?.endTime || '') };
+          }
+        }
+
+        if (event?.startDate && event?.endDate) {
+          const start = new Date(event.startDate);
+          const end = new Date(event.endDate);
+          const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+          const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+          const checkDay = new Date(new Date(d).getFullYear(), new Date(d).getMonth(), new Date(d).getDate());
+          if (checkDay >= startDay && checkDay <= endDay) {
+            return { start: String(event?.startTime || ''), end: String(event?.endTime || '') };
+          }
+        }
+
+        return null;
+      };
       
       // Build list of all dates to check (Day 1 + additional days)
       const datesToCheck: Date[] = [date]; // Start with Day 1
@@ -1884,14 +1973,19 @@ const RequestEventPage: React.FC = () => {
           return false;
         }
         
-        const eventStartDate = new Date(event.startDate);
-        
         // Check if event conflicts with ANY of our dates
-        return datesToCheck.some(checkDate => {
+        return datesToCheck.some((checkDate) => {
+          const selectedRange = getSelectedTimeRangeForDate(checkDate);
+          const eventRange = getEventTimeRangeForDate(event, checkDate);
+          if (!eventRange) return false;
+
           const hasConflict = hasTimeConflict(
-            startTime, endTime,
-            event.startTime, event.endTime,
-            checkDate, eventStartDate
+            selectedRange.start,
+            selectedRange.end,
+            eventRange.start,
+            eventRange.end,
+            checkDate,
+            checkDate
           );
           return hasConflict;
         });
@@ -1934,9 +2028,30 @@ const RequestEventPage: React.FC = () => {
 
     const checkDateStr = new Date(checkDate).toDateString();
 
+    const normalizeDay = (d: Date) => {
+      const dd = new Date(d);
+      return new Date(dd.getFullYear(), dd.getMonth(), dd.getDate());
+    };
+
+    const eventUsesDay = (event: any) => {
+      // If there are explicit slots, trust them
+      if (Array.isArray(event?.dateTimeSlots)) {
+        return event.dateTimeSlots.some((s: any) => s?.startDate && normalizeDay(new Date(s.startDate)).toDateString() === checkDateStr);
+      }
+
+      if (!event?.startDate || !event?.endDate) {
+        return false;
+      }
+
+      const start = normalizeDay(new Date(event.startDate));
+      const end = normalizeDay(new Date(event.endDate));
+      const day = normalizeDay(new Date(checkDate));
+      return day >= start && day <= end;
+    };
+
     conflictingEvents.forEach((event: any) => {
       // Only subtract bookings that overlap the specific day we're checking
-      if (!event?.startDate || new Date(event.startDate).toDateString() !== checkDateStr) return;
+      if (!eventUsesDay(event)) return;
 
       if (isLocationDefault) {
         const eventLoc = (event?.location || '').toString();
@@ -1953,7 +2068,11 @@ const RequestEventPage: React.FC = () => {
               req.name === requirement.name && req.selected && req.quantity
             );
             if (matchingReq) {
-              usedQuantity += matchingReq.quantity || 0;
+              const k = format(new Date(checkDate), 'yyyy-MM-dd');
+              const perDayQty = matchingReq?.quantitiesByDate && typeof matchingReq.quantitiesByDate[k] === 'number'
+                ? matchingReq.quantitiesByDate[k]
+                : undefined;
+              usedQuantity += typeof perDayQty === 'number' ? perDayQty : (matchingReq.quantity || 0);
             }
           }
         });
