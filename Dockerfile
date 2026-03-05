@@ -1,7 +1,6 @@
 # Multi-stage build for production optimization
 FROM node:20-alpine AS builder
 
-# Set working directory
 WORKDIR /app
 
 # Accept build arguments for environment variables
@@ -13,32 +12,31 @@ ARG VITE_NODE_ENV=production
 ENV VITE_API_URL=$VITE_API_URL
 ENV VITE_SOCKET_URL=$VITE_SOCKET_URL
 ENV VITE_NODE_ENV=$VITE_NODE_ENV
-ENV NODE_OPTIONS=--max-old-space-size=4096
+# Reduced from 4096 to 2048 — less memory pressure on Coolify server
+ENV NODE_OPTIONS=--max-old-space-size=2048
 
-# Copy package files first (for better layer caching)
+# Copy package files first (layer cache: only re-runs npm ci when package.json changes)
 COPY package*.json ./
 
-# Configure npm for better reliability and install dependencies with retry logic
+# Install dependencies
+# IMPORTANT: Do NOT run "npm cache clean --force" here — it destroys Docker layer caching
+# and forces a full re-download of all packages on every deploy.
 RUN npm config set registry https://registry.npmjs.org/ && \
     npm config set fetch-retry-mintimeout 20000 && \
     npm config set fetch-retry-maxtimeout 120000 && \
-    npm config set fetch-retries 5 && \
-    npm config set fetch-timeout 300000 && \
-    npm ci --legacy-peer-deps --no-audit --loglevel=error || \
-    (echo "First attempt failed, retrying..." && npm ci --legacy-peer-deps --no-audit --loglevel=error) || \
-    (echo "Second attempt failed, retrying with cache clean..." && npm cache clean --force && npm ci --legacy-peer-deps --no-audit --loglevel=error) && \
-    npm cache clean --force
+    npm config set fetch-retries 3 && \
+    npm ci --legacy-peer-deps --no-audit --loglevel=error
 
-# Copy source code
+# Copy source code (this layer changes most often, so it comes after npm install)
 COPY . .
 
-# Build the application with verbose logging
+# Build the Vite app
 RUN npm run build -- --logLevel=warn
 
-# Production stage with Nginx
+# Production stage — lightweight Nginx image
 FROM nginx:alpine
 
-# curl is required for HEALTHCHECK
+# curl needed for HEALTHCHECK
 RUN apk add --no-cache curl
 
 # Copy built files from builder stage
@@ -47,12 +45,10 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 # Copy custom nginx configuration
 COPY nginx.conf /etc/nginx/nginx.conf
 
-# Expose port 6010
 EXPOSE 6010
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:6010/health || exit 1
 
-# Start nginx
 CMD ["nginx", "-g", "daemon off;"]
