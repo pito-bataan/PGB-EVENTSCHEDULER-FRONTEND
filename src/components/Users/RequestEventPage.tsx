@@ -193,7 +193,7 @@ const RequestEventPage: React.FC = () => {
   const [loadingLocationRequirements, setLoadingLocationRequirements] = useState(false);
   const [loadingDepartmentRequirements, setLoadingDepartmentRequirements] = useState(false);
   const [locationRoomTypes, setLocationRoomTypes] = useState<string[]>([]);
-  
+
   // Dynamic data from database
   const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
@@ -236,12 +236,12 @@ const RequestEventPage: React.FC = () => {
   // Check if attachments step is completed
   // For Simple Meeting: attachments only required if withGov is true
   // For other event types: attachments always required
-  const isAttachmentsCompleted = formData.eventType === 'simple-meeting' 
+  const isAttachmentsCompleted = formData.eventType === 'simple-meeting'
     ? (formData.withoutGov ? formData.attachments.length > 0 : true) // If withGov ON, require attachments; if OFF, no requirement
     : formData.attachments.length > 0; // Other event types always require attachments
 
   const [locations, setLocations] = useState<string[]>(['Add Custom Location']);
-  const [locationData, setLocationData] = useState<{name: string, isCustom: boolean}[]>([]);
+  const [locationData, setLocationData] = useState<{ name: string, isCustom: boolean }[]>([]);
   const [availableDates, setAvailableDates] = useState<Date[]>([]);
 
   const isCustomLocationSelected = React.useMemo(() => {
@@ -391,7 +391,7 @@ const RequestEventPage: React.FC = () => {
         const response = await axios.get(`${API_BASE_URL}/location-availability`, { headers });
 
         if (response.data.success) {
-          
+
           // Extract unique location objects with their properties
           const locationMap = new Map();
           response.data.data.forEach((item: any) => {
@@ -400,32 +400,32 @@ const RequestEventPage: React.FC = () => {
             if (locationName.startsWith('Bookings for ')) {
               locationName = locationName.replace('Bookings for ', '');
             }
-            
+
             // Store location with its properties
             if (!locationMap.has(locationName)) {
               // Check if location was added by PGSO account
               // If setBy.username is "event.pgso", it's a PGB location
               // If setBy.username is anything else, it's a custom location
               const isCustomLocation = item.setBy?.username !== 'event.pgso';
-              
+
               locationMap.set(locationName, {
                 name: locationName,
                 isCustom: isCustomLocation
               });
             }
           });
-          
+
           const uniqueLocations = Array.from(locationMap.values());
           // Remove Pavilion - Kalayaan Ballroom sections A/B/C from selectable locations
-          const uniqueLocationsFiltered = uniqueLocations.filter(loc => 
+          const uniqueLocationsFiltered = uniqueLocations.filter(loc =>
             !/^Pavilion\s-\sKalayaan\sBallroom\s-\sSection\s[ABC]$/i.test(loc.name)
           );
           // Ensure a frontend-only option exists for Conference Room (Entire)
           // and force isCustom: false for it regardless of database value
           const withConferenceEntireData = uniqueLocationsFiltered.some((l: any) => l.name === '4th Flr. Conference Room (Entire)')
-            ? uniqueLocationsFiltered.map((l: any) => 
-                l.name === '4th Flr. Conference Room (Entire)' ? { ...l, isCustom: false } : l
-              )
+            ? uniqueLocationsFiltered.map((l: any) =>
+              l.name === '4th Flr. Conference Room (Entire)' ? { ...l, isCustom: false } : l
+            )
             : [...uniqueLocationsFiltered, { name: '4th Flr. Conference Room (Entire)', isCustom: false }];
 
           // Sort so "(Entire)" option appears before individual conference rooms
@@ -443,7 +443,7 @@ const RequestEventPage: React.FC = () => {
           });
 
           setLocationData(withConferenceEntireDataSorted); // Store filtered location data
-          
+
           // Extract just names for backward compatibility and filter out Kalayaan sections A/B/C
           const locationNames = withConferenceEntireDataSorted.map((loc: any) => loc.name);
           const filteredLocationNames = locationNames.filter(name => {
@@ -480,10 +480,10 @@ const RequestEventPage: React.FC = () => {
         const locationAvailabilities = response.data.data.filter(
           (item: any) => item.locationName === locationName && item.status === 'available'
         );
-        
+
         // Convert date strings to Date objects
         const dates = locationAvailabilities.map((item: any) => new Date(item.date));
-        
+
         // If no availability records found (custom location), set empty array
         // This will allow date selection based on event type rules only
         setAvailableDates(dates);
@@ -559,23 +559,23 @@ const RequestEventPage: React.FC = () => {
   const isDateDisabled = (date: Date) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
+
     // Disable past dates
     if (date < today) {
       return true;
     }
-    
+
     // Simple Meeting: NO restrictions - allow ALL future dates
     if (formData.eventType === 'simple-meeting') {
       return false;
     }
-    
+
     // For Simple Event (7 days) and Complex Event (30 days)
     // Allow any date that meets the lead time requirement
     // Ignore location availability records - users can book any location
     const daysRequired = formData.eventType === 'simple' ? 7 : 30;
     const days = calculateWorkingDays(today, date);
-    
+
     // Only check if date meets minimum lead time requirement
     return days < daysRequired;
   };
@@ -584,11 +584,11 @@ const RequestEventPage: React.FC = () => {
   const locationsConflict = (loc1: string, loc2: string): boolean => {
     // Exact match
     if (loc1 === loc2) return true;
-     
+
     // Check Pavilion hierarchy
     const isPavilion1 = loc1.includes('Pavilion');
     const isPavilion2 = loc2.includes('Pavilion');
-    
+
     if (isPavilion1 && isPavilion2) {
       // Extract hall name (Kagitingan or Kalayaan)
       const getHall = (loc: string) => {
@@ -596,24 +596,24 @@ const RequestEventPage: React.FC = () => {
         if (loc.includes('Kalayaan')) return 'Kalayaan';
         return null;
       };
-      
+
       const hall1 = getHall(loc1);
       const hall2 = getHall(loc2);
-      
+
       // Different halls don't conflict
       if (hall1 !== hall2) return false;
-      
+
       // Same hall - check if one is "Entire" or both are sections
       const isEntire1 = loc1.includes('(Entire)');
       const isEntire2 = loc2.includes('(Entire)');
-      
+
       // If either is "Entire", they conflict
       if (isEntire1 || isEntire2) return true;
-      
+
       // Both are sections - only conflict if same section
       return loc1 === loc2;
     }
-    
+
     // Check Conference Room hierarchy (e.g., "4th Flr. Conference Room 1/2/3" and optional "(Entire)")
     const isConferenceRoom1 = loc1.includes('Conference Room');
     const isConferenceRoom2 = loc2.includes('Conference Room');
@@ -646,7 +646,7 @@ const RequestEventPage: React.FC = () => {
       // If one has no number and is not marked Entire, be conservative: treat as exact mismatch (no conflict)
       return false;
     }
-    
+
     return false;
   };
 
@@ -662,11 +662,11 @@ const RequestEventPage: React.FC = () => {
 
   // Auto-check for venue conflicts when schedule changes in modal
   useEffect(() => {
-    
+
     const checkConflicts = async () => {
-      
+
       if (formData.startDate && formData.location && showScheduleModal) {
-        
+
         // Check conflicts for the entire day at this location to show booked time slots
         const response = await fetch(`${API_BASE_URL}/events`, {
           headers: {
@@ -674,29 +674,29 @@ const RequestEventPage: React.FC = () => {
             'Content-Type': 'application/json'
           }
         });
-        
+
         if (response.ok) {
           const eventsData = await response.json();
           const events = eventsData.data || [];
-          
+
           // Build list of all dates to check (Day 1 + additional days for multi-day events)
           const datesToCheck: Date[] = [formData.startDate];
-          
+
           // If multi-day event, add all additional days
           if (formData.endDate && formData.startDate && formData.endDate.getTime() !== formData.startDate.getTime()) {
             const currentDate = new Date(formData.startDate);
             const endDate = new Date(formData.endDate);
-            
+
             // Skip the first day (already added)
             currentDate.setDate(currentDate.getDate() + 1);
-            
+
             while (currentDate <= endDate) {
               datesToCheck.push(new Date(currentDate));
               currentDate.setDate(currentDate.getDate() + 1);
             }
           }
-          
-          
+
+
           // Build a map of events by each date in the range (regardless of location)
           const map: Record<string, any[]> = {};
           datesToCheck.forEach((d) => {
@@ -723,13 +723,13 @@ const RequestEventPage: React.FC = () => {
           // Filter events that are on ANY of the dates in the range AND have location conflicts
           const conflicts = events.filter((event: any) => {
             if (!event.startDate || (!event.location && !(event.locations && Array.isArray(event.locations)))) return false;
-            
+
             // Only check approved or submitted events
             if (event.status !== 'approved' && event.status !== 'submitted') return false;
-            
+
             // Must have time information for requirement conflict checking
             if (!event.startTime || !event.endTime) return false;
-            
+
             // Check if locations conflict (Entire vs Sections logic) against ANY of the event's locations
             const eventLocations = event.locations && Array.isArray(event.locations) && event.locations.length > 0
               ? event.locations
@@ -738,29 +738,29 @@ const RequestEventPage: React.FC = () => {
             if (!hasConflict) {
               return false; // No location conflict, skip this event
             }
-            
+
             const eventStartDate = new Date(event.startDate);
-            
+
             // Check if event's main date matches ANY of our dates
-            const mainDateMatches = datesToCheck.some(checkDate => 
+            const mainDateMatches = datesToCheck.some(checkDate =>
               eventStartDate.toDateString() === checkDate.toDateString()
             );
-            
+
             // Also check if event has dateTimeSlots that match ANY of our dates
             let slotDateMatches = false;
             if (event.dateTimeSlots && Array.isArray(event.dateTimeSlots)) {
               slotDateMatches = event.dateTimeSlots.some((slot: any) => {
                 if (!slot.startDate) return false;
                 const slotDate = new Date(slot.startDate);
-                return datesToCheck.some(checkDate => 
+                return datesToCheck.some(checkDate =>
                   slotDate.toDateString() === checkDate.toDateString()
                 );
               });
             }
-            
+
             return mainDateMatches || slotDateMatches;
           });
-          
+
           if (conflicts.length > 0) {
             setVenueConflictingEvents(conflicts);
           } else {
@@ -795,7 +795,7 @@ const RequestEventPage: React.FC = () => {
     if (field !== 'eventType' && !checkEventTypeSelected()) {
       return;
     }
-    
+
     setFormData(prev => ({
       ...prev,
       [field]: value
@@ -928,11 +928,11 @@ const RequestEventPage: React.FC = () => {
         handleInputChange('multipleLocations', false);
       }
       handleInputChange('roomType', '');
-      
+
       // Show loading state and modal IMMEDIATELY before any API calls
       setLoadingLocationRequirements(true);
       setShowLocationRequirementsModal(true);
-      
+
       // Fetch available dates for the selected location
       await fetchAvailableDatesForLocation(
         value === '4th Flr. Conference Room (Entire)' ? '4th Flr. Conference Room 1' : value
@@ -1028,7 +1028,7 @@ const RequestEventPage: React.FC = () => {
         const response = await fetch(`${API_BASE_URL}/location-requirements`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
-        
+
         if (response.ok) {
           const allRequirements = await response.json();
           // Find a requirement group that contains ALL the selected locations
@@ -1075,21 +1075,21 @@ const RequestEventPage: React.FC = () => {
   };
 
   const handleScheduleSave = async () => {
-    
+
     // Check for venue conflicts before saving (location-specific)
     if (formData.startDate && formData.startTime && formData.endTime && formData.location) {
       const conflicts = await fetchVenueConflicts(
-        formData.startDate, 
-        formData.startTime, 
-        formData.endTime, 
+        formData.startDate,
+        formData.startTime,
+        formData.endTime,
         formData.location
       );
-      
+
       if (conflicts.length > 0) {
-        const conflictDetails = conflicts.map((event: any) => 
+        const conflictDetails = conflicts.map((event: any) =>
           `"${event.eventTitle}" (${new Date(event.startDate).toDateString()} ${formatTime(event.startTime)}-${formatTime(event.endTime)})`
         ).join(', ');
-        
+
         toast.error(`Venue conflict detected! ${formData.location} is already booked during ${formData.startDate?.toDateString()} ${formatTime(formData.startTime)}-${formatTime(formData.endTime)}`, {
           description: `Conflicting events at this venue: ${conflictDetails}`,
           duration: 8000,
@@ -1106,22 +1106,22 @@ const RequestEventPage: React.FC = () => {
         return;
       }
     }
-    
+
     // Refresh resource availabilities for selected department or all tagged departments
     if (formData.startDate && (selectedDepartment || formData.taggedDepartments.length > 0)) {
       const updatedRequirements = { ...formData.departmentRequirements };
-      
+
       // Determine which departments to refresh
-      const depsToRefresh = selectedDepartment 
-        ? [selectedDepartment] 
+      const depsToRefresh = selectedDepartment
+        ? [selectedDepartment]
         : formData.taggedDepartments;
-      
-      
+
+
       for (const deptName of depsToRefresh) {
         const availabilities = await fetchResourceAvailabilities(deptName, formData.startDate);
-        
+
         const department = departments.find(dept => dept.name === deptName);
-        
+
         if (department && department.requirements) {
           // If requirements don't exist yet, create them from department requirements
           if (!updatedRequirements[deptName] || updatedRequirements[deptName].length === 0) {
@@ -1159,23 +1159,23 @@ const RequestEventPage: React.FC = () => {
           }
         }
       }
-      
+
       // Save the selected department before any modal operations
       const deptToRefresh = selectedDepartment;
-      
-      
+
+
       // Update form data with new requirements
       setFormData(prev => ({
         ...prev,
         departmentRequirements: updatedRequirements
       }));
-      
+
       // If there's a selected department (from "Use This Date" flow), re-trigger department selection
       if (deptToRefresh) {
-        
+
         // Close modal first
         setShowRequirementsModal(false);
-        
+
         // Wait longer for state to fully update, then automatically "click" the department checkbox again
         setTimeout(async () => {
           await handleDepartmentToggle(deptToRefresh);
@@ -1183,7 +1183,7 @@ const RequestEventPage: React.FC = () => {
         }, 800);
       }
     }
-    
+
     setShowScheduleModal(false);
     setSelectedLocation('');
   };
@@ -1207,23 +1207,23 @@ const RequestEventPage: React.FC = () => {
     if (!date) {
       return [];
     }
-    
+
     try {
       const token = localStorage.getItem('authToken');
       const department = departments.find(dept => dept.name === departmentName);
-      
+
       if (!department) {
         return [];
       }
-      
+
       // Fix timezone issue - use local date instead of UTC
       const year = date.getFullYear();
       const month = String(date.getMonth() + 1).padStart(2, '0');
       const day = String(date.getDate()).padStart(2, '0');
       const dateStr = `${year}-${month}-${day}`;
-      
+
       const apiUrl = `${API_BASE_URL}/resource-availability/department/${department._id}/availability?startDate=${dateStr}&endDate=${dateStr}`;
-      
+
       const response = await axios.get(apiUrl,
         {
           headers: {
@@ -1232,8 +1232,8 @@ const RequestEventPage: React.FC = () => {
           }
         }
       );
-      
-      
+
+
       return response.data || [];
     } catch (error) {
       return [];
@@ -1242,154 +1242,154 @@ const RequestEventPage: React.FC = () => {
 
   const handleDepartmentToggle = async (departmentName: string) => {
     try {
-    
-    // If department is being selected, open requirements modal
-    if (!formData.taggedDepartments.includes(departmentName)) {
-      setSelectedDepartment(departmentName);
-      
-      // Show loading state and modal IMMEDIATELY
-      setLoadingDepartmentRequirements(true);
-      setShowRequirementsModal(true);
 
-      // Reset conflicts when switching/opening a department to avoid stale conflict UI
-      setConflictingEvents([]);
+      // If department is being selected, open requirements modal
+      if (!formData.taggedDepartments.includes(departmentName)) {
+        setSelectedDepartment(departmentName);
 
-      // Fetch conflicting events if date and time are set (needed for accurate availability/conflict UI)
-      if (formData.startDate && formData.startTime && formData.endTime) {
-        await fetchConflictingEvents(formData.startDate, formData.startTime, formData.endTime, formData.location);
-      }
+        // Show loading state and modal IMMEDIATELY
+        setLoadingDepartmentRequirements(true);
+        setShowRequirementsModal(true);
 
-      const isPgso = departmentName.toLowerCase().includes('pgso');
-      const isPavilionLocation = typeof formData.location === 'string' && formData.location.toLowerCase().includes('pavilion');
+        // Reset conflicts when switching/opening a department to avoid stale conflict UI
+        setConflictingEvents([]);
 
-      // PGSO + non-pavilion location that DOES have locationRequirements
-      // (e.g., Conference Rooms, Meeting Rooms): use the locationRequirements
-      // list directly as the PGSO defaults, bypassing the global PGSO master
-      // list / availability API.
-      if (isPgso && locationRequirements.length > 0) {
-        const mappedRequirements: DepartmentRequirement[] = locationRequirements.map((locReq, idx) => ({
-          id: `pgso-location-${idx}-${locReq.name}`,
-          name: locReq.name,
-          selected: false,
-          notes: '',
-          type: 'physical',
-          quantity: undefined,
-          totalQuantity: locReq.quantity,
-          // These are default requirements configured for the location,
-          // so treat them as normal available items (not custom/pending).
-          isAvailable: true,
-          // Encode the location default quantity in the same marker format
-          // used elsewhere (PAVILION_DEFAULT:<qty>:<location>) so that
-          // MyEvents and other pages can consistently display and validate
-          // using the per-location pool instead of the global PGSO total.
-          availabilityNotes: `PAVILION_DEFAULT:${locReq.quantity}:${selectedLocation || formData.location || 'selected location'}`,
-          isCustom: false
-        }));
+        // Fetch conflicting events if date and time are set (needed for accurate availability/conflict UI)
+        if (formData.startDate && formData.startTime && formData.endTime) {
+          await fetchConflictingEvents(formData.startDate, formData.startTime, formData.endTime, formData.location);
+        }
 
-        const newRequirements = { ...formData.departmentRequirements };
-        newRequirements[departmentName] = mappedRequirements;
-        handleInputChange('departmentRequirements', newRequirements);
-
-        setLoadingDepartmentRequirements(false);
-        return;
-      }
-      
-      // Fetch resource availabilities for the selected date
-      let availabilities: any[] = [];
-      if (formData.startDate) {
-        availabilities = await fetchResourceAvailabilities(departmentName, formData.startDate);
-      }
-      
-      setLoadingDepartmentRequirements(false);
-      
-      // Find the department and use its requirements
-      const department = departments.find(dept => dept.name === departmentName);
-      if (department && department.requirements && availabilities.length > 0) {
         const isPgso = departmentName.toLowerCase().includes('pgso');
+        const isPavilionLocation = typeof formData.location === 'string' && formData.location.toLowerCase().includes('pavilion');
 
-        // If PGSO is selected but the current location has NO default
-        // locationRequirements (not a pavilion scenario), do not preload any
-        // built-in PGSO items. The modal will show only the custom
-        // requirement controls.
-        if (isPgso && locationRequirements.length === 0) {
+        // PGSO + non-pavilion location that DOES have locationRequirements
+        // (e.g., Conference Rooms, Meeting Rooms): use the locationRequirements
+        // list directly as the PGSO defaults, bypassing the global PGSO master
+        // list / availability API.
+        if (isPgso && locationRequirements.length > 0) {
+          const mappedRequirements: DepartmentRequirement[] = locationRequirements.map((locReq, idx) => ({
+            id: `pgso-location-${idx}-${locReq.name}`,
+            name: locReq.name,
+            selected: false,
+            notes: '',
+            type: 'physical',
+            quantity: undefined,
+            totalQuantity: locReq.quantity,
+            // These are default requirements configured for the location,
+            // so treat them as normal available items (not custom/pending).
+            isAvailable: true,
+            // Encode the location default quantity in the same marker format
+            // used elsewhere (PAVILION_DEFAULT:<qty>:<location>) so that
+            // MyEvents and other pages can consistently display and validate
+            // using the per-location pool instead of the global PGSO total.
+            availabilityNotes: `PAVILION_DEFAULT:${locReq.quantity}:${selectedLocation || formData.location || 'selected location'}`,
+            isCustom: false
+          }));
+
           const newRequirements = { ...formData.departmentRequirements };
-          newRequirements[departmentName] = [];
+          newRequirements[departmentName] = mappedRequirements;
           handleInputChange('departmentRequirements', newRequirements);
+
+          setLoadingDepartmentRequirements(false);
           return;
         }
 
-        const pavilionNames = isPgso && locationRequirements.length > 0
-          ? new Set(locationRequirements.map((lr) => lr.name))
-          : null;
+        // Fetch resource availabilities for the selected date
+        let availabilities: any[] = [];
+        if (formData.startDate) {
+          availabilities = await fetchResourceAvailabilities(departmentName, formData.startDate);
+        }
 
-        // Only show requirements that have availability data for this specific date
-        // For PGSO + pavilion, further limit to pavilion default requirement names
-        const dbRequirements = department.requirements
-          .filter((req) => {
-            // Only include requirements that have availability data for this date
-            const availability = availabilities.find((avail: any) => 
-              avail.requirementId === req._id
-            );
-            if (!availability) return false;
+        setLoadingDepartmentRequirements(false);
 
-            if (pavilionNames) {
-              // Only keep requirements whose text matches a pavilion default name
-              return pavilionNames.has(req.text);
-            }
+        // Find the department and use its requirements
+        const department = departments.find(dept => dept.name === departmentName);
+        if (department && department.requirements && availabilities.length > 0) {
+          const isPgso = departmentName.toLowerCase().includes('pgso');
 
-            return true;
-          })
-          .map((req) => {
-            // Find matching resource availability for this requirement and date
-            const availability = availabilities.find((avail: any) => 
-              avail.requirementId === req._id
-            );
-            const baseRequirement: DepartmentRequirement = {
-              id: req._id,
-              name: req.text,
-              selected: false,
-              notes: '',
-              type: req.type,
-              serviceType: req.serviceType, // Include serviceType for YESNO services
-              totalQuantity: availability.quantity, // Use actual availability quantity
-              isAvailable: availability.isAvailable,
-              responsiblePerson: req.responsiblePerson,
-              availabilityNotes: availability.notes || ''
-            };
+          // If PGSO is selected but the current location has NO default
+          // locationRequirements (not a pavilion scenario), do not preload any
+          // built-in PGSO items. The modal will show only the custom
+          // requirement controls.
+          if (isPgso && locationRequirements.length === 0) {
+            const newRequirements = { ...formData.departmentRequirements };
+            newRequirements[departmentName] = [];
+            handleInputChange('departmentRequirements', newRequirements);
+            return;
+          }
 
-            // Pavilion override for PGSO: if this requirement name matches a
-            // location-based default requirement, adjust totalQuantity to use
-            // the pavilion pool (e.g., 300 chairs) instead of the global pool
-            // (e.g., 2148), and embed a PAVILION_DEFAULT marker so other pages
-            // can display the pavilion total consistently.
-            if (isPgso && locationRequirements.length > 0) {
-              const matchingLocationReq = locationRequirements.find((locReq) => locReq.name === req.text);
-              if (matchingLocationReq) {
-                baseRequirement.totalQuantity = matchingLocationReq.quantity;
-                baseRequirement.availabilityNotes = `PAVILION_DEFAULT:${matchingLocationReq.quantity}:${selectedLocation || formData.location || 'selected location'}`;
+          const pavilionNames = isPgso && locationRequirements.length > 0
+            ? new Set(locationRequirements.map((lr) => lr.name))
+            : null;
+
+          // Only show requirements that have availability data for this specific date
+          // For PGSO + pavilion, further limit to pavilion default requirement names
+          const dbRequirements = department.requirements
+            .filter((req) => {
+              // Only include requirements that have availability data for this date
+              const availability = availabilities.find((avail: any) =>
+                avail.requirementId === req._id
+              );
+              if (!availability) return false;
+
+              if (pavilionNames) {
+                // Only keep requirements whose text matches a pavilion default name
+                return pavilionNames.has(req.text);
               }
-            }
 
-            return baseRequirement;
-          });
+              return true;
+            })
+            .map((req) => {
+              // Find matching resource availability for this requirement and date
+              const availability = availabilities.find((avail: any) =>
+                avail.requirementId === req._id
+              );
+              const baseRequirement: DepartmentRequirement = {
+                id: req._id,
+                name: req.text,
+                selected: false,
+                notes: '',
+                type: req.type,
+                serviceType: req.serviceType, // Include serviceType for YESNO services
+                totalQuantity: availability.quantity, // Use actual availability quantity
+                isAvailable: availability.isAvailable,
+                responsiblePerson: req.responsiblePerson,
+                availabilityNotes: availability.notes || ''
+              };
 
-        // Initialize requirements for this department
-        const newRequirements = { ...formData.departmentRequirements };
-        newRequirements[departmentName] = dbRequirements;
-        handleInputChange('departmentRequirements', newRequirements);
-        
+              // Pavilion override for PGSO: if this requirement name matches a
+              // location-based default requirement, adjust totalQuantity to use
+              // the pavilion pool (e.g., 300 chairs) instead of the global pool
+              // (e.g., 2148), and embed a PAVILION_DEFAULT marker so other pages
+              // can display the pavilion total consistently.
+              if (isPgso && locationRequirements.length > 0) {
+                const matchingLocationReq = locationRequirements.find((locReq) => locReq.name === req.text);
+                if (matchingLocationReq) {
+                  baseRequirement.totalQuantity = matchingLocationReq.quantity;
+                  baseRequirement.availabilityNotes = `PAVILION_DEFAULT:${matchingLocationReq.quantity}:${selectedLocation || formData.location || 'selected location'}`;
+                }
+              }
+
+              return baseRequirement;
+            });
+
+          // Initialize requirements for this department
+          const newRequirements = { ...formData.departmentRequirements };
+          newRequirements[departmentName] = dbRequirements;
+          handleInputChange('departmentRequirements', newRequirements);
+
+        } else {
+          // No requirements found or no availability data for this date
+          const newRequirements = { ...formData.departmentRequirements };
+          newRequirements[departmentName] = [];
+          handleInputChange('departmentRequirements', newRequirements);
+
+        }
       } else {
-        // No requirements found or no availability data for this date
-        const newRequirements = { ...formData.departmentRequirements };
-        newRequirements[departmentName] = [];
-        handleInputChange('departmentRequirements', newRequirements);
-        
+        // If unchecking, remove from tagged departments
+        const updatedDepartments = formData.taggedDepartments.filter(d => d !== departmentName);
+        handleInputChange('taggedDepartments', updatedDepartments);
       }
-    } else {
-      // If unchecking, remove from tagged departments
-      const updatedDepartments = formData.taggedDepartments.filter(d => d !== departmentName);
-      handleInputChange('taggedDepartments', updatedDepartments);
-    }
     } catch (error) {
       // Handle error silently
     }
@@ -1400,7 +1400,7 @@ const RequestEventPage: React.FC = () => {
     try {
       const token = localStorage.getItem('authToken');
       const department = departments.find(dept => dept.name === departmentName);
-      
+
       if (!department) {
         return [];
       }
@@ -1487,10 +1487,10 @@ const RequestEventPage: React.FC = () => {
 
   const handleRequirementNotes = (requirementId: string, notes: string) => {
     const currentReqs = formData.departmentRequirements[selectedDepartment] || [];
-    const updatedReqs = currentReqs.map(req => 
+    const updatedReqs = currentReqs.map(req =>
       req.id === requirementId ? { ...req, notes } : req
     );
-    
+
     const newDeptReqs = { ...formData.departmentRequirements };
     newDeptReqs[selectedDepartment] = updatedReqs;
     handleInputChange('departmentRequirements', newDeptReqs);
@@ -1502,10 +1502,10 @@ const RequestEventPage: React.FC = () => {
 
   const handleRequirementQuantity = (requirementId: string, quantity: number) => {
     const currentReqs = formData.departmentRequirements[selectedDepartment] || [];
-    const updatedReqs = currentReqs.map(req => 
+    const updatedReqs = currentReqs.map(req =>
       req.id === requirementId ? { ...req, quantity } : req
     );
-    
+
     const newDeptReqs = { ...formData.departmentRequirements };
     newDeptReqs[selectedDepartment] = updatedReqs;
     handleInputChange('departmentRequirements', newDeptReqs);
@@ -1561,7 +1561,7 @@ const RequestEventPage: React.FC = () => {
   const handleSaveRequirements = () => {
     // Check if at least one requirement is selected
     const selectedReqs = formData.departmentRequirements[selectedDepartment]?.filter(req => req.selected) || [];
-    
+
     if (selectedReqs.length === 0) {
       toast.error('Please select at least one requirement for this department.');
       return;
@@ -1650,7 +1650,7 @@ const RequestEventPage: React.FC = () => {
         return map[k] == null;
       });
     });
-    
+
     if (physicalReqsWithoutQuantity.length > 0) {
       const reqNames = physicalReqsWithoutQuantity.map(req => req.name).join(', ');
       toast.error('Missing Quantity!', {
@@ -1691,7 +1691,7 @@ const RequestEventPage: React.FC = () => {
         return dayQty > dayAvail;
       });
     });
-    
+
     if (overRequests.length > 0) {
       const overRequestDetails = overRequests.map((req) => {
         if (!isMultiDay) {
@@ -1712,7 +1712,7 @@ const RequestEventPage: React.FC = () => {
         });
         return `${req.name} (${parts.join(' | ')})`;
       });
-      
+
       toast.error(`Cannot save! Requested quantities exceed available resources:`, {
         description: overRequestDetails.join(', '),
         duration: 8000
@@ -1725,18 +1725,18 @@ const RequestEventPage: React.FC = () => {
       const updatedDepartments = [...formData.taggedDepartments, selectedDepartment];
       handleInputChange('taggedDepartments', updatedDepartments);
     }
-    
+
     // Close modal
     setShowRequirementsModal(false);
-    
+
     const requirementCount = selectedReqs.length;
     const physicalCount = selectedReqs.filter(req => req.type === 'physical' && (req.quantity || req.quantitiesByDate)).length;
     const notesCount = selectedReqs.filter(req => req.type === 'service' && req.notes && req.notes.trim()).length;
-    
+
     const details = [];
     if (physicalCount > 0) details.push(`${physicalCount} with quantities`);
     if (notesCount > 0) details.push(`${notesCount} with notes`);
-    
+
     toast.success(`Requirements saved for ${selectedDepartment}!`, {
       description: `${requirementCount} requirement(s) selected${details.length > 0 ? ` (${details.join(', ')})` : ''}.`
     });
@@ -1754,11 +1754,11 @@ const RequestEventPage: React.FC = () => {
   const hasQuantityOverRequests = () => {
     return formData.taggedDepartments.some(dept => {
       const deptReqs = formData.departmentRequirements[dept];
-      return deptReqs && deptReqs.some(req => 
-        req.selected && 
-        req.type === 'physical' && 
-        req.quantity && 
-        req.totalQuantity && 
+      return deptReqs && deptReqs.some(req =>
+        req.selected &&
+        req.type === 'physical' &&
+        req.quantity &&
+        req.totalQuantity &&
         req.quantity > req.totalQuantity
       );
     });
@@ -1770,18 +1770,18 @@ const RequestEventPage: React.FC = () => {
     if (date1.toDateString() !== date2.toDateString()) {
       return false;
     }
-    
+
     // Convert time strings to minutes for easier comparison
     const timeToMinutes = (time: string) => {
       const [hours, minutes] = time.split(':').map(Number);
       return hours * 60 + minutes;
     };
-    
+
     const start1Minutes = timeToMinutes(start1);
     const end1Minutes = timeToMinutes(end1);
     const start2Minutes = timeToMinutes(start2);
     const end2Minutes = timeToMinutes(end2);
-    
+
     // Check if time ranges overlap
     return start1Minutes < end2Minutes && start2Minutes < end1Minutes;
   };
@@ -1795,11 +1795,11 @@ const RequestEventPage: React.FC = () => {
           'Content-Type': 'application/json'
         }
       });
-      
+
       if (!response.ok) {
         throw new Error('Failed to fetch events');
       }
-      
+
       const eventsData = await response.json();
       const events = eventsData.data || [];
 
@@ -1847,8 +1847,8 @@ const RequestEventPage: React.FC = () => {
 
         return null;
       };
-      
-      
+
+
       // Filter events that conflict with the selected time AND location (for venue booking)
       const conflicts = events.filter((event: any) => {
         if (event.status === 'cancelled') {
@@ -1858,25 +1858,25 @@ const RequestEventPage: React.FC = () => {
         if (!event.startDate || !event.startTime || !event.endDate || !event.endTime) {
           return false;
         }
-        
+
         // Check if locations conflict (handles Pavilion hierarchy)
         if (!locationsConflict(event.location, location)) {
           return false;
         }
-        
+
         const eventStartDate = new Date(event.startDate);
-        
+
         // Check if there's a time conflict at the same venue
         const hasConflict = hasTimeConflict(
           startTime, endTime,
           event.startTime, event.endTime,
           date, eventStartDate
         );
-        
-        
+
+
         return hasConflict;
       });
-      
+
       return conflicts;
     } catch (error) {
       return [];
@@ -1886,18 +1886,18 @@ const RequestEventPage: React.FC = () => {
   // Fetch conflicting events for resource availability checking (across ALL locations)
   const fetchConflictingEvents = async (date: Date, startTime: string, endTime: string, location?: string) => {
     try {
-      
+
       const response = await fetch(`${API_BASE_URL}/events`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
           'Content-Type': 'application/json'
         }
       });
-      
+
       if (!response.ok) {
         throw new Error('Failed to fetch events');
       }
-      
+
       const eventsData = await response.json();
       const events = eventsData.data || [];
 
@@ -1944,25 +1944,25 @@ const RequestEventPage: React.FC = () => {
 
         return null;
       };
-      
+
       // Build list of all dates to check (Day 1 + additional days)
       const datesToCheck: Date[] = [date]; // Start with Day 1
-      
+
       // If multi-day event, add all additional days
       if (formData.endDate && formData.startDate && formData.endDate.getTime() !== formData.startDate.getTime()) {
         const currentDate = new Date(formData.startDate);
         const endDate = new Date(formData.endDate);
-        
+
         // Skip the first day (already added)
         currentDate.setDate(currentDate.getDate() + 1);
-        
+
         while (currentDate <= endDate) {
           datesToCheck.push(new Date(currentDate));
           currentDate.setDate(currentDate.getDate() + 1);
         }
       }
-      
-      
+
+
       // Filter events that conflict with ANY of the dates in the range
       const conflicts = events.filter((event: any) => {
         if (event.status === 'cancelled') {
@@ -1972,7 +1972,7 @@ const RequestEventPage: React.FC = () => {
         if (!event.startDate || !event.startTime || !event.endDate || !event.endTime) {
           return false;
         }
-        
+
         // Check if event conflicts with ANY of our dates
         return datesToCheck.some((checkDate) => {
           const selectedRange = getSelectedTimeRangeForDate(checkDate);
@@ -1990,8 +1990,8 @@ const RequestEventPage: React.FC = () => {
           return hasConflict;
         });
       });
-      
-      
+
+
       setConflictingEvents(conflicts);
       return conflicts;
     } catch (error) {
@@ -2119,7 +2119,7 @@ const RequestEventPage: React.FC = () => {
         return event.taggedDepartments.some((taggedDept: string) => {
           const eventReqs = event.departmentRequirements[taggedDept];
           if (Array.isArray(eventReqs)) {
-            return eventReqs.some((req: any) => 
+            return eventReqs.some((req: any) =>
               req.name === requirement.name && req.selected && req.quantity
             );
           }
@@ -2153,20 +2153,20 @@ const RequestEventPage: React.FC = () => {
     if (isCustomLocationSelected) {
       return basicFieldsValid && pgsoCustomLocationAck && !hasQuantityOverRequests();
     }
-    
+
     // For Simple Meeting: allow submission without departments if noDepartmentsNeeded is checked
     if (formData.eventType === 'simple-meeting') {
       if (noDepartmentsNeeded) {
         return basicFieldsValid; // No department requirements needed
       } else {
         // If departments are tagged, they must have requirements
-        return basicFieldsValid && 
-               formData.taggedDepartments.length > 0 && 
-               hasRequirementsForDepartments() && 
-               !hasQuantityOverRequests();
+        return basicFieldsValid &&
+          formData.taggedDepartments.length > 0 &&
+          hasRequirementsForDepartments() &&
+          !hasQuantityOverRequests();
       }
     }
-    
+
     // For Simple and Complex: departments are required
     return (
       basicFieldsValid &&
@@ -2258,39 +2258,39 @@ const RequestEventPage: React.FC = () => {
   // Calculate completed steps count
   const getCompletedStepsCount = () => {
     let completedCount = 0;
-    
+
     // Step 1: Event Details
     if (formData.eventTitle && formData.requestor && formData.location && formData.participants) {
       completedCount++;
     }
-    
+
     // Step 2: Attachments
     if (isAttachmentsCompleted) {
       completedCount++;
     }
-    
+
     // Step 3: Tag Departments (can be skipped for Simple Meeting if noDepartmentsNeeded is checked)
     if (formData.taggedDepartments.length > 0 || (formData.eventType === 'simple-meeting' && noDepartmentsNeeded)) {
       completedCount++;
     }
-    
+
     // Step 4: Requirements
     if (hasRequirementsForDepartments()) {
       completedCount++;
     }
-    
+
     // Step 5: Schedule
-    if (formData.startDate && formData.startTime && formData.endDate && formData.endTime && 
-        formData.contactNumber && formData.contactEmail && 
-        formData.contactNumber.length === 11 && formData.contactEmail.includes('@')) {
+    if (formData.startDate && formData.startTime && formData.endDate && formData.endTime &&
+      formData.contactNumber && formData.contactEmail &&
+      formData.contactNumber.length === 11 && formData.contactEmail.includes('@')) {
       completedCount++;
     }
-    
+
     // Step 6: Ready to Submit
     if (isFormReadyToSubmit()) {
       completedCount++;
     }
-    
+
     return completedCount;
   };
 
@@ -2300,11 +2300,11 @@ const RequestEventPage: React.FC = () => {
     if (isSubmitting) {
       return;
     }
-    
+
     setIsSubmitting(true);
-    
+
     let uploadToastId: string | undefined = undefined;
-    
+
     try {
       const token = localStorage.getItem('authToken');
       if (!token) {
@@ -2507,7 +2507,7 @@ const RequestEventPage: React.FC = () => {
         'Content-Type': 'multipart/form-data',
       };
 
-      
+
       // Show initial loading toast with unique ID
       uploadToastId = `upload-${Date.now()}`;
       toast.loading('Submitting event request...', {
@@ -2515,7 +2515,7 @@ const RequestEventPage: React.FC = () => {
         description: 'Preparing your submission... 0%',
         duration: Infinity, // Keep toast until we dismiss it
       });
-      
+
       let lastResponse: any = null;
       for (let i = 0; i < requestsToSubmit.length; i++) {
         const req = requestsToSubmit[i];
@@ -2547,7 +2547,7 @@ const RequestEventPage: React.FC = () => {
           }
         });
       }
-      
+
       // Dismiss loading toast after upload completes
       toast.dismiss(uploadToastId);
 
@@ -2558,7 +2558,7 @@ const RequestEventPage: React.FC = () => {
             ? `Your multi-day request was submitted as ${requestsToSubmit.length} separate events (per-day requirements).`
             : 'Your event request has been sent for approval.'
         });
-        
+
         // Navigate to My Events page after successful submission
         setTimeout(() => {
           navigate('/users/my-events');
@@ -2571,15 +2571,15 @@ const RequestEventPage: React.FC = () => {
       console.error('❌ [EVENT SUBMISSION] Error code:', error.code);
       console.error('❌ [EVENT SUBMISSION] Error response:', error.response);
       console.error('❌ [EVENT SUBMISSION] Error message:', error.message);
-      
+
       // Dismiss loading toast if it exists
       if (uploadToastId) {
         toast.dismiss(uploadToastId);
       }
-      
+
       let errorMessage = 'Please try again later.';
       let errorTitle = 'Failed to submit event request';
-      
+
       if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
         errorTitle = 'Request Timeout';
         errorMessage = 'The upload is taking too long. This might be due to slow internet or server issues. Please try again or contact support.';
@@ -2593,14 +2593,37 @@ const RequestEventPage: React.FC = () => {
         errorTitle = 'Gateway Timeout';
         errorMessage = 'The server is taking too long to respond. This might be a temporary issue. Please try again in a few moments.';
       } else if (error.response?.status === 500) {
-        errorTitle = 'Server Error';
-        errorMessage = 'An error occurred on the server. Please try again or contact support if the issue persists.';
+        errorTitle = 'Submission Failed';
+        // Prefer the detailed server-side error string, then the message, then a generic fallback
+        const serverError = error.response?.data?.error || '';
+        const serverMessage = error.response?.data?.message || '';
+        if (serverError) {
+          // Strip Mongoose "Event validation failed: " prefix
+          const cleanError = serverError.replace(/^Event validation failed:\s*/i, '');
+          // Prettify field names like "contactEmail" → "Contact Email"
+          const prettifyField = (field: string) =>
+            field.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase()).trim();
+          // Split multiple validation errors (separated by ", fieldName:")
+          const parts = cleanError.split(/,\s*(?=[a-zA-Z]+:)/);
+          const prettyParts = parts.map((part: string) => {
+            const colonIdx = part.indexOf(':');
+            if (colonIdx === -1) return part.trim();
+            const field = part.substring(0, colonIdx).trim();
+            const msg = part.substring(colonIdx + 1).trim();
+            return `${prettifyField(field)}: ${msg}`;
+          });
+          errorMessage = prettyParts.join('\n');
+        } else if (serverMessage && serverMessage !== 'Failed to create event request') {
+          errorMessage = serverMessage;
+        } else {
+          errorMessage = 'An error occurred on the server. Please check your inputs and try again, or contact support if the issue persists.';
+        }
       } else if (error.response?.data?.message) {
         errorMessage = error.response.data.message;
       } else if (error.message) {
         errorMessage = error.message;
       }
-      
+
       toast.error(errorTitle, {
         description: errorMessage,
         duration: 10000 // Show error for 10 seconds
@@ -2622,7 +2645,7 @@ const RequestEventPage: React.FC = () => {
       const maxSize = 10 * 1024 * 1024; // 10MB
       return validTypes.includes(file.type) && file.size <= maxSize;
     });
-    
+
     handleInputChange('attachments', [...formData.attachments, ...validFiles]);
   };
 
@@ -2723,50 +2746,50 @@ const RequestEventPage: React.FC = () => {
   const isTimeSlotBooked = (timeSlot: string, checkDate?: Date) => {
     // Use checkDate if provided, otherwise use formData.startDate (Day 1)
     const dateToCheck = checkDate || formData.startDate;
-    
-    
+
+
     if (!dateToCheck || !formData.location || venueConflictingEvents.length === 0) {
       return false;
     }
 
     const result = venueConflictingEvents.some(event => {
       const checkDateStr = dateToCheck.toDateString();
-      
+
       // Check if the main event date matches
       const eventDate = new Date(event.startDate);
       const eventDateStr = eventDate.toDateString();
       const mainDateMatches = checkDateStr === eventDateStr;
-      
+
       // Check location conflict
       const eventLocations = event.locations && Array.isArray(event.locations) && event.locations.length > 0
         ? event.locations
         : [event.location];
-      
-      const hasLocationConflict = eventLocations.some((eventLoc: string) => 
+
+      const hasLocationConflict = eventLocations.some((eventLoc: string) =>
         locationsConflict(eventLoc, formData.location)
       );
-      
+
       if (!hasLocationConflict) return false;
-      
+
       // Helper function to check time conflict
       const timeToMinutes = (time: string) => {
         const [hours, minutes] = time.split(':').map(Number);
         return hours * 60 + minutes;
       };
-      
+
       const checkTimeConflict = (startTime: string, endTime: string) => {
         const slotMinutes = timeToMinutes(timeSlot);
         const eventStartMinutes = timeToMinutes(startTime);
         const eventEndMinutes = timeToMinutes(endTime);
-        
+
         // A time slot conflicts if it falls within the event's time range
         // Include both start time AND end time (event is still happening at end time)
         const isConflict = slotMinutes >= eventStartMinutes && slotMinutes <= eventEndMinutes;
-        
-        
+
+
         return isConflict;
       };
-      
+
       // If main date matches, check main time
       if (mainDateMatches) {
         const isBlocked = checkTimeConflict(event.startTime, event.endTime);
@@ -2774,12 +2797,12 @@ const RequestEventPage: React.FC = () => {
           return true;
         }
       }
-      
+
       // Check if any dateTimeSlots match the date we're checking
       if (event.dateTimeSlots && Array.isArray(event.dateTimeSlots)) {
         for (const slot of event.dateTimeSlots) {
           if (!slot.startDate || !slot.startTime || !slot.endTime) continue;
-          
+
           const slotDate = new Date(slot.startDate);
           if (slotDate.toDateString() === checkDateStr) {
             const isBlocked = checkTimeConflict(slot.startTime, slot.endTime);
@@ -2789,10 +2812,10 @@ const RequestEventPage: React.FC = () => {
           }
         }
       }
-      
+
       return false;
     });
-    
+
     return result;
   };
 
@@ -2800,7 +2823,7 @@ const RequestEventPage: React.FC = () => {
   const hasRequirementConflictAtTime = (timeSlot: string, checkDate?: Date) => {
     // Use checkDate if provided, otherwise use formData.startDate (Day 1)
     const dateToCheck = checkDate || formData.startDate;
-    
+
     if (!dateToCheck || conflictingEvents.length === 0) {
       return { hasConflict: false, conflictedRequirements: [] };
     }
@@ -2815,15 +2838,15 @@ const RequestEventPage: React.FC = () => {
         const [hours, minutes] = time.split(':').map(Number);
         return hours * 60 + minutes;
       };
-      
+
       const checkRequirementsForTime = (startTime: string, endTime: string) => {
         const slotMinutes = timeToMinutes(timeSlot);
         const eventStartMinutes = timeToMinutes(startTime);
         const eventEndMinutes = timeToMinutes(endTime);
-        
+
         // Check if this time slot overlaps with the event
         const timeOverlaps = slotMinutes >= eventStartMinutes && slotMinutes <= eventEndMinutes;
-        
+
         if (!timeOverlaps) return;
 
         // Check if this event uses ANY requirements
@@ -2837,7 +2860,7 @@ const RequestEventPage: React.FC = () => {
                 // Check both quantity and totalQuantity fields
                 const quantity = eventReq.quantity || eventReq.totalQuantity || 0;
                 const hasQuantity = quantity > 0;
-                
+
                 if (isSelected && hasQuantity && eventReq.name) {
                   const reqName = `${eventReq.name} (${dept})`;
                   if (!conflictedRequirements.includes(reqName)) {
@@ -2849,7 +2872,7 @@ const RequestEventPage: React.FC = () => {
           });
         }
       };
-      
+
       // Check main event date
       if (event.startTime && event.endTime) {
         const eventDate = new Date(event.startDate);
@@ -2857,12 +2880,12 @@ const RequestEventPage: React.FC = () => {
           checkRequirementsForTime(event.startTime, event.endTime);
         }
       }
-      
+
       // Check dateTimeSlots for multi-day events
       if (event.dateTimeSlots && Array.isArray(event.dateTimeSlots)) {
         event.dateTimeSlots.forEach((slot: any) => {
           if (!slot.startDate || !slot.startTime || !slot.endTime) return;
-          
+
           const slotDate = new Date(slot.startDate);
           if (slotDate.toDateString() === checkDateStr) {
             checkRequirementsForTime(slot.startTime, slot.endTime);
@@ -2871,11 +2894,11 @@ const RequestEventPage: React.FC = () => {
       }
     });
 
-    const result = { 
-      hasConflict: conflictedRequirements.length > 0, 
-      conflictedRequirements 
+    const result = {
+      hasConflict: conflictedRequirements.length > 0,
+      conflictedRequirements
     };
-    
+
     return result;
   };
 
@@ -2896,19 +2919,19 @@ const RequestEventPage: React.FC = () => {
 
   const calculateDuration = (startDate: Date, startTime: string, endDate: Date, endTime: string): string => {
     if (!startDate || !startTime || !endDate || !endTime) return '';
-    
+
     const start = new Date(startDate);
     const [startHours, startMinutes] = startTime.split(':').map(Number);
     start.setHours(startHours, startMinutes);
-    
+
     const end = new Date(endDate);
     const [endHours, endMinutes] = endTime.split(':').map(Number);
     end.setHours(endHours, endMinutes);
-    
+
     const diffMs = end.getTime() - start.getTime();
     const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
     const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-    
+
     if (diffHours > 0) {
       return `${diffHours}h ${diffMinutes}m`;
     } else {
@@ -2927,24 +2950,24 @@ const RequestEventPage: React.FC = () => {
   const validateLeadTime = (selectedDate: Date): { isValid: boolean; message: string } => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
+
     const daysRequired = formData.eventType === 'simple' ? 7 : 30;
     const days = calculateWorkingDays(today, selectedDate);
-    
+
     if (days < daysRequired) {
       return {
         isValid: false,
         message: `${formData.eventType === 'simple' ? 'Simple' : 'Complex'} events require at least ${daysRequired} days lead time. You have ${days} days.`
       };
     }
-    
+
     return { isValid: true, message: '' };
   };
 
   // Validate contact details
   const validateContactDetails = () => {
     const errors = [];
-    
+
     if (!formData.contactNumber) {
       errors.push('Contact number is required');
     } else if (formData.contactNumber.length !== 11) {
@@ -2952,13 +2975,13 @@ const RequestEventPage: React.FC = () => {
     } else if (!formData.contactNumber.startsWith('09')) {
       errors.push('Contact number must start with 09');
     }
-    
+
     if (!formData.contactEmail) {
       errors.push('Email address is required');
     } else if (!formData.contactEmail.includes('@')) {
       errors.push('Please enter a valid email address');
     }
-    
+
     return errors;
   };
 
@@ -2990,34 +3013,32 @@ const RequestEventPage: React.FC = () => {
             {steps.map((step, index) => {
               const Icon = step.icon;
               const isActive = step.id === currentStep;
-              const isCompleted = step.id < currentStep || 
-                                (step.id === 2 && isAttachmentsCompleted) ||
-                                (step.id === 5 && formData.startDate && formData.startTime && formData.endDate && formData.endTime && 
-                                 formData.contactNumber && formData.contactEmail && 
-                                 formData.contactNumber.length === 11 && formData.contactEmail.includes('@')) ||
-                                (step.id === 6 && isFormReadyToSubmit());
-              
+              const isCompleted = step.id < currentStep ||
+                (step.id === 2 && isAttachmentsCompleted) ||
+                (step.id === 5 && formData.startDate && formData.startTime && formData.endDate && formData.endTime &&
+                  formData.contactNumber && formData.contactEmail &&
+                  formData.contactNumber.length === 11 && formData.contactEmail.includes('@')) ||
+                (step.id === 6 && isFormReadyToSubmit());
+
               return (
                 <React.Fragment key={step.id}>
                   <div className="flex items-center gap-2 md:gap-3">
-                    <div className={`w-7 h-7 md:w-8 md:h-8 rounded-full flex items-center justify-center text-xs font-medium transition-all flex-shrink-0 ${
-                      isCompleted 
+                    <div className={`w-7 h-7 md:w-8 md:h-8 rounded-full flex items-center justify-center text-xs font-medium transition-all flex-shrink-0 ${isCompleted
                         ? 'bg-green-100 text-green-700 border border-green-200'
-                        : isActive 
-                        ? 'bg-blue-100 text-blue-700 border border-blue-200'
-                        : 'bg-gray-100 text-gray-400 border border-gray-200'
-                    }`}>
+                        : isActive
+                          ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                          : 'bg-gray-100 text-gray-400 border border-gray-200'
+                      }`}>
                       {isCompleted ? <Check className="w-4 h-4" /> : step.id}
                     </div>
                     <div className="hidden sm:block">
-                      <p className={`text-sm font-medium ${
-                        isCompleted ? 'text-green-700' : isActive ? 'text-blue-700' : 'text-gray-500'
-                      }`}>
+                      <p className={`text-sm font-medium ${isCompleted ? 'text-green-700' : isActive ? 'text-blue-700' : 'text-gray-500'
+                        }`}>
                         {step.title}
                       </p>
                     </div>
                   </div>
-                  
+
                   {index < steps.length - 1 && (
                     <div className="flex-1 mx-2 md:mx-4 min-w-[20px] md:min-w-[40px]">
                       <div className="h-px bg-gray-200 relative">
@@ -3060,33 +3081,30 @@ const RequestEventPage: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => setFormData(prev => ({ ...prev, eventType: 'simple-meeting' }))}
-                        className={`px-3 py-1.5 text-xs font-medium transition-colors ${
-                          formData.eventType === 'simple-meeting'
+                        className={`px-3 py-1.5 text-xs font-medium transition-colors ${formData.eventType === 'simple-meeting'
                             ? 'bg-green-600 text-white'
                             : 'bg-white text-gray-700 hover:bg-gray-50'
-                        }`}
+                          }`}
                       >
                         Simple Meeting
                       </button>
                       <button
                         type="button"
                         onClick={() => setFormData(prev => ({ ...prev, eventType: 'simple' }))}
-                        className={`px-3 py-1.5 text-xs font-medium transition-colors border-l ${
-                          formData.eventType === 'simple'
+                        className={`px-3 py-1.5 text-xs font-medium transition-colors border-l ${formData.eventType === 'simple'
                             ? 'bg-blue-600 text-white'
                             : 'bg-white text-gray-700 hover:bg-gray-50'
-                        }`}
+                          }`}
                       >
                         Simple Event
                       </button>
                       <button
                         type="button"
                         onClick={() => setFormData(prev => ({ ...prev, eventType: 'complex' }))}
-                        className={`px-3 py-1.5 text-xs font-medium transition-colors border-l ${
-                          formData.eventType === 'complex'
+                        className={`px-3 py-1.5 text-xs font-medium transition-colors border-l ${formData.eventType === 'complex'
                             ? 'bg-purple-600 text-white'
                             : 'bg-white text-gray-700 hover:bg-gray-50'
-                        }`}
+                          }`}
                       >
                         Complex Event
                       </button>
@@ -3123,23 +3141,23 @@ const RequestEventPage: React.FC = () => {
                     <div className="flex items-center justify-between">
                       <Label htmlFor="location" className="text-sm font-medium">Location <span className="text-red-500">*</span></Label>
                       {/* Show matching count next to label when typing custom location */}
-                      {showCustomLocation && formData.location.trim() && locations.filter(loc => 
-                        loc.toLowerCase().includes(formData.location.trim().toLowerCase()) && 
+                      {showCustomLocation && formData.location.trim() && locations.filter(loc =>
+                        loc.toLowerCase().includes(formData.location.trim().toLowerCase()) &&
                         loc !== 'Add Custom Location'
                       ).length > 0 && (
-                        <div className="flex items-center gap-1.5 text-amber-600 text-xs">
-                          <AlertCircle className="w-3.5 h-3.5" />
-                          <span>Found {locations.filter(loc => 
-                            loc.toLowerCase().includes(formData.location.trim().toLowerCase()) && 
-                            loc !== 'Add Custom Location'
-                          ).length} matching location(s). Click to select:</span>
-                        </div>
-                      )}
+                          <div className="flex items-center gap-1.5 text-amber-600 text-xs">
+                            <AlertCircle className="w-3.5 h-3.5" />
+                            <span>Found {locations.filter(loc =>
+                              loc.toLowerCase().includes(formData.location.trim().toLowerCase()) &&
+                              loc !== 'Add Custom Location'
+                            ).length} matching location(s). Click to select:</span>
+                          </div>
+                        )}
                     </div>
                     {!showCustomLocation ? (
                       <div className="flex gap-2">
-                        <Select 
-                          value={formData.location} 
+                        <Select
+                          value={formData.location}
                           onValueChange={handleLocationChange}
                         >
                           <SelectTrigger className="mt-1 h-9 flex-1 max-w-[calc(100%-3rem)]">
@@ -3153,7 +3171,7 @@ const RequestEventPage: React.FC = () => {
                               // Use actual location data with isCustom field
                               const pgbLocs = locationData.filter(loc => !loc.isCustom);
                               const customLocs = locationData.filter(loc => loc.isCustom);
-                              
+
                               return (
                                 <>
                                   {/* PGB Locations */}
@@ -3163,8 +3181,8 @@ const RequestEventPage: React.FC = () => {
                                         PGB Locations
                                       </div>
                                       {pgbLocs.map((location) => (
-                                        <SelectItem 
-                                          key={location.name} 
+                                        <SelectItem
+                                          key={location.name}
                                           value={location.name}
                                         >
                                           <div className="flex items-center gap-2">
@@ -3175,7 +3193,7 @@ const RequestEventPage: React.FC = () => {
                                       ))}
                                     </>
                                   )}
-                                  
+
                                   {/* Custom Locations */}
                                   {customLocs.length > 0 && (
                                     <>
@@ -3183,8 +3201,8 @@ const RequestEventPage: React.FC = () => {
                                         Custom Locations
                                       </div>
                                       {customLocs.map((location) => (
-                                        <SelectItem 
-                                          key={location.name} 
+                                        <SelectItem
+                                          key={location.name}
                                           value={location.name}
                                         >
                                           <div className="flex items-center gap-2">
@@ -3195,9 +3213,9 @@ const RequestEventPage: React.FC = () => {
                                       ))}
                                     </>
                                   )}
-                                  
+
                                   {/* Add Custom Location Button */}
-                                  <SelectItem 
+                                  <SelectItem
                                     value="Add Custom Location"
                                     className="text-blue-600 font-medium mt-1 border-t"
                                   >
@@ -3236,36 +3254,36 @@ const RequestEventPage: React.FC = () => {
                           className="mt-1"
                         />
                         {/* Show matching locations in real-time as user types - floating dropdown */}
-                        {formData.location.trim() && locations.filter(loc => 
-                          loc.toLowerCase().includes(formData.location.trim().toLowerCase()) && 
+                        {formData.location.trim() && locations.filter(loc =>
+                          loc.toLowerCase().includes(formData.location.trim().toLowerCase()) &&
                           loc !== 'Add Custom Location'
                         ).length > 0 && (
-                          <div className="absolute top-full left-0 right-0 mt-0.5 z-50">
-                            <div className="border rounded-lg max-h-48 overflow-y-auto bg-white shadow-lg">
-                              {locations
-                                .filter(loc => 
-                                  loc.toLowerCase().includes(formData.location.trim().toLowerCase()) && 
-                                  loc !== 'Add Custom Location'
-                                )
-                                .map((location) => (
-                                  <button
-                                    key={location}
-                                    type="button"
-                                    onClick={async () => {
-                                      // Use the existing handleLocationChange function that has all the logic
-                                      await handleLocationChange(location);
-                                      setShowCustomLocation(false);
-                                      toast.success(`Selected: ${location}`);
-                                    }}
-                                    className="w-full text-left px-4 py-2.5 hover:bg-blue-50 border-b last:border-b-0 flex items-center gap-2 text-sm transition-colors"
-                                  >
-                                    <MapPin className="w-4 h-4 text-gray-400" />
-                                    <span className="font-medium">{location}</span>
-                                  </button>
-                                ))}
+                            <div className="absolute top-full left-0 right-0 mt-0.5 z-50">
+                              <div className="border rounded-lg max-h-48 overflow-y-auto bg-white shadow-lg">
+                                {locations
+                                  .filter(loc =>
+                                    loc.toLowerCase().includes(formData.location.trim().toLowerCase()) &&
+                                    loc !== 'Add Custom Location'
+                                  )
+                                  .map((location) => (
+                                    <button
+                                      key={location}
+                                      type="button"
+                                      onClick={async () => {
+                                        // Use the existing handleLocationChange function that has all the logic
+                                        await handleLocationChange(location);
+                                        setShowCustomLocation(false);
+                                        toast.success(`Selected: ${location}`);
+                                      }}
+                                      className="w-full text-left px-4 py-2.5 hover:bg-blue-50 border-b last:border-b-0 flex items-center gap-2 text-sm transition-colors"
+                                    >
+                                      <MapPin className="w-4 h-4 text-gray-400" />
+                                      <span className="font-medium">{location}</span>
+                                    </button>
+                                  ))}
+                              </div>
                             </div>
-                          </div>
-                        )}
+                          )}
                         <div className="flex gap-2 mt-2">
                           <Button
                             type="button"
@@ -3285,13 +3303,13 @@ const RequestEventPage: React.FC = () => {
                             size="sm"
                             onClick={() => {
                               const trimmedLocation = formData.location.trim();
-                              
+
                               // Check if location already exists (case-insensitive)
-                              const locationExists = locations.some(loc => 
-                                loc.toLowerCase() === trimmedLocation.toLowerCase() && 
+                              const locationExists = locations.some(loc =>
+                                loc.toLowerCase() === trimmedLocation.toLowerCase() &&
                                 loc !== 'Add Custom Location'
                               );
-                              
+
                               if (!trimmedLocation) {
                                 toast.error('Please enter a custom location first');
                               } else if (locationExists) {
@@ -3301,8 +3319,8 @@ const RequestEventPage: React.FC = () => {
                               }
                             }}
                             className="text-xs"
-                            disabled={!formData.location.trim() || locations.some(loc => 
-                              loc.toLowerCase() === formData.location.trim().toLowerCase() && 
+                            disabled={!formData.location.trim() || locations.some(loc =>
+                              loc.toLowerCase() === formData.location.trim().toLowerCase() &&
                               loc !== 'Add Custom Location'
                             )}
                           >
@@ -3580,9 +3598,8 @@ const RequestEventPage: React.FC = () => {
                 {/* Departments List */}
                 <div className="space-y-3">
                   <Label className="text-sm font-medium">Select Departments to Tag</Label>
-                  <div className={`grid grid-cols-1 md:grid-cols-2 gap-3 max-h-64 overflow-y-auto p-2 border rounded-lg ${
-                    noDepartmentsNeeded ? 'opacity-50 pointer-events-none' : ''
-                  }`}>
+                  <div className={`grid grid-cols-1 md:grid-cols-2 gap-3 max-h-64 overflow-y-auto p-2 border rounded-lg ${noDepartmentsNeeded ? 'opacity-50 pointer-events-none' : ''
+                    }`}>
                     {loading ? (
                       <div className="col-span-2 flex items-center justify-center py-8">
                         <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
@@ -3600,8 +3617,8 @@ const RequestEventPage: React.FC = () => {
                           checked={formData.taggedDepartments.includes(department.name)}
                           onCheckedChange={() => handleDepartmentToggle(department.name)}
                         />
-                        <Label 
-                          htmlFor={department._id} 
+                        <Label
+                          htmlFor={department._id}
                           className="text-sm cursor-pointer flex-1"
                         >
                           {department.name}
@@ -3609,7 +3626,7 @@ const RequestEventPage: React.FC = () => {
                       </motion.div>
                     ))}
                   </div>
-                  
+
                   {!loading && filteredDepartments.length === 0 && (
                     <p className="text-sm text-gray-500 text-center py-4">
                       No departments found matching your search.
@@ -3633,7 +3650,7 @@ const RequestEventPage: React.FC = () => {
                     {formData.taggedDepartments.map((dept) => {
                       const deptRequirements = formData.departmentRequirements[dept]?.filter(req => req.selected) || [];
                       const notesCount = deptRequirements.filter(req => req.notes && req.notes.trim()).length;
-                      
+
                       return (
                         <motion.div
                           key={dept}
@@ -3656,7 +3673,7 @@ const RequestEventPage: React.FC = () => {
                                   <X className="w-3 h-3" />
                                 </Button>
                               </div>
-                              
+
                               {deptRequirements.length > 0 && (
                                 <div className="space-y-2">
                                   <div className="text-xs text-gray-600 flex items-center gap-1">
@@ -3668,8 +3685,8 @@ const RequestEventPage: React.FC = () => {
                                   </div>
                                   <div className="space-y-1">
                                     {deptRequirements.slice(0, 3).map((req) => (
-                                      <div 
-                                        key={req.id} 
+                                      <div
+                                        key={req.id}
                                         className="text-xs bg-gray-50 text-gray-800 p-2 rounded-md border border-gray-200"
                                       >
                                         <div className="flex items-center justify-between mb-1">
@@ -3696,11 +3713,11 @@ const RequestEventPage: React.FC = () => {
                                           {req.isCustom ? (
                                             <>
                                               <span>
-                                                {req.type === 'physical' && req.quantity 
-                                                  ? `Quantity: ${req.quantity}` 
+                                                {req.type === 'physical' && req.quantity
+                                                  ? `Quantity: ${req.quantity}`
                                                   : req.notes && req.notes.trim()
-                                                  ? `Notes: ${req.notes.substring(0, 20)}${req.notes.length > 20 ? '...' : ''}`
-                                                  : 'Custom requirement'}
+                                                    ? `Notes: ${req.notes.substring(0, 20)}${req.notes.length > 20 ? '...' : ''}`
+                                                    : 'Custom requirement'}
                                               </span>
                                               <span className="flex items-center gap-1 text-orange-700">
                                                 <div className="w-1.5 h-1.5 rounded-full bg-orange-500"></div>
@@ -3710,18 +3727,16 @@ const RequestEventPage: React.FC = () => {
                                           ) : (
                                             <>
                                               <span>
-                                                {req.type === 'physical' && req.quantity 
-                                                  ? `Requested: ${req.quantity}${req.totalQuantity ? ` of ${req.totalQuantity}` : ''}` 
+                                                {req.type === 'physical' && req.quantity
+                                                  ? `Requested: ${req.quantity}${req.totalQuantity ? ` of ${req.totalQuantity}` : ''}`
                                                   : req.type === 'yesno' && req.yesNoAnswer
-                                                  ? `Answer: ${req.yesNoAnswer === 'yes' ? '✓ Yes' : '✗ No'}`
-                                                  : `Available: ${req.totalQuantity || 'N/A'}`}
+                                                    ? `Answer: ${req.yesNoAnswer === 'yes' ? '✓ Yes' : '✗ No'}`
+                                                    : `Available: ${req.totalQuantity || 'N/A'}`}
                                               </span>
-                                              <span className={`flex items-center gap-1 ${
-                                                req.isAvailable ? 'text-emerald-700' : 'text-red-700'
-                                              }`}>
-                                                <div className={`w-1.5 h-1.5 rounded-full ${
-                                                  req.isAvailable ? 'bg-emerald-500' : 'bg-red-500'
-                                                }`}></div>
+                                              <span className={`flex items-center gap-1 ${req.isAvailable ? 'text-emerald-700' : 'text-red-700'
+                                                }`}>
+                                                <div className={`w-1.5 h-1.5 rounded-full ${req.isAvailable ? 'bg-emerald-500' : 'bg-red-500'
+                                                  }`}></div>
                                                 {req.isAvailable ? 'Available' : 'Unavailable'}
                                               </span>
                                             </>
@@ -3811,7 +3826,7 @@ const RequestEventPage: React.FC = () => {
                     <div className="text-sm text-gray-600 mb-3">
                       Schedule based on your location preferences
                     </div>
-                    
+
                     {formData.startDate && formData.startTime ? (
                       <div className="flex items-center gap-3">
                         <div className="w-2 h-2 bg-green-500 rounded-full"></div>
@@ -4025,23 +4040,23 @@ const RequestEventPage: React.FC = () => {
           transition={{ delay: 0.3 }}
           className="flex justify-between pt-4"
         >
-          <Button 
-            variant="outline" 
+          <Button
+            variant="outline"
             onClick={() => setCurrentStep(1)}
           >
             Previous
           </Button>
-          <Button 
-            onClick={() => setCurrentStep(5)} 
+          <Button
+            onClick={() => setCurrentStep(5)}
             disabled={
               // For custom locations: checkbox acknowledgment is the only gate.
               isCustomLocationSelected
                 ? !pgsoCustomLocationAck
                 : (
-                    formData.eventType === 'simple-meeting'
-                      ? !(noDepartmentsNeeded || (formData.taggedDepartments.length > 0 && hasRequirementsForDepartments()))
-                      : (!formData.taggedDepartments.length || !hasRequirementsForDepartments())
-                  )
+                  formData.eventType === 'simple-meeting'
+                    ? !(noDepartmentsNeeded || (formData.taggedDepartments.length > 0 && hasRequirementsForDepartments()))
+                    : (!formData.taggedDepartments.length || !hasRequirementsForDepartments())
+                )
             }
             className="gap-2"
           >
@@ -4059,13 +4074,13 @@ const RequestEventPage: React.FC = () => {
           transition={{ delay: 0.3 }}
           className="flex justify-between pt-4"
         >
-          <Button 
-            variant="outline" 
+          <Button
+            variant="outline"
             onClick={() => setCurrentStep(3)}
           >
             Previous
           </Button>
-          <Button 
+          <Button
             onClick={() => {
               setShowReviewModal(true);
               setReviewStep(1);
@@ -4170,7 +4185,7 @@ const RequestEventPage: React.FC = () => {
             <Button variant="outline" disabled>
               Previous
             </Button>
-            <Button 
+            <Button
               onClick={handleContinueToTagDepartments}
               disabled={!formData.eventTitle || !formData.requestor || !formData.location || !formData.participants || !formData.description || !isAttachmentsCompleted || !formData.startDate || !formData.startTime || !formData.endDate || !formData.endTime}
               className="gap-2"
@@ -4183,9 +4198,9 @@ const RequestEventPage: React.FC = () => {
       )}
 
       {/* Requirements Modal */}
-      <Dialog 
-        key={`requirements-${selectedDepartment}-${requirementsRefreshKey}`} 
-        open={showRequirementsModal} 
+      <Dialog
+        key={`requirements-${selectedDepartment}-${requirementsRefreshKey}`}
+        open={showRequirementsModal}
         onOpenChange={setShowRequirementsModal}
       >
         <DialogContent className="sm:max-w-2xl">
@@ -4218,10 +4233,10 @@ const RequestEventPage: React.FC = () => {
                   console.log(`📍 Current selectedLocation: ${selectedLocation}`);
                   console.log(`🎯 Current showRequirementsModal: ${showRequirementsModal}`);
                   console.log(`🎯 Current showScheduleModal: ${showScheduleModal}`);
-                  
+
                   setShowRequirementsModal(false);
                   setShowScheduleModal(true);
-                  
+
                   console.log(`✅ Modals switched - Requirements: false, Schedule: true`);
                 }}
                 className="gap-2 ml-4"
@@ -4258,174 +4273,170 @@ const RequestEventPage: React.FC = () => {
                   </div>
                 ) : (
                   formData.departmentRequirements[selectedDepartment]?.map((requirement) => (
-                  <div
-                    key={requirement.id}
-                    className={`p-3 border rounded-lg transition-all ${
-                      !requirement.isAvailable 
-                        ? 'bg-gray-50 border-gray-200 opacity-60 cursor-not-allowed'
-                        : requirement.selected 
-                          ? 'bg-blue-50 border-blue-200 shadow-sm cursor-pointer' 
-                          : 'bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50 cursor-pointer'
-                    }`}
-                    onClick={() => requirement.isAvailable && handleRequirementToggle(requirement.id)}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                          <Checkbox
-                            checked={requirement.selected}
-                            disabled={!requirement.isAvailable}
-                            onChange={() => requirement.isAvailable && handleRequirementToggle(requirement.id)}
-                            className="mt-0.5"
-                          />
-                          <h5 className={`font-medium text-sm ${
-                            requirement.isAvailable ? 'text-gray-900' : 'text-gray-500'
-                          }`}>{requirement.name}</h5>
-                          <Badge 
-                            variant={requirement.type === 'physical' ? 'secondary' : 'outline'}
-                            className="text-xs"
-                          >
-                            <div className="flex items-center gap-1">
-                              {requirement.type === 'physical' ? (
-                                <><Package className="w-3 h-3" /> Physical</>
-                              ) : requirement.serviceType === 'yesno' ? (
-                                <><Settings className="w-3 h-3" /> Yes/No</>
-                              ) : (
-                                <><Settings className="w-3 h-3" /> Service</>
-                              )}
-                            </div>
-                          </Badge>
-                          {requirement.serviceType === 'yesno' && requirement.yesNoAnswer && (
-                            <Badge 
-                              variant="secondary" 
-                              className={`text-xs ${requirement.yesNoAnswer === 'yes' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}
+                    <div
+                      key={requirement.id}
+                      className={`p-3 border rounded-lg transition-all ${!requirement.isAvailable
+                          ? 'bg-gray-50 border-gray-200 opacity-60 cursor-not-allowed'
+                          : requirement.selected
+                            ? 'bg-blue-50 border-blue-200 shadow-sm cursor-pointer'
+                            : 'bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50 cursor-pointer'
+                        }`}
+                      onClick={() => requirement.isAvailable && handleRequirementToggle(requirement.id)}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Checkbox
+                              checked={requirement.selected}
+                              disabled={!requirement.isAvailable}
+                              onChange={() => requirement.isAvailable && handleRequirementToggle(requirement.id)}
+                              className="mt-0.5"
+                            />
+                            <h5 className={`font-medium text-sm ${requirement.isAvailable ? 'text-gray-900' : 'text-gray-500'
+                              }`}>{requirement.name}</h5>
+                            <Badge
+                              variant={requirement.type === 'physical' ? 'secondary' : 'outline'}
+                              className="text-xs"
                             >
-                              {requirement.yesNoAnswer === 'yes' ? (
-                                <><Check className="w-3 h-3 mr-1" /> Yes</>
-                              ) : (
-                                <><X className="w-3 h-3 mr-1" /> No</>
-                              )}
+                              <div className="flex items-center gap-1">
+                                {requirement.type === 'physical' ? (
+                                  <><Package className="w-3 h-3" /> Physical</>
+                                ) : requirement.serviceType === 'yesno' ? (
+                                  <><Settings className="w-3 h-3" /> Yes/No</>
+                                ) : (
+                                  <><Settings className="w-3 h-3" /> Service</>
+                                )}
+                              </div>
                             </Badge>
-                          )}
-                        </div>
-                        
-                        {/* Conflict Warning - Only show if THIS requirement has conflicts */}
-                        {conflictingEvents.length > 0 && formData.startDate && formData.startTime && 
-                         hasRequirementConflict(requirement, selectedDepartment) && (
-                          <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 mb-3">
-                            <div className="flex items-center gap-2 text-orange-800 text-xs font-medium mb-1">
-                              <AlertTriangle className="w-4 h-4" />
-                              This Item is Already Booked
-                            </div>
-                            <div className="text-xs text-orange-700">
-                              {requirement.name} is requested by {conflictingEvents.length} overlapping event(s) on {formData.startDate.toDateString()} ({formatTime(formData.startTime)}-{formatTime(formData.endTime)})
-                            </div>
-                            <div className="text-xs text-orange-600 mt-1">
-                              Quantity shown is remaining after existing bookings
-                            </div>
+                            {requirement.serviceType === 'yesno' && requirement.yesNoAnswer && (
+                              <Badge
+                                variant="secondary"
+                                className={`text-xs ${requirement.yesNoAnswer === 'yes' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}
+                              >
+                                {requirement.yesNoAnswer === 'yes' ? (
+                                  <><Check className="w-3 h-3 mr-1" /> Yes</>
+                                ) : (
+                                  <><X className="w-3 h-3 mr-1" /> No</>
+                                )}
+                              </Badge>
+                            )}
                           </div>
-                        )}
-                        
-                        <div className={`grid ${requirement.serviceType === 'yesno' ? 'grid-cols-1' : 'grid-cols-2'} gap-3 text-xs text-gray-600`}>
-                          {/* Quantity display: for custom physical show Requested Quantity, else Available Quantity */}
-                          {requirement.serviceType !== 'yesno' && (
-                            <div className="flex items-center gap-1">
-                              {requirement.type === 'physical' && requirement.isCustom ? (
-                                <>
-                                  <span className="font-medium">Requested Quantity:</span>
-                                  <span className={requirement.quantity ? 'text-gray-900' : 'text-gray-400'}>
-                                    {requirement.quantity || 'N/A'}
-                                  </span>
-                                </>
-                              ) : (
-                                <>
-                                  <span className="font-medium">Available Quantity:</span>
-                                  {conflictingEvents.length > 0 && formData.startDate && formData.startTime &&
-                                   hasRequirementConflict(requirement, selectedDepartment) ? (
-                                    (() => {
-                                      const dates = getEventDatesInRange();
-                                      const isMultiDay = dates.length > 1;
 
-                                      if (!isMultiDay) {
-                                        return (
-                                          <span className="text-blue-600 font-medium">
-                                            {getAvailableQuantity(requirement, selectedDepartment)}
-                                            <span className="text-gray-500 ml-1">(of {requirement.totalQuantity || 0})</span>
-                                          </span>
-                                        );
-                                      }
+                          {/* Conflict Warning - Only show if THIS requirement has conflicts */}
+                          {conflictingEvents.length > 0 && formData.startDate && formData.startTime &&
+                            hasRequirementConflict(requirement, selectedDepartment) && (
+                              <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 mb-3">
+                                <div className="flex items-center gap-2 text-orange-800 text-xs font-medium mb-1">
+                                  <AlertTriangle className="w-4 h-4" />
+                                  This Item is Already Booked
+                                </div>
+                                <div className="text-xs text-orange-700">
+                                  {requirement.name} is requested by {conflictingEvents.length} overlapping event(s) on {formData.startDate.toDateString()} ({formatTime(formData.startTime)}-{formatTime(formData.endTime)})
+                                </div>
+                                <div className="text-xs text-orange-600 mt-1">
+                                  Quantity shown is remaining after existing bookings
+                                </div>
+                              </div>
+                            )}
 
-                                      return (
-                                        <div className="flex flex-col gap-0.5">
-                                          {dates.map((d) => (
-                                            <span key={d.toISOString()} className="text-blue-600 font-medium">
-                                              {format(d, 'MMM dd')}: {getAvailableQuantityForDate(requirement, d)}
+                          <div className={`grid ${requirement.serviceType === 'yesno' ? 'grid-cols-1' : 'grid-cols-2'} gap-3 text-xs text-gray-600`}>
+                            {/* Quantity display: for custom physical show Requested Quantity, else Available Quantity */}
+                            {requirement.serviceType !== 'yesno' && (
+                              <div className="flex items-center gap-1">
+                                {requirement.type === 'physical' && requirement.isCustom ? (
+                                  <>
+                                    <span className="font-medium">Requested Quantity:</span>
+                                    <span className={requirement.quantity ? 'text-gray-900' : 'text-gray-400'}>
+                                      {requirement.quantity || 'N/A'}
+                                    </span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className="font-medium">Available Quantity:</span>
+                                    {conflictingEvents.length > 0 && formData.startDate && formData.startTime &&
+                                      hasRequirementConflict(requirement, selectedDepartment) ? (
+                                      (() => {
+                                        const dates = getEventDatesInRange();
+                                        const isMultiDay = dates.length > 1;
+
+                                        if (!isMultiDay) {
+                                          return (
+                                            <span className="text-blue-600 font-medium">
+                                              {getAvailableQuantity(requirement, selectedDepartment)}
                                               <span className="text-gray-500 ml-1">(of {requirement.totalQuantity || 0})</span>
                                             </span>
-                                          ))}
-                                        </div>
-                                      );
-                                    })()
-                                  ) : (
-                                    <span className={requirement.totalQuantity ? 'text-gray-900' : 'text-gray-400'}>
-                                      {requirement.totalQuantity || 'N/A'}
-                                    </span>
-                                  )}
+                                          );
+                                        }
+
+                                        return (
+                                          <div className="flex flex-col gap-0.5">
+                                            {dates.map((d) => (
+                                              <span key={d.toISOString()} className="text-blue-600 font-medium">
+                                                {format(d, 'MMM dd')}: {getAvailableQuantityForDate(requirement, d)}
+                                                <span className="text-gray-500 ml-1">(of {requirement.totalQuantity || 0})</span>
+                                              </span>
+                                            ))}
+                                          </div>
+                                        );
+                                      })()
+                                    ) : (
+                                      <span className={requirement.totalQuantity ? 'text-gray-900' : 'text-gray-400'}>
+                                        {requirement.totalQuantity || 'N/A'}
+                                      </span>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                            )}
+                            <div className="flex items-center gap-1">
+                              <span className="font-medium">Status:</span>
+                              {requirement.isCustom ? (
+                                <span className="flex items-center gap-1 text-orange-600">
+                                  <div className="w-2 h-2 rounded-full bg-orange-500"></div>
+                                  Pending Validation
+                                </span>
+                              ) : (
+                                <span className={`flex items-center gap-1 ${requirement.isAvailable ? 'text-green-600' : 'text-red-600'
+                                  }`}>
+                                  <div className={`w-2 h-2 rounded-full ${requirement.isAvailable ? 'bg-green-500' : 'bg-red-500'
+                                    }`}></div>
+                                  {requirement.isAvailable ? 'Available' : 'Unavailable'}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {requirement.responsiblePerson && (
+                            <div className="mt-2 text-xs text-gray-600">
+                              <span className="font-medium">Contact:</span> {requirement.responsiblePerson}
+                            </div>
+                          )}
+
+                          {requirement.availabilityNotes && (
+                            <div className="mt-2 p-2 bg-gray-50 border border-gray-200 rounded text-xs text-gray-700">
+                              {requirement.availabilityNotes.startsWith('PAVILION_DEFAULT:') ? (() => {
+                                const parts = requirement.availabilityNotes.split(':');
+                                const pavilionLocation = parts.slice(2).join(':') || 'this location';
+                                return (
+                                  <>
+                                    <span className="font-medium">Availability Notes:</span>{' '}
+                                    Default requirement for {pavilionLocation}
+                                  </>
+                                );
+                              })() : (
+                                <>
+                                  <span className="font-medium">Availability Notes:</span>{' '}
+                                  {requirement.availabilityNotes}
                                 </>
                               )}
                             </div>
                           )}
-                          <div className="flex items-center gap-1">
-                            <span className="font-medium">Status:</span>
-                            {requirement.isCustom ? (
-                              <span className="flex items-center gap-1 text-orange-600">
-                                <div className="w-2 h-2 rounded-full bg-orange-500"></div>
-                                Pending Validation
-                              </span>
-                            ) : (
-                              <span className={`flex items-center gap-1 ${
-                                requirement.isAvailable ? 'text-green-600' : 'text-red-600'
-                              }`}>
-                                <div className={`w-2 h-2 rounded-full ${
-                                  requirement.isAvailable ? 'bg-green-500' : 'bg-red-500'
-                                }`}></div>
-                                {requirement.isAvailable ? 'Available' : 'Unavailable'}
-                              </span>
-                            )}
-                          </div>
                         </div>
-                        
-                        {requirement.responsiblePerson && (
-                          <div className="mt-2 text-xs text-gray-600">
-                            <span className="font-medium">Contact:</span> {requirement.responsiblePerson}
-                          </div>
-                        )}
-                        
-                        {requirement.availabilityNotes && (
-                          <div className="mt-2 p-2 bg-gray-50 border border-gray-200 rounded text-xs text-gray-700">
-                            {requirement.availabilityNotes.startsWith('PAVILION_DEFAULT:') ? (() => {
-                              const parts = requirement.availabilityNotes.split(':');
-                              const pavilionLocation = parts.slice(2).join(':') || 'this location';
-                              return (
-                                <>
-                                  <span className="font-medium">Availability Notes:</span>{' '}
-                                  Default requirement for {pavilionLocation}
-                                </>
-                              );
-                            })() : (
-                              <>
-                                <span className="font-medium">Availability Notes:</span>{' '}
-                                {requirement.availabilityNotes}
-                              </>
-                            )}
-                          </div>
-                        )}
                       </div>
                     </div>
-                  </div>
-                ))
+                  ))
                 )}
-                
+
                 {/* Empty State Message */}
                 {!loadingDepartmentRequirements && (!formData.departmentRequirements[selectedDepartment] || formData.departmentRequirements[selectedDepartment].length === 0) && (
                   <div className="text-center py-8 px-4">
@@ -4476,16 +4487,15 @@ const RequestEventPage: React.FC = () => {
                     </div>
                   </div>
                 )}
-                
+
                 {/* Add Custom Requirement Button */}
                 {/* PGSO: hide "Add Custom Requirement" UI. (Keep code for future re-enable.) */}
                 {!selectedDepartment?.toLowerCase().includes('pgso') && (
-                  <div 
-                    className={`p-3 border-2 border-dashed rounded-lg cursor-pointer transition-all ${
-                      showCustomInput 
-                        ? 'bg-blue-50 border-blue-300' 
+                  <div
+                    className={`p-3 border-2 border-dashed rounded-lg cursor-pointer transition-all ${showCustomInput
+                        ? 'bg-blue-50 border-blue-300'
                         : 'border-gray-300 hover:border-blue-300 hover:bg-blue-50'
-                    }`}
+                      }`}
                     onClick={() => setShowCustomInput(true)}
                   >
                     <div className="flex items-center justify-center gap-2 text-sm text-gray-600">
@@ -4519,8 +4529,8 @@ const RequestEventPage: React.FC = () => {
                   </div>
                   <div className="space-y-2">
                     <Label className="text-xs font-medium text-gray-900">Type</Label>
-                    <Select 
-                      value={customRequirementType || 'service'} 
+                    <Select
+                      value={customRequirementType || 'service'}
                       onValueChange={(value: 'physical' | 'service') => setCustomRequirementType(value)}
                     >
                       <SelectTrigger className="w-full">
@@ -4602,8 +4612,8 @@ const RequestEventPage: React.FC = () => {
           )}
 
           <DialogFooter className="gap-2">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={() => {
                 setShowRequirementsModal(false);
                 setSelectedDepartment('');
@@ -4614,7 +4624,7 @@ const RequestEventPage: React.FC = () => {
             >
               Cancel
             </Button>
-            <Button 
+            <Button
               onClick={handleSaveRequirements}
               disabled={!formData.departmentRequirements[selectedDepartment]?.some(req => req.selected)}
               className="text-xs"
@@ -4838,367 +4848,367 @@ const RequestEventPage: React.FC = () => {
               <p className="text-sm text-gray-600 mt-1">
                 Select your preferred start and end date/time for the event.
               </p>
-              
+
               {/* Multi-Conference Room Selection - Clean White Design */}
-              {(formData.location === '4th Flr. Conference Room 1' || 
-                formData.location === '4th Flr. Conference Room 2' || 
+              {(formData.location === '4th Flr. Conference Room 1' ||
+                formData.location === '4th Flr. Conference Room 2' ||
                 formData.location === '4th Flr. Conference Room 3' ||
                 formData.location === '4th Flr. Conference Room (Entire)') && (
-                <div className="mt-4 p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
-                  {/* Header */}
-                  <div className="flex items-center gap-2 mb-3">
-                    <Info className="w-4 h-4 text-blue-600 flex-shrink-0" />
-                    <p className="text-sm font-medium text-gray-900">Need Multiple Conference Rooms?</p>
-                  </div>
-                  
-                  {/* Selected Rooms */}
-                  {formData.locations.length > 0 && (
-                    <div className="mb-3 flex flex-wrap gap-2">
-                      {formData.locations.map((loc) => (
-                        <Badge key={loc} variant="secondary" className="text-xs flex items-center gap-1.5 px-2.5 py-1">
-                          {loc}
-                          {formData.locations.length > 1 && (
-                            <button
-                              onClick={() => handleRemoveConferenceRoom(loc)}
-                              className="hover:text-red-600 transition-colors"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </Badge>
-                      ))}
+                  <div className="mt-4 p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
+                    {/* Header */}
+                    <div className="flex items-center gap-2 mb-3">
+                      <Info className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                      <p className="text-sm font-medium text-gray-900">Need Multiple Conference Rooms?</p>
                     </div>
-                  )}
-                  
-                  {/* Add Room Buttons */}
-                  <div className="flex flex-wrap gap-2">
-                    {!formData.locations.includes('4th Flr. Conference Room 1') && (() => {
-                      const roomName = '4th Flr. Conference Room 1';
-                      const unavailable = isRoomUnavailableOnSelectedDates(roomName);
-                      return (
-                        <div className="relative">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleAddConferenceRoom(1)}
-                            disabled={unavailable}
-                            className={`text-xs h-8 px-3 ${unavailable ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-50'}`}
-                          >
-                            <Plus className="w-3.5 h-3.5 mr-1.5" />
-                            4th Flr. Conference Room 1
-                          </Button>
-                          {unavailable && (
-                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                              <span className="text-[10px] font-medium bg-red-100 text-red-700 border border-red-200 rounded px-2 py-0.5">Unavailable on this date</span>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()}
-                    {!formData.locations.includes('4th Flr. Conference Room 2') && (() => {
-                      const roomName = '4th Flr. Conference Room 2';
-                      const unavailable = isRoomUnavailableOnSelectedDates(roomName);
-                      return (
-                        <div className="relative">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleAddConferenceRoom(2)}
-                            disabled={unavailable}
-                            className={`text-xs h-8 px-3 ${unavailable ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-50'}`}
-                          >
-                            <Plus className="w-3.5 h-3.5 mr-1.5" />
-                            4th Flr. Conference Room 2
-                          </Button>
-                          {unavailable && (
-                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                              <span className="text-[10px] font-medium bg-red-100 text-red-700 border border-red-200 rounded px-2 py-0.5">Unavailable on this date</span>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()}
-                    {!formData.locations.includes('4th Flr. Conference Room 3') && (() => {
-                      const roomName = '4th Flr. Conference Room 3';
-                      const unavailable = isRoomUnavailableOnSelectedDates(roomName);
-                      return (
-                        <div className="relative">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleAddConferenceRoom(3)}
-                            disabled={unavailable}
-                            className={`text-xs h-8 px-3 ${unavailable ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-50'}`}
-                          >
-                            <Plus className="w-3.5 h-3.5 mr-1.5" />
-                            4th Flr. Conference Room 3
-                          </Button>
-                          {unavailable && (
-                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                              <span className="text-[10px] font-medium bg-red-100 text-red-700 border border-red-200 rounded px-2 py-0.5">Unavailable on this date</span>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()}
+
+                    {/* Selected Rooms */}
+                    {formData.locations.length > 0 && (
+                      <div className="mb-3 flex flex-wrap gap-2">
+                        {formData.locations.map((loc) => (
+                          <Badge key={loc} variant="secondary" className="text-xs flex items-center gap-1.5 px-2.5 py-1">
+                            {loc}
+                            {formData.locations.length > 1 && (
+                              <button
+                                onClick={() => handleRemoveConferenceRoom(loc)}
+                                className="hover:text-red-600 transition-colors"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Add Room Buttons */}
+                    <div className="flex flex-wrap gap-2">
+                      {!formData.locations.includes('4th Flr. Conference Room 1') && (() => {
+                        const roomName = '4th Flr. Conference Room 1';
+                        const unavailable = isRoomUnavailableOnSelectedDates(roomName);
+                        return (
+                          <div className="relative">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleAddConferenceRoom(1)}
+                              disabled={unavailable}
+                              className={`text-xs h-8 px-3 ${unavailable ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-50'}`}
+                            >
+                              <Plus className="w-3.5 h-3.5 mr-1.5" />
+                              4th Flr. Conference Room 1
+                            </Button>
+                            {unavailable && (
+                              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                <span className="text-[10px] font-medium bg-red-100 text-red-700 border border-red-200 rounded px-2 py-0.5">Unavailable on this date</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                      {!formData.locations.includes('4th Flr. Conference Room 2') && (() => {
+                        const roomName = '4th Flr. Conference Room 2';
+                        const unavailable = isRoomUnavailableOnSelectedDates(roomName);
+                        return (
+                          <div className="relative">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleAddConferenceRoom(2)}
+                              disabled={unavailable}
+                              className={`text-xs h-8 px-3 ${unavailable ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-50'}`}
+                            >
+                              <Plus className="w-3.5 h-3.5 mr-1.5" />
+                              4th Flr. Conference Room 2
+                            </Button>
+                            {unavailable && (
+                              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                <span className="text-[10px] font-medium bg-red-100 text-red-700 border border-red-200 rounded px-2 py-0.5">Unavailable on this date</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                      {!formData.locations.includes('4th Flr. Conference Room 3') && (() => {
+                        const roomName = '4th Flr. Conference Room 3';
+                        const unavailable = isRoomUnavailableOnSelectedDates(roomName);
+                        return (
+                          <div className="relative">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleAddConferenceRoom(3)}
+                              disabled={unavailable}
+                              className={`text-xs h-8 px-3 ${unavailable ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-50'}`}
+                            >
+                              <Plus className="w-3.5 h-3.5 mr-1.5" />
+                              4th Flr. Conference Room 3
+                            </Button>
+                            {unavailable && (
+                              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                <span className="text-[10px] font-medium bg-red-100 text-red-700 border border-red-200 rounded px-2 py-0.5">Unavailable on this date</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
               {/* Multi-Pavilion Section Selection - Kagitingan Hall */}
-              {(formData.location === 'Pavilion - Kagitingan Hall - Section A' || 
-                formData.location === 'Pavilion - Kagitingan Hall - Section B' || 
+              {(formData.location === 'Pavilion - Kagitingan Hall - Section A' ||
+                formData.location === 'Pavilion - Kagitingan Hall - Section B' ||
                 formData.location === 'Pavilion - Kagitingan Hall - Section C') && (
-                <div className="mt-4 p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
-                  {/* Header */}
-                  <div className="flex items-center gap-2 mb-3">
-                    <Info className="w-4 h-4 text-blue-600 flex-shrink-0" />
-                    <p className="text-sm font-medium text-gray-900">Need Multiple Kagitingan Hall Sections?</p>
-                  </div>
-                  
-                  {/* Selected Sections */}
-                  {formData.locations.length > 0 && (
-                    <div className="mb-3 flex flex-wrap gap-2">
-                      {formData.locations.map((loc) => (
-                        <Badge key={loc} variant="secondary" className="text-xs flex items-center gap-1.5 px-2.5 py-1">
-                          {loc}
-                          {formData.locations.length > 1 && (
-                            <button
-                              onClick={() => handleRemoveConferenceRoom(loc)}
-                              className="hover:text-red-600 transition-colors"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </Badge>
-                      ))}
+                  <div className="mt-4 p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
+                    {/* Header */}
+                    <div className="flex items-center gap-2 mb-3">
+                      <Info className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                      <p className="text-sm font-medium text-gray-900">Need Multiple Kagitingan Hall Sections?</p>
                     </div>
-                  )}
-                  
-                  {/* Add Section Buttons */}
-                  <div className="flex flex-wrap gap-2">
-                    {!formData.locations.includes('Pavilion - Kagitingan Hall - Section A') && (() => {
-                      const section = 'Pavilion - Kagitingan Hall - Section A';
-                      const unavailable = isRoomUnavailableOnSelectedDates(section);
-                      return (
-                        <div className="relative">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            disabled={unavailable}
-                            onClick={async () => {
-                              if (unavailable) return;
-                              if (!formData.locations.includes(section)) {
-                                await fetchAvailableDatesForLocation(section);
-                                handleInputChange('locations', [...formData.locations, section]);
-                              }
-                            }}
-                            className={`text-xs h-8 px-3 ${unavailable ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-50'}`}
-                          >
-                            <Plus className="w-3.5 h-3.5 mr-1.5" />
-                            Section A
-                          </Button>
-                          {unavailable && (
-                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                              <span className="text-[10px] font-medium bg-red-100 text-red-700 border border-red-200 rounded px-2 py-0.5">Unavailable on this date</span>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()}
-                    {!formData.locations.includes('Pavilion - Kagitingan Hall - Section B') && (() => {
-                      const section = 'Pavilion - Kagitingan Hall - Section B';
-                      const unavailable = isRoomUnavailableOnSelectedDates(section);
-                      return (
-                        <div className="relative">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            disabled={unavailable}
-                            onClick={async () => {
-                              if (unavailable) return;
-                              if (!formData.locations.includes(section)) {
-                                await fetchAvailableDatesForLocation(section);
-                                handleInputChange('locations', [...formData.locations, section]);
-                              }
-                            }}
-                            className={`text-xs h-8 px-3 ${unavailable ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-50'}`}
-                          >
-                            <Plus className="w-3.5 h-3.5 mr-1.5" />
-                            Section B
-                          </Button>
-                          {unavailable && (
-                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                              <span className="text-[10px] font-medium bg-red-100 text-red-700 border border-red-200 rounded px-2 py-0.5">Unavailable on this date</span>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()}
-                    {!formData.locations.includes('Pavilion - Kagitingan Hall - Section C') && (() => {
-                      const section = 'Pavilion - Kagitingan Hall - Section C';
-                      const unavailable = isRoomUnavailableOnSelectedDates(section);
-                      return (
-                        <div className="relative">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            disabled={unavailable}
-                            onClick={async () => {
-                              if (unavailable) return;
-                              if (!formData.locations.includes(section)) {
-                                await fetchAvailableDatesForLocation(section);
-                                handleInputChange('locations', [...formData.locations, section]);
-                              }
-                            }}
-                            className={`text-xs h-8 px-3 ${unavailable ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-50'}`}
-                          >
-                            <Plus className="w-3.5 h-3.5 mr-1.5" />
-                            Section C
-                          </Button>
-                          {unavailable && (
-                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                              <span className="text-[10px] font-medium bg-red-100 text-red-700 border border-red-200 rounded px-2 py-0.5">Unavailable on this date</span>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()}
+
+                    {/* Selected Sections */}
+                    {formData.locations.length > 0 && (
+                      <div className="mb-3 flex flex-wrap gap-2">
+                        {formData.locations.map((loc) => (
+                          <Badge key={loc} variant="secondary" className="text-xs flex items-center gap-1.5 px-2.5 py-1">
+                            {loc}
+                            {formData.locations.length > 1 && (
+                              <button
+                                onClick={() => handleRemoveConferenceRoom(loc)}
+                                className="hover:text-red-600 transition-colors"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Add Section Buttons */}
+                    <div className="flex flex-wrap gap-2">
+                      {!formData.locations.includes('Pavilion - Kagitingan Hall - Section A') && (() => {
+                        const section = 'Pavilion - Kagitingan Hall - Section A';
+                        const unavailable = isRoomUnavailableOnSelectedDates(section);
+                        return (
+                          <div className="relative">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={unavailable}
+                              onClick={async () => {
+                                if (unavailable) return;
+                                if (!formData.locations.includes(section)) {
+                                  await fetchAvailableDatesForLocation(section);
+                                  handleInputChange('locations', [...formData.locations, section]);
+                                }
+                              }}
+                              className={`text-xs h-8 px-3 ${unavailable ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-50'}`}
+                            >
+                              <Plus className="w-3.5 h-3.5 mr-1.5" />
+                              Section A
+                            </Button>
+                            {unavailable && (
+                              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                <span className="text-[10px] font-medium bg-red-100 text-red-700 border border-red-200 rounded px-2 py-0.5">Unavailable on this date</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                      {!formData.locations.includes('Pavilion - Kagitingan Hall - Section B') && (() => {
+                        const section = 'Pavilion - Kagitingan Hall - Section B';
+                        const unavailable = isRoomUnavailableOnSelectedDates(section);
+                        return (
+                          <div className="relative">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={unavailable}
+                              onClick={async () => {
+                                if (unavailable) return;
+                                if (!formData.locations.includes(section)) {
+                                  await fetchAvailableDatesForLocation(section);
+                                  handleInputChange('locations', [...formData.locations, section]);
+                                }
+                              }}
+                              className={`text-xs h-8 px-3 ${unavailable ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-50'}`}
+                            >
+                              <Plus className="w-3.5 h-3.5 mr-1.5" />
+                              Section B
+                            </Button>
+                            {unavailable && (
+                              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                <span className="text-[10px] font-medium bg-red-100 text-red-700 border border-red-200 rounded px-2 py-0.5">Unavailable on this date</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                      {!formData.locations.includes('Pavilion - Kagitingan Hall - Section C') && (() => {
+                        const section = 'Pavilion - Kagitingan Hall - Section C';
+                        const unavailable = isRoomUnavailableOnSelectedDates(section);
+                        return (
+                          <div className="relative">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={unavailable}
+                              onClick={async () => {
+                                if (unavailable) return;
+                                if (!formData.locations.includes(section)) {
+                                  await fetchAvailableDatesForLocation(section);
+                                  handleInputChange('locations', [...formData.locations, section]);
+                                }
+                              }}
+                              className={`text-xs h-8 px-3 ${unavailable ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-50'}`}
+                            >
+                              <Plus className="w-3.5 h-3.5 mr-1.5" />
+                              Section C
+                            </Button>
+                            {unavailable && (
+                              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                <span className="text-[10px] font-medium bg-red-100 text-red-700 border border-red-200 rounded px-2 py-0.5">Unavailable on this date</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
               {/* Multi-Pavilion Section Selection - Kalayaan Ballroom */}
-              {(formData.location === 'Pavilion - Kalayaan Ballroom - Section A' || 
-                formData.location === 'Pavilion - Kalayaan Ballroom - Section B' || 
+              {(formData.location === 'Pavilion - Kalayaan Ballroom - Section A' ||
+                formData.location === 'Pavilion - Kalayaan Ballroom - Section B' ||
                 formData.location === 'Pavilion - Kalayaan Ballroom - Section C') && (
-                <div className="mt-4 p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
-                  {/* Header */}
-                  <div className="flex items-center gap-2 mb-3">
-                    <Info className="w-4 h-4 text-blue-600 flex-shrink-0" />
-                    <p className="text-sm font-medium text-gray-900">Need Multiple Kalayaan Ballroom Sections?</p>
-                  </div>
-                  
-                  {/* Selected Sections */}
-                  {formData.locations.length > 0 && (
-                    <div className="mb-3 flex flex-wrap gap-2">
-                      {formData.locations.map((loc) => (
-                        <Badge key={loc} variant="secondary" className="text-xs flex items-center gap-1.5 px-2.5 py-1">
-                          {loc}
-                          {formData.locations.length > 1 && (
-                            <button
-                              onClick={() => handleRemoveConferenceRoom(loc)}
-                              className="hover:text-red-600 transition-colors"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </Badge>
-                      ))}
+                  <div className="mt-4 p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
+                    {/* Header */}
+                    <div className="flex items-center gap-2 mb-3">
+                      <Info className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                      <p className="text-sm font-medium text-gray-900">Need Multiple Kalayaan Ballroom Sections?</p>
                     </div>
-                  )}
-                  
-                  {/* Add Section Buttons */}
-                  <div className="flex flex-wrap gap-2">
-                    {!formData.locations.includes('Pavilion - Kalayaan Ballroom - Section A') && (() => {
-                      const section = 'Pavilion - Kalayaan Ballroom - Section A';
-                      const unavailable = isRoomUnavailableOnSelectedDates(section);
-                      return (
-                        <div className="relative">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            disabled={unavailable}
-                            onClick={async () => {
-                              if (unavailable) return;
-                              if (!formData.locations.includes(section)) {
-                                await fetchAvailableDatesForLocation(section);
-                                handleInputChange('locations', [...formData.locations, section]);
-                              }
-                            }}
-                            className={`text-xs h-8 px-3 ${unavailable ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-50'}`}
-                          >
-                            <Plus className="w-3.5 h-3.5 mr-1.5" />
-                            Section A
-                          </Button>
-                          {unavailable && (
-                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                              <span className="text-[10px] font-medium bg-red-100 text-red-700 border border-red-200 rounded px-2 py-0.5">Unavailable on this date</span>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()}
-                    {!formData.locations.includes('Pavilion - Kalayaan Ballroom - Section B') && (() => {
-                      const section = 'Pavilion - Kalayaan Ballroom - Section B';
-                      const unavailable = isRoomUnavailableOnSelectedDates(section);
-                      return (
-                        <div className="relative">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            disabled={unavailable}
-                            onClick={async () => {
-                              if (unavailable) return;
-                              if (!formData.locations.includes(section)) {
-                                await fetchAvailableDatesForLocation(section);
-                                handleInputChange('locations', [...formData.locations, section]);
-                              }
-                            }}
-                            className={`text-xs h-8 px-3 ${unavailable ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-50'}`}
-                          >
-                            <Plus className="w-3.5 h-3.5 mr-1.5" />
-                            Section B
-                          </Button>
-                          {unavailable && (
-                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                              <span className="text-[10px] font-medium bg-red-100 text-red-700 border border-red-200 rounded px-2 py-0.5">Unavailable on this date</span>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()}
-                    {!formData.locations.includes('Pavilion - Kalayaan Ballroom - Section C') && (() => {
-                      const section = 'Pavilion - Kalayaan Ballroom - Section C';
-                      const unavailable = isRoomUnavailableOnSelectedDates(section);
-                      return (
-                        <div className="relative">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            disabled={unavailable}
-                            onClick={async () => {
-                              if (unavailable) return;
-                              if (!formData.locations.includes(section)) {
-                                await fetchAvailableDatesForLocation(section);
-                                handleInputChange('locations', [...formData.locations, section]);
-                              }
-                            }}
-                            className={`text-xs h-8 px-3 ${unavailable ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-50'}`}
-                          >
-                            <Plus className="w-3.5 h-3.5 mr-1.5" />
-                            Section C
-                          </Button>
-                          {unavailable && (
-                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                              <span className="text-[10px] font-medium bg-red-100 text-red-700 border border-red-200 rounded px-2 py-0.5">Unavailable on this date</span>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()}
+
+                    {/* Selected Sections */}
+                    {formData.locations.length > 0 && (
+                      <div className="mb-3 flex flex-wrap gap-2">
+                        {formData.locations.map((loc) => (
+                          <Badge key={loc} variant="secondary" className="text-xs flex items-center gap-1.5 px-2.5 py-1">
+                            {loc}
+                            {formData.locations.length > 1 && (
+                              <button
+                                onClick={() => handleRemoveConferenceRoom(loc)}
+                                className="hover:text-red-600 transition-colors"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Add Section Buttons */}
+                    <div className="flex flex-wrap gap-2">
+                      {!formData.locations.includes('Pavilion - Kalayaan Ballroom - Section A') && (() => {
+                        const section = 'Pavilion - Kalayaan Ballroom - Section A';
+                        const unavailable = isRoomUnavailableOnSelectedDates(section);
+                        return (
+                          <div className="relative">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={unavailable}
+                              onClick={async () => {
+                                if (unavailable) return;
+                                if (!formData.locations.includes(section)) {
+                                  await fetchAvailableDatesForLocation(section);
+                                  handleInputChange('locations', [...formData.locations, section]);
+                                }
+                              }}
+                              className={`text-xs h-8 px-3 ${unavailable ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-50'}`}
+                            >
+                              <Plus className="w-3.5 h-3.5 mr-1.5" />
+                              Section A
+                            </Button>
+                            {unavailable && (
+                              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                <span className="text-[10px] font-medium bg-red-100 text-red-700 border border-red-200 rounded px-2 py-0.5">Unavailable on this date</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                      {!formData.locations.includes('Pavilion - Kalayaan Ballroom - Section B') && (() => {
+                        const section = 'Pavilion - Kalayaan Ballroom - Section B';
+                        const unavailable = isRoomUnavailableOnSelectedDates(section);
+                        return (
+                          <div className="relative">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={unavailable}
+                              onClick={async () => {
+                                if (unavailable) return;
+                                if (!formData.locations.includes(section)) {
+                                  await fetchAvailableDatesForLocation(section);
+                                  handleInputChange('locations', [...formData.locations, section]);
+                                }
+                              }}
+                              className={`text-xs h-8 px-3 ${unavailable ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-50'}`}
+                            >
+                              <Plus className="w-3.5 h-3.5 mr-1.5" />
+                              Section B
+                            </Button>
+                            {unavailable && (
+                              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                <span className="text-[10px] font-medium bg-red-100 text-red-700 border border-red-200 rounded px-2 py-0.5">Unavailable on this date</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                      {!formData.locations.includes('Pavilion - Kalayaan Ballroom - Section C') && (() => {
+                        const section = 'Pavilion - Kalayaan Ballroom - Section C';
+                        const unavailable = isRoomUnavailableOnSelectedDates(section);
+                        return (
+                          <div className="relative">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={unavailable}
+                              onClick={async () => {
+                                if (unavailable) return;
+                                if (!formData.locations.includes(section)) {
+                                  await fetchAvailableDatesForLocation(section);
+                                  handleInputChange('locations', [...formData.locations, section]);
+                                }
+                              }}
+                              className={`text-xs h-8 px-3 ${unavailable ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-50'}`}
+                            >
+                              <Plus className="w-3.5 h-3.5 mr-1.5" />
+                              Section C
+                            </Button>
+                            {unavailable && (
+                              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                <span className="text-[10px] font-medium bg-red-100 text-red-700 border border-red-200 rounded px-2 py-0.5">Unavailable on this date</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
               {availableDates.length > 0 && (
                 <p className="text-xs text-blue-600 mt-2">
@@ -5295,8 +5305,8 @@ const RequestEventPage: React.FC = () => {
                 <Label htmlFor="startTime" className="text-sm font-medium text-gray-700 mb-2 block">
                   Start Time
                 </Label>
-                <Select 
-                  value={formData.startTime} 
+                <Select
+                  value={formData.startTime}
                   onValueChange={(value) => {
                     handleInputChange('startTime', value);
                     // Clear end time if it's now invalid
@@ -5319,14 +5329,14 @@ const RequestEventPage: React.FC = () => {
                     {generateTimeOptions().map((timeOption) => {
                       const isBooked = isTimeSlotBooked(timeOption.value);
                       const requirementConflict = hasRequirementConflictAtTime(timeOption.value);
-                      
+
                       // Only disable if VENUE is booked (physical conflict)
                       // REQ-only conflicts show warning but remain selectable
                       const isDisabled = isBooked;
-                      
+
                       return (
-                        <SelectItem 
-                          key={timeOption.value} 
+                        <SelectItem
+                          key={timeOption.value}
                           value={timeOption.value}
                           disabled={isDisabled}
                           className={isDisabled ? 'opacity-50 cursor-not-allowed' : ''}
@@ -5392,8 +5402,8 @@ const RequestEventPage: React.FC = () => {
                 <Label htmlFor="endTime" className="text-sm font-medium text-gray-700 mb-2 block">
                   End Time
                 </Label>
-                <Select 
-                  value={formData.endTime} 
+                <Select
+                  value={formData.endTime}
                   onValueChange={(value) => handleInputChange('endTime', value)}
                   disabled={!formData.startTime}
                 >
@@ -5404,21 +5414,20 @@ const RequestEventPage: React.FC = () => {
                     {getAvailableEndTimes().map((timeOption) => {
                       const isBooked = isTimeSlotBooked(timeOption.value);
                       const requirementConflict = hasRequirementConflictAtTime(timeOption.value);
-                      
+
                       // Only disable if VENUE is booked (physical conflict)
                       // REQ-only conflicts show warning but remain selectable
                       const isDisabled = isBooked;
-                      
+
                       return (
-                        <SelectItem 
-                          key={timeOption.value} 
+                        <SelectItem
+                          key={timeOption.value}
                           value={timeOption.value}
                           disabled={isDisabled}
                           className={isDisabled ? 'opacity-50 cursor-not-allowed' : ''}
                         >
-                          <div className={`flex items-center justify-between w-full ${
-                            isBooked ? 'border-b border-red-200 pb-1 mb-1' : ''
-                          }`}>
+                          <div className={`flex items-center justify-between w-full ${isBooked ? 'border-b border-red-200 pb-1 mb-1' : ''
+                            }`}>
                             <span className={isDisabled ? 'text-gray-400' : ''}>
                               {timeOption.label}
                             </span>
@@ -5450,7 +5459,7 @@ const RequestEventPage: React.FC = () => {
                   <div>
                     <h4 className="font-medium text-gray-900">Additional Days for Multi-Day Event</h4>
                     <p className="text-sm text-gray-600">
-                      Your event spans from {format(formData.startDate, "MMM dd")} to {format(formData.endDate, "MMM dd")}. 
+                      Your event spans from {format(formData.startDate, "MMM dd")} to {format(formData.endDate, "MMM dd")}.
                       Add time slots for each additional day.
                     </p>
                   </div>
@@ -5461,23 +5470,23 @@ const RequestEventPage: React.FC = () => {
                   const days: Date[] = [];
                   const currentDate = new Date(formData.startDate);
                   const endDate = new Date(formData.endDate);
-                  
+
                   // Skip the first day (already covered by main start/end time)
                   currentDate.setDate(currentDate.getDate() + 1);
-                  
+
                   while (currentDate <= endDate) {
                     days.push(new Date(currentDate));
                     currentDate.setDate(currentDate.getDate() + 1);
                   }
-                  
+
                   return (
                     <div className="space-y-3">
                       {days.map((date, index) => {
                         const dateStr = date.toISOString();
-                        const existingSlot = formData.dateTimeSlots.find(slot => 
+                        const existingSlot = formData.dateTimeSlots.find(slot =>
                           slot.date.toDateString() === date.toDateString()
                         );
-                        
+
                         return (
                           <div key={dateStr} className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                             <div className="flex items-center justify-between mb-3">
@@ -5498,7 +5507,7 @@ const RequestEventPage: React.FC = () => {
                                   variant="ghost"
                                   size="sm"
                                   onClick={() => {
-                                    const updatedSlots = formData.dateTimeSlots.filter(s => 
+                                    const updatedSlots = formData.dateTimeSlots.filter(s =>
                                       s.date.toDateString() !== date.toDateString()
                                     );
                                     handleInputChange('dateTimeSlots', updatedSlots);
@@ -5510,7 +5519,7 @@ const RequestEventPage: React.FC = () => {
                                 </Button>
                               )}
                             </div>
-                            
+
                             {existingSlot && existingSlot.startTime && existingSlot.endTime ? (
                               <div className="text-sm text-gray-700 bg-white p-3 rounded border">
                                 <p><strong>Start Time:</strong> {formatTime(existingSlot.startTime)}</p>
@@ -5523,10 +5532,10 @@ const RequestEventPage: React.FC = () => {
                                     <Label className="text-xs font-medium text-gray-700 mb-1.5 block">
                                       Start Time
                                     </Label>
-                                    <Select 
+                                    <Select
                                       value={existingSlot?.startTime || ''}
                                       onValueChange={(value) => {
-                                        const currentSlot = formData.dateTimeSlots.find(s => 
+                                        const currentSlot = formData.dateTimeSlots.find(s =>
                                           s.date.toDateString() === date.toDateString()
                                         );
                                         const newSlot: DateTimeSlot = {
@@ -5546,7 +5555,7 @@ const RequestEventPage: React.FC = () => {
                                           }
                                         }
 
-                                        const updatedSlots = formData.dateTimeSlots.filter(s => 
+                                        const updatedSlots = formData.dateTimeSlots.filter(s =>
                                           s.date.toDateString() !== date.toDateString()
                                         );
                                         handleInputChange('dateTimeSlots', [...updatedSlots, newSlot]);
@@ -5560,13 +5569,13 @@ const RequestEventPage: React.FC = () => {
                                           console.log('🎯 START TIME - date variable:', date?.toDateString(), 'timeOption:', timeOption.value);
                                           const isBooked = isTimeSlotBooked(timeOption.value, date);
                                           const requirementConflict = hasRequirementConflictAtTime(timeOption.value, date);
-                                          
+
                                           // Only disable if VENUE is booked (physical conflict)
                                           const isDisabled = isBooked;
-                                          
+
                                           return (
-                                            <SelectItem 
-                                              key={timeOption.value} 
+                                            <SelectItem
+                                              key={timeOption.value}
                                               value={timeOption.value}
                                               disabled={isDisabled}
                                               className={`text-sm ${isDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
@@ -5599,10 +5608,10 @@ const RequestEventPage: React.FC = () => {
                                     <Label className="text-xs font-medium text-gray-700 mb-1.5 block">
                                       End Time
                                     </Label>
-                                    <Select 
+                                    <Select
                                       value={existingSlot?.endTime || ''}
                                       onValueChange={(value) => {
-                                        const currentSlot = formData.dateTimeSlots.find(s => 
+                                        const currentSlot = formData.dateTimeSlots.find(s =>
                                           s.date.toDateString() === date.toDateString()
                                         );
                                         if (currentSlot) {
@@ -5610,7 +5619,7 @@ const RequestEventPage: React.FC = () => {
                                             ...currentSlot,
                                             endTime: value
                                           };
-                                          const updatedSlots = formData.dateTimeSlots.filter(s => 
+                                          const updatedSlots = formData.dateTimeSlots.filter(s =>
                                             s.date.toDateString() !== date.toDateString()
                                           );
                                           handleInputChange('dateTimeSlots', [...updatedSlots, newSlot]);
@@ -5634,13 +5643,13 @@ const RequestEventPage: React.FC = () => {
                                           console.log('🎯 END TIME - date variable:', date?.toDateString(), 'timeOption:', timeOption.value);
                                           const isBooked = isTimeSlotBooked(timeOption.value, date);
                                           const requirementConflict = hasRequirementConflictAtTime(timeOption.value, date);
-                                          
+
                                           // Only disable if VENUE is booked (physical conflict)
                                           const isDisabled = isBooked;
-                                          
+
                                           return (
-                                            <SelectItem 
-                                              key={timeOption.value} 
+                                            <SelectItem
+                                              key={timeOption.value}
                                               value={timeOption.value}
                                               disabled={isDisabled}
                                               className={`text-sm ${isDisabled ? 'opacity-50 cursor-not-allowed' : ''} ${isBooked ? 'border-b border-red-200 pb-1 mb-1' : ''}`}
@@ -5718,13 +5727,13 @@ const RequestEventPage: React.FC = () => {
 
           {/* Fixed Footer Buttons */}
           <div className="flex justify-end gap-2 pt-4 border-t mt-4">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={() => setShowScheduleModal(false)}
             >
               Cancel
             </Button>
-            <Button 
+            <Button
               onClick={handleScheduleSave}
               disabled={(() => {
                 // Check if it's a multi-day event
@@ -5734,20 +5743,20 @@ const RequestEventPage: React.FC = () => {
                   const currentDate = new Date(formData.startDate);
                   const endDate = new Date(formData.endDate);
                   currentDate.setDate(currentDate.getDate() + 1);
-                  
+
                   while (currentDate <= endDate) {
                     days.push(new Date(currentDate));
                     currentDate.setDate(currentDate.getDate() + 1);
                   }
-                  
+
                   // Check if all additional days have both start and end times
                   const allDaysConfigured = days.every(date => {
-                    const slot = formData.dateTimeSlots.find(s => 
+                    const slot = formData.dateTimeSlots.find(s =>
                       s.date.toDateString() === date.toDateString()
                     );
                     return slot && slot.startTime && slot.endTime;
                   });
-                  
+
                   return !allDaysConfigured;
                 }
                 return false;
@@ -5769,7 +5778,7 @@ const RequestEventPage: React.FC = () => {
               Upload at least one government file (Event Briefer or Program) to enable w/ Governor
             </DialogDescription>
           </DialogHeader>
-          
+
           {/* Required Files Notice */}
           {!govFiles.brieferTemplate && !govFiles.programme && (
             <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 flex items-start gap-2">
@@ -5779,7 +5788,7 @@ const RequestEventPage: React.FC = () => {
               </p>
             </div>
           )}
-          
+
           <div className="space-y-4 py-4">
             {/* Event Briefer Section */}
             <div className="space-y-3">
@@ -5791,11 +5800,11 @@ const RequestEventPage: React.FC = () => {
                   size="sm"
                   onClick={() => {
                     setTemplateType('briefer');
-                    
+
                     // Auto-populate briefer data from form
                     const userStr = localStorage.getItem('userData');
                     let currentUserDept = '';
-                    
+
                     if (userStr) {
                       try {
                         const currentUser = JSON.parse(userStr);
@@ -5804,7 +5813,7 @@ const RequestEventPage: React.FC = () => {
                         console.error('Error parsing user from localStorage:', e);
                       }
                     }
-                    
+
                     // Format time to 12-hour format with AM/PM
                     const formatTime12Hour = (time24: string) => {
                       if (!time24) return '';
@@ -5814,23 +5823,23 @@ const RequestEventPage: React.FC = () => {
                       const hour12 = hour % 12 || 12;
                       return `${hour12}:${minutes} ${ampm}`;
                     };
-                    
-                    const startDateTime = formData.startDate && formData.startTime 
-                      ? `${format(formData.startDate, 'MMMM dd, yyyy')} ${formatTime12Hour(formData.startTime)}` 
+
+                    const startDateTime = formData.startDate && formData.startTime
+                      ? `${format(formData.startDate, 'MMMM dd, yyyy')} ${formatTime12Hour(formData.startTime)}`
                       : '';
-                    const endDateTime = formData.endDate && formData.endTime 
-                      ? `${format(formData.endDate, 'MMMM dd, yyyy')} ${formatTime12Hour(formData.endTime)}` 
+                    const endDateTime = formData.endDate && formData.endTime
+                      ? `${format(formData.endDate, 'MMMM dd, yyyy')} ${formatTime12Hour(formData.endTime)}`
                       : '';
-                    const dateTimeRange = startDateTime && endDateTime 
-                      ? `${startDateTime} - ${endDateTime}` 
+                    const dateTimeRange = startDateTime && endDateTime
+                      ? `${startDateTime} - ${endDateTime}`
                       : '';
-                    
+
                     const totalParticipants = (
-                      parseInt(formData.participants || '0') + 
-                      parseInt(formData.vip || '0') + 
+                      parseInt(formData.participants || '0') +
+                      parseInt(formData.vip || '0') +
                       parseInt(formData.vvip || '0')
                     ).toString();
-                    
+
                     setBrieferData({
                       eventTitle: formData.eventTitle || '',
                       proponentOffice: currentUserDept || '',
@@ -5841,7 +5850,7 @@ const RequestEventPage: React.FC = () => {
                       expectedParticipants: totalParticipants !== '0' ? totalParticipants : '',
                       briefDescription: '' // User fills this
                     });
-                    
+
                     setShowTemplateModal(true);
                   }}
                   className="h-8 text-xs gap-1"
@@ -5945,8 +5954,8 @@ const RequestEventPage: React.FC = () => {
           </div>
 
           <DialogFooter>
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={() => {
                 setShowGovModal(false);
                 if (!govFiles.brieferTemplate && !govFiles.programme) {
@@ -5956,7 +5965,7 @@ const RequestEventPage: React.FC = () => {
             >
               Cancel
             </Button>
-            <Button 
+            <Button
               onClick={() => {
                 // Check if at least one file is uploaded
                 if (!govFiles.brieferTemplate && !govFiles.programme) {
@@ -5987,7 +5996,7 @@ const RequestEventPage: React.FC = () => {
               {templateType === 'briefer' ? 'Fill out the event briefer form' : 'Fill out the program'}
             </DialogDescription>
           </DialogHeader>
-          
+
           {templateType === 'briefer' ? (
             <div className="space-y-4 py-4">
               {/* Event Briefer Form - Table Style */}
@@ -6008,7 +6017,7 @@ const RequestEventPage: React.FC = () => {
                         />
                       </td>
                     </tr>
-                    
+
                     {/* Proponent Office/Department */}
                     <tr className="border-b">
                       <td className="bg-gray-50 p-3 font-medium text-sm border-r">
@@ -6023,7 +6032,7 @@ const RequestEventPage: React.FC = () => {
                         />
                       </td>
                     </tr>
-                    
+
                     {/* Date and Time */}
                     <tr className="border-b">
                       <td className="bg-gray-50 p-3 font-medium text-sm border-r">
@@ -6038,7 +6047,7 @@ const RequestEventPage: React.FC = () => {
                         />
                       </td>
                     </tr>
-                    
+
                     {/* Venue */}
                     <tr className="border-b">
                       <td className="bg-gray-50 p-3 font-medium text-sm border-r">
@@ -6053,7 +6062,7 @@ const RequestEventPage: React.FC = () => {
                         />
                       </td>
                     </tr>
-                    
+
                     {/* Objectives */}
                     <tr className="border-b">
                       <td className="bg-gray-50 p-3 font-medium text-sm border-r align-top">
@@ -6068,7 +6077,7 @@ const RequestEventPage: React.FC = () => {
                         />
                       </td>
                     </tr>
-                    
+
                     {/* Target Audience/Participants */}
                     <tr className="border-b">
                       <td className="bg-gray-50 p-3 font-medium text-sm border-r">
@@ -6083,7 +6092,7 @@ const RequestEventPage: React.FC = () => {
                         />
                       </td>
                     </tr>
-                    
+
                     {/* Expected Number of Participants */}
                     <tr className="border-b">
                       <td className="bg-gray-50 p-3 font-medium text-sm border-r">
@@ -6098,7 +6107,7 @@ const RequestEventPage: React.FC = () => {
                         />
                       </td>
                     </tr>
-                    
+
                     {/* Brief Description of the Activity */}
                     <tr>
                       <td className="bg-gray-50 p-3 font-medium text-sm border-r align-top">
@@ -6186,7 +6195,7 @@ const RequestEventPage: React.FC = () => {
                   </tbody>
                 </table>
               </div>
-              
+
               {/* Add Row Button */}
               <div className="flex justify-end">
                 <Button
@@ -6206,14 +6215,14 @@ const RequestEventPage: React.FC = () => {
           )}
 
           <DialogFooter className="gap-2">
-            <Button 
+            <Button
               variant="outline"
               onClick={() => setShowTemplateModal(false)}
             >
               Close
             </Button>
             {(templateType === 'briefer' || templateType === 'program') && (
-              <Button 
+              <Button
                 onClick={async () => {
                   try {
                     // Create new PDF document
@@ -6229,7 +6238,7 @@ const RequestEventPage: React.FC = () => {
                     try {
                       logoImg = new Image();
                       logoImg.crossOrigin = 'anonymous';
-                      
+
                       await new Promise((resolve, reject) => {
                         logoImg!.onload = resolve;
                         logoImg!.onerror = reject;
@@ -6242,7 +6251,7 @@ const RequestEventPage: React.FC = () => {
                     // Function to add header with logo on each page
                     const addPageHeader = () => {
                       let headerY = 10;
-                      
+
                       // Add logo if available
                       if (logoImg) {
                         const logoWidth = 15;
@@ -6258,22 +6267,22 @@ const RequestEventPage: React.FC = () => {
                       pdf.setFontSize(14);
                       pdf.setFont('helvetica', 'bold');
                       pdf.text('PROVINCIAL GOVERNMENT OF BATAAN', pageWidth / 2, headerY, { align: 'center' });
-                      
+
                       headerY += 5;
                       pdf.setFontSize(10);
                       pdf.setFont('helvetica', 'normal');
                       pdf.text('Event Management System', pageWidth / 2, headerY, { align: 'center' });
-                      
+
                       headerY += 6;
                       pdf.setFontSize(12);
                       pdf.setFont('helvetica', 'bold');
                       pdf.text(templateType === 'briefer' ? 'EVENT BRIEFER' : 'PROGRAM FLOW', pageWidth / 2, headerY, { align: 'center' });
-                      
+
                       headerY += 8;
                       pdf.setFontSize(9);
                       pdf.setFont('helvetica', 'normal');
                       pdf.text(`Generated on ${formatDate(new Date(), 'MMMM dd, yyyy')} at ${formatDate(new Date(), 'h:mm a')}`, pageWidth / 2, headerY, { align: 'center' });
-                      
+
                       headerY += 10;
                       return headerY;
                     };
@@ -6294,76 +6303,76 @@ const RequestEventPage: React.FC = () => {
                     if (templateType === 'briefer') {
                       // Event Briefer Table-style content with borders
                       const fields = [
-                      { label: 'Event Title:', value: brieferData.eventTitle || 'N/A' },
-                      { label: 'Proponent Office/Department:', value: brieferData.proponentOffice || 'N/A' },
-                      { label: 'Date and Time:', value: brieferData.dateTime || 'N/A' },
-                      { label: 'Venue:', value: brieferData.venue || 'N/A' },
-                      { label: 'Objectives:', value: brieferData.objectives || 'N/A', multiline: true },
-                      { label: 'Target Audience/Participants:', value: brieferData.targetAudience || 'N/A' },
-                      { label: 'Expected Number of Participants:', value: brieferData.expectedParticipants || 'N/A' },
-                      { label: 'Brief Description of the Activity:', value: brieferData.briefDescription || 'N/A', multiline: true }
-                    ];
+                        { label: 'Event Title:', value: brieferData.eventTitle || 'N/A' },
+                        { label: 'Proponent Office/Department:', value: brieferData.proponentOffice || 'N/A' },
+                        { label: 'Date and Time:', value: brieferData.dateTime || 'N/A' },
+                        { label: 'Venue:', value: brieferData.venue || 'N/A' },
+                        { label: 'Objectives:', value: brieferData.objectives || 'N/A', multiline: true },
+                        { label: 'Target Audience/Participants:', value: brieferData.targetAudience || 'N/A' },
+                        { label: 'Expected Number of Participants:', value: brieferData.expectedParticipants || 'N/A' },
+                        { label: 'Brief Description of the Activity:', value: brieferData.briefDescription || 'N/A', multiline: true }
+                      ];
 
-                    const tableStartY = yPos;
-                    const labelColWidth = 60; // Width of label column
-                    const valueColWidth = pageWidth - 2 * margin - labelColWidth; // Width of value column
-                    const cellPadding = 3;
+                      const tableStartY = yPos;
+                      const labelColWidth = 60; // Width of label column
+                      const valueColWidth = pageWidth - 2 * margin - labelColWidth; // Width of value column
+                      const cellPadding = 3;
 
-                    // Set border style once
-                    pdf.setDrawColor(200, 200, 200); // Gray border
-                    pdf.setLineWidth(0.1);
+                      // Set border style once
+                      pdf.setDrawColor(200, 200, 200); // Gray border
+                      pdf.setLineWidth(0.1);
 
-                    fields.forEach((field, index) => {
-                      // Calculate row height based on content
-                      pdf.setFontSize(9);
-                      const wrappedValue = pdf.splitTextToSize(field.value, valueColWidth - 2 * cellPadding);
-                      const rowHeight = Math.max(10, wrappedValue.length * 5 + 2 * cellPadding);
-                      
-                      // Check if we need a new page
-                      checkAndAddNewPage(rowHeight);
-                      
-                      // Draw label cell (left column with gray background)
-                      pdf.setFillColor(245, 245, 245); // Light gray background
-                      pdf.rect(margin, yPos, labelColWidth, rowHeight, 'F'); // Fill only
-                      
-                      // Draw value cell (right column)
-                      pdf.setFillColor(255, 255, 255); // White background
-                      pdf.rect(margin + labelColWidth, yPos, valueColWidth, rowHeight, 'F'); // Fill only
-                      
-                      // Draw borders (stroke only, no fill)
-                      pdf.rect(margin, yPos, labelColWidth, rowHeight, 'S'); // Label cell border
-                      pdf.rect(margin + labelColWidth, yPos, valueColWidth, rowHeight, 'S'); // Value cell border
-                      
-                      // Add label text
-                      pdf.setFontSize(9);
-                      pdf.setFont('helvetica', 'bold');
-                      pdf.setTextColor(0, 0, 0);
-                      const labelLines = pdf.splitTextToSize(field.label, labelColWidth - 2 * cellPadding);
-                      pdf.text(labelLines, margin + cellPadding, yPos + cellPadding + 3);
-                      
-                      // Add value text
-                      pdf.setFont('helvetica', 'normal');
-                      pdf.text(wrappedValue, margin + labelColWidth + cellPadding, yPos + cellPadding + 3);
-                      
-                      yPos += rowHeight;
-                    });
+                      fields.forEach((field, index) => {
+                        // Calculate row height based on content
+                        pdf.setFontSize(9);
+                        const wrappedValue = pdf.splitTextToSize(field.value, valueColWidth - 2 * cellPadding);
+                        const rowHeight = Math.max(10, wrappedValue.length * 5 + 2 * cellPadding);
+
+                        // Check if we need a new page
+                        checkAndAddNewPage(rowHeight);
+
+                        // Draw label cell (left column with gray background)
+                        pdf.setFillColor(245, 245, 245); // Light gray background
+                        pdf.rect(margin, yPos, labelColWidth, rowHeight, 'F'); // Fill only
+
+                        // Draw value cell (right column)
+                        pdf.setFillColor(255, 255, 255); // White background
+                        pdf.rect(margin + labelColWidth, yPos, valueColWidth, rowHeight, 'F'); // Fill only
+
+                        // Draw borders (stroke only, no fill)
+                        pdf.rect(margin, yPos, labelColWidth, rowHeight, 'S'); // Label cell border
+                        pdf.rect(margin + labelColWidth, yPos, valueColWidth, rowHeight, 'S'); // Value cell border
+
+                        // Add label text
+                        pdf.setFontSize(9);
+                        pdf.setFont('helvetica', 'bold');
+                        pdf.setTextColor(0, 0, 0);
+                        const labelLines = pdf.splitTextToSize(field.label, labelColWidth - 2 * cellPadding);
+                        pdf.text(labelLines, margin + cellPadding, yPos + cellPadding + 3);
+
+                        // Add value text
+                        pdf.setFont('helvetica', 'normal');
+                        pdf.text(wrappedValue, margin + labelColWidth + cellPadding, yPos + cellPadding + 3);
+
+                        yPos += rowHeight;
+                      });
                     } else {
                       // Program Flow Table
                       const colWidths = [30, 60, 40, 40]; // Time, Activity, Person, Remarks
                       const cellPadding = 2;
                       const rowHeight = 10;
-                      
+
                       // Set border style
                       pdf.setDrawColor(200, 200, 200);
                       pdf.setLineWidth(0.1);
-                      
+
                       // Draw header row
                       const headers = ['Time', 'Activity/Segment', 'Person Responsible', 'Remarks'];
                       let xPos = margin;
-                      
+
                       pdf.setFontSize(9);
                       pdf.setFont('helvetica', 'bold');
-                      
+
                       headers.forEach((header, i) => {
                         // Fill with gray background
                         pdf.setFillColor(240, 240, 240);
@@ -6374,23 +6383,23 @@ const RequestEventPage: React.FC = () => {
                         pdf.text(header, xPos + cellPadding, yPos + 6);
                         xPos += colWidths[i];
                       });
-                      
+
                       yPos += rowHeight;
-                      
+
                       // Draw data rows
                       pdf.setFont('helvetica', 'normal');
                       pdf.setFontSize(8);
-                      
+
                       programFlowRows.forEach((row) => {
                         // Check if we need a new page
                         const wasNewPage = checkAndAddNewPage(rowHeight);
-                        
+
                         // If new page was added, redraw the header row
                         if (wasNewPage) {
                           let headerXPos = margin;
                           pdf.setFontSize(9);
                           pdf.setFont('helvetica', 'bold');
-                          
+
                           headers.forEach((header, i) => {
                             pdf.setFillColor(240, 240, 240);
                             pdf.rect(headerXPos, yPos, colWidths[i], rowHeight, 'F');
@@ -6398,21 +6407,21 @@ const RequestEventPage: React.FC = () => {
                             pdf.text(header, headerXPos + cellPadding, yPos + 6);
                             headerXPos += colWidths[i];
                           });
-                          
+
                           yPos += rowHeight;
                           pdf.setFont('helvetica', 'normal');
                           pdf.setFontSize(8);
                         }
-                        
+
                         xPos = margin;
-                        
+
                         // Time
                         pdf.setFillColor(255, 255, 255);
                         pdf.rect(xPos, yPos, colWidths[0], rowHeight, 'F');
                         pdf.rect(xPos, yPos, colWidths[0], rowHeight, 'S');
                         pdf.text(row.time || '', xPos + cellPadding, yPos + 6);
                         xPos += colWidths[0];
-                        
+
                         // Activity
                         pdf.setFillColor(255, 255, 255);
                         pdf.rect(xPos, yPos, colWidths[1], rowHeight, 'F');
@@ -6420,7 +6429,7 @@ const RequestEventPage: React.FC = () => {
                         const activityText = pdf.splitTextToSize(row.activity || '', colWidths[1] - 2 * cellPadding);
                         pdf.text(activityText[0] || '', xPos + cellPadding, yPos + 6);
                         xPos += colWidths[1];
-                        
+
                         // Person Responsible
                         pdf.setFillColor(255, 255, 255);
                         pdf.rect(xPos, yPos, colWidths[2], rowHeight, 'F');
@@ -6428,14 +6437,14 @@ const RequestEventPage: React.FC = () => {
                         const personText = pdf.splitTextToSize(row.personResponsible || '', colWidths[2] - 2 * cellPadding);
                         pdf.text(personText[0] || '', xPos + cellPadding, yPos + 6);
                         xPos += colWidths[2];
-                        
+
                         // Remarks
                         pdf.setFillColor(255, 255, 255);
                         pdf.rect(xPos, yPos, colWidths[3], rowHeight, 'F');
                         pdf.rect(xPos, yPos, colWidths[3], rowHeight, 'S');
                         const remarksText = pdf.splitTextToSize(row.remarks || '', colWidths[3] - 2 * cellPadding);
                         pdf.text(remarksText[0] || '', xPos + cellPadding, yPos + 6);
-                        
+
                         yPos += rowHeight;
                       });
                     }
@@ -6445,7 +6454,7 @@ const RequestEventPage: React.FC = () => {
                     const pdfUrl = URL.createObjectURL(pdfBlob);
                     setPdfPreviewUrl(pdfUrl);
                     setShowPdfPreview(true);
-                    
+
                   } catch (error) {
                     console.error('Error generating PDF preview:', error);
                     toast.error('Failed to generate PDF preview');
@@ -6473,7 +6482,7 @@ const RequestEventPage: React.FC = () => {
               This is exactly how your PDF will look when downloaded
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="flex-1 overflow-hidden bg-gray-100 rounded-lg">
             {pdfPreviewUrl ? (
               <iframe
@@ -6491,18 +6500,18 @@ const RequestEventPage: React.FC = () => {
               </div>
             )}
           </div>
-          
+
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setShowPdfPreview(false)}>
               Close Preview
             </Button>
-            <Button 
+            <Button
               onClick={() => {
                 if (!pdfPreviewUrl) {
                   toast.error('No PDF preview available');
                   return;
                 }
-                
+
                 // Download the PDF
                 const link = document.createElement('a');
                 link.href = pdfPreviewUrl;
@@ -6539,7 +6548,7 @@ const RequestEventPage: React.FC = () => {
                 <p className="text-sm text-muted-foreground">
                   Found {departmentAvailableDates.length} date{departmentAvailableDates.length !== 1 ? 's' : ''} with available resources:
                 </p>
-                
+
                 <div className="grid gap-3 max-h-96 overflow-y-auto">
                   {departmentAvailableDates.map((dateEntry: any, index: number) => (
                     <div key={index} className="p-4 border rounded-lg bg-card">
@@ -6551,14 +6560,14 @@ const RequestEventPage: React.FC = () => {
                           {dateEntry.availableCount || 0} resources
                         </Badge>
                       </div>
-                      
+
                       {dateEntry.timeRange && (
                         <div className="flex items-center gap-1 text-xs text-muted-foreground mb-2">
                           <Clock className="w-3 h-3" />
                           <span>Time Range: {dateEntry.timeRange.start} - {dateEntry.timeRange.end}</span>
                         </div>
                       )}
-                      
+
                       {dateEntry.resources && dateEntry.resources.length > 0 && (
                         <div className="space-y-1">
                           <p className="text-xs font-medium text-muted-foreground">Available Resources:</p>
@@ -6576,7 +6585,7 @@ const RequestEventPage: React.FC = () => {
                           </div>
                         </div>
                       )}
-                      
+
                       <div className="mt-3">
                         <Button
                           variant="outline"
@@ -6586,14 +6595,14 @@ const RequestEventPage: React.FC = () => {
                             const selectedDateObj = new Date(dateEntry.date);
                             handleInputChange('startDate', selectedDateObj);
                             handleInputChange('endDate', selectedDateObj);
-                            
+
                             // Close ALL modals first
                             setShowAvailableDatesModal(false);
                             setShowRequirementsModal(false);
-                            
+
                             // Open Edit Schedule modal to set start/end times
                             setShowScheduleModal(true);
-                            
+
                             toast.info(`Date set to ${format(selectedDateObj, 'MMM dd, yyyy')} - Please set start and end times`);
                           }}
                           className="text-xs gap-1"
@@ -6651,13 +6660,12 @@ const RequestEventPage: React.FC = () => {
                   {[1, 2, 3].map((step) => (
                     <div
                       key={step}
-                      className={`h-2 w-12 rounded-full transition-all ${
-                        step === reviewStep
+                      className={`h-2 w-12 rounded-full transition-all ${step === reviewStep
                           ? 'bg-blue-600'
                           : step < reviewStep
-                          ? 'bg-blue-200'
-                          : 'bg-gray-200'
-                      }`}
+                            ? 'bg-blue-200'
+                            : 'bg-gray-200'
+                        }`}
                     />
                   ))}
                 </div>
@@ -6668,298 +6676,296 @@ const RequestEventPage: React.FC = () => {
             <div className="flex-1 overflow-hidden relative min-h-[400px]">
               {/* Step 1: Event Details */}
               {reviewStep === 1 && (
-              <motion.div
-                key="review-step-1"
-                initial={{ x: 300, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                exit={{ x: -300, opacity: 0 }}
-                transition={{ duration: 0.3 }}
-                className="absolute inset-0 p-8 overflow-y-auto"
-              >
-                <div className="max-w-3xl mx-auto space-y-6">
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-900 mb-1">Event Details</h3>
-                    <p className="text-sm text-gray-500">Basic information about your event</p>
-                  </div>
+                <motion.div
+                  key="review-step-1"
+                  initial={{ x: 300, opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  exit={{ x: -300, opacity: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className="absolute inset-0 p-8 overflow-y-auto"
+                >
+                  <div className="max-w-3xl mx-auto space-y-6">
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-1">Event Details</h3>
+                      <p className="text-sm text-gray-500">Basic information about your event</p>
+                    </div>
 
-                  <Separator />
+                    <Separator />
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Event Title</Label>
-                      <p className="text-base font-medium text-gray-900">{formData.eventTitle}</p>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Requestor</Label>
-                      <p className="text-base font-medium text-gray-900">{formData.requestor}</p>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Event Type</Label>
-                      <Badge className={`${
-                        formData.eventType === 'simple-meeting' ? 'bg-green-600 text-white' :
-                        formData.eventType === 'simple' ? 'bg-blue-600 text-white' :
-                        'bg-purple-600 text-white'
-                      }`}>
-                        {formData.eventType === 'simple-meeting' ? 'Simple Meeting' :
-                         formData.eventType === 'simple' ? 'Simple Event' : 'Complex Event'}
-                      </Badge>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                        Location{formData.locations.length > 1 ? 's' : ''}
-                      </Label>
-                      {formData.locations.length > 1 ? (
-                        <div className="space-y-1">
-                          {formData.locations.map((loc, idx) => (
-                            <div key={idx} className="flex items-center gap-2">
-                              <Badge variant="secondary" className="text-sm">
-                                {loc}
-                              </Badge>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-base font-medium text-gray-900">{formData.location}</p>
-                      )}
-                    </div>
-                    {formData.roomType && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div className="space-y-1.5">
-                        <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Room Type</Label>
-                        <p className="text-base font-medium text-gray-900">{formData.roomType}</p>
+                        <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Event Title</Label>
+                        <p className="text-base font-medium text-gray-900">{formData.eventTitle}</p>
                       </div>
-                    )}
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Participants</Label>
-                      <div className="flex items-center gap-3 text-sm">
-                        <span className="font-medium text-gray-900">{formData.participants} Regular</span>
-                        {formData.vip && <span className="text-gray-600">{formData.vip} VIP</span>}
-                        {formData.vvip && <span className="text-gray-600">{formData.vvip} VVIP</span>}
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Requestor</Label>
+                        <p className="text-base font-medium text-gray-900">{formData.requestor}</p>
                       </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Description</Label>
-                    <p className="text-sm text-gray-700 leading-relaxed bg-gray-50 p-4 rounded-lg border">
-                      {formData.description}
-                    </p>
-                  </div>
-
-                  <div className="space-y-3">
-                    <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                      Attachments ({formData.attachments.length})
-                    </Label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {formData.attachments.map((file, idx) => (
-                        <div key={idx} className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg border text-sm">
-                          <Paperclip className="w-4 h-4 text-gray-400" />
-                          <span className="truncate font-medium text-gray-700">{file.name}</span>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Event Type</Label>
+                        <Badge className={`${formData.eventType === 'simple-meeting' ? 'bg-green-600 text-white' :
+                            formData.eventType === 'simple' ? 'bg-blue-600 text-white' :
+                              'bg-purple-600 text-white'
+                          }`}>
+                          {formData.eventType === 'simple-meeting' ? 'Simple Meeting' :
+                            formData.eventType === 'simple' ? 'Simple Event' : 'Complex Event'}
+                        </Badge>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                          Location{formData.locations.length > 1 ? 's' : ''}
+                        </Label>
+                        {formData.locations.length > 1 ? (
+                          <div className="space-y-1">
+                            {formData.locations.map((loc, idx) => (
+                              <div key={idx} className="flex items-center gap-2">
+                                <Badge variant="secondary" className="text-sm">
+                                  {loc}
+                                </Badge>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-base font-medium text-gray-900">{formData.location}</p>
+                        )}
+                      </div>
+                      {formData.roomType && (
+                        <div className="space-y-1.5">
+                          <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Room Type</Label>
+                          <p className="text-base font-medium text-gray-900">{formData.roomType}</p>
                         </div>
-                      ))}
+                      )}
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Participants</Label>
+                        <div className="flex items-center gap-3 text-sm">
+                          <span className="font-medium text-gray-900">{formData.participants} Regular</span>
+                          {formData.vip && <span className="text-gray-600">{formData.vip} VIP</span>}
+                          {formData.vvip && <span className="text-gray-600">{formData.vvip} VVIP</span>}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Description</Label>
+                      <p className="text-sm text-gray-700 leading-relaxed bg-gray-50 p-4 rounded-lg border">
+                        {formData.description}
+                      </p>
+                    </div>
+
+                    <div className="space-y-3">
+                      <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                        Attachments ({formData.attachments.length})
+                      </Label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {formData.attachments.map((file, idx) => (
+                          <div key={idx} className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg border text-sm">
+                            <Paperclip className="w-4 h-4 text-gray-400" />
+                            <span className="truncate font-medium text-gray-700">{file.name}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                </div>
-              </motion.div>
+                </motion.div>
               )}
 
               {/* Step 2: Tagged Departments */}
               {reviewStep === 2 && (
-              <motion.div
-                key="review-step-2"
-                initial={{ x: 300, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                exit={{ x: -300, opacity: 0 }}
-                transition={{ duration: 0.3 }}
-                className="absolute inset-0 p-8 overflow-y-auto"
-              >
-                <div className="max-w-3xl mx-auto space-y-6">
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-900 mb-1">Tagged Departments</h3>
-                    <p className="text-sm text-gray-500">Requirements for each department</p>
-                  </div>
+                <motion.div
+                  key="review-step-2"
+                  initial={{ x: 300, opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  exit={{ x: -300, opacity: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className="absolute inset-0 p-8 overflow-y-auto"
+                >
+                  <div className="max-w-3xl mx-auto space-y-6">
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-1">Tagged Departments</h3>
+                      <p className="text-sm text-gray-500">Requirements for each department</p>
+                    </div>
 
-                  <Separator />
+                    <Separator />
 
-                  <div className="space-y-4">
-                    {formData.taggedDepartments.map((dept) => {
-                      const deptReqs = formData.departmentRequirements[dept]?.filter(req => req.selected) || [];
-                      return (
-                        <Card key={dept} className="overflow-hidden">
-                          <CardHeader className="bg-gray-50 border-b py-4 px-6">
-                            <CardTitle className="text-base font-semibold flex items-center gap-2">
-                              <Building2 className="w-5 h-5 text-blue-600" />
-                              {dept}
-                              <Badge variant="secondary" className="ml-auto text-xs">
-                                {deptReqs.length} {deptReqs.length === 1 ? 'Requirement' : 'Requirements'}
-                              </Badge>
-                            </CardTitle>
-                          </CardHeader>
-                          <CardContent className="p-6">
-                            <div className="space-y-2">
-                              {deptReqs.map((req) => (
-                                <div key={req.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border hover:bg-gray-100 transition-colors">
-                                  <div className="flex items-center gap-3 flex-1 min-w-0">
-                                    <div className="flex-shrink-0">
-                                      {req.type === 'physical' ? (
-                                        <Package className="w-4 h-4 text-gray-400" />
-                                      ) : req.serviceType === 'yesno' ? (
-                                        <CheckSquare className="w-4 h-4 text-gray-400" />
-                                      ) : (
-                                        <Settings className="w-4 h-4 text-gray-400" />
+                    <div className="space-y-4">
+                      {formData.taggedDepartments.map((dept) => {
+                        const deptReqs = formData.departmentRequirements[dept]?.filter(req => req.selected) || [];
+                        return (
+                          <Card key={dept} className="overflow-hidden">
+                            <CardHeader className="bg-gray-50 border-b py-4 px-6">
+                              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                                <Building2 className="w-5 h-5 text-blue-600" />
+                                {dept}
+                                <Badge variant="secondary" className="ml-auto text-xs">
+                                  {deptReqs.length} {deptReqs.length === 1 ? 'Requirement' : 'Requirements'}
+                                </Badge>
+                              </CardTitle>
+                            </CardHeader>
+                            <CardContent className="p-6">
+                              <div className="space-y-2">
+                                {deptReqs.map((req) => (
+                                  <div key={req.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border hover:bg-gray-100 transition-colors">
+                                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                                      <div className="flex-shrink-0">
+                                        {req.type === 'physical' ? (
+                                          <Package className="w-4 h-4 text-gray-400" />
+                                        ) : req.serviceType === 'yesno' ? (
+                                          <CheckSquare className="w-4 h-4 text-gray-400" />
+                                        ) : (
+                                          <Settings className="w-4 h-4 text-gray-400" />
+                                        )}
+                                      </div>
+                                      <span className="font-medium text-sm text-gray-900 truncate">{req.name}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2 flex-shrink-0">
+                                      {req.type === 'physical' && req.quantity && (
+                                        <Badge variant="secondary" className="text-xs">
+                                          Qty: {req.quantity}
+                                        </Badge>
+                                      )}
+                                      {req.serviceType === 'yesno' && req.yesNoAnswer && (
+                                        <Badge
+                                          variant="secondary"
+                                          className={`text-xs flex items-center gap-1 ${req.yesNoAnswer === 'yes' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+                                            }`}
+                                        >
+                                          {req.yesNoAnswer === 'yes' ? (
+                                            <><Check className="w-3 h-3" /> Yes</>
+                                          ) : (
+                                            <><X className="w-3 h-3" /> No</>
+                                          )}
+                                        </Badge>
+                                      )}
+                                      {req.notes && req.notes.trim() && (
+                                        <StickyNote className="w-4 h-4 text-gray-400" />
                                       )}
                                     </div>
-                                    <span className="font-medium text-sm text-gray-900 truncate">{req.name}</span>
                                   </div>
-                                  <div className="flex items-center gap-2 flex-shrink-0">
-                                    {req.type === 'physical' && req.quantity && (
-                                      <Badge variant="secondary" className="text-xs">
-                                        Qty: {req.quantity}
-                                      </Badge>
-                                    )}
-                                    {req.serviceType === 'yesno' && req.yesNoAnswer && (
-                                      <Badge 
-                                        variant="secondary" 
-                                        className={`text-xs flex items-center gap-1 ${
-                                          req.yesNoAnswer === 'yes' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
-                                        }`}
-                                      >
-                                        {req.yesNoAnswer === 'yes' ? (
-                                          <><Check className="w-3 h-3" /> Yes</>
-                                        ) : (
-                                          <><X className="w-3 h-3" /> No</>
-                                        )}
-                                      </Badge>
-                                    )}
-                                    {req.notes && req.notes.trim() && (
-                                      <StickyNote className="w-4 h-4 text-gray-400" />
-                                    )}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </CardContent>
-                        </Card>
-                      );
-                    })}
+                                ))}
+                              </div>
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              </motion.div>
+                </motion.div>
               )}
 
               {/* Step 3: Schedule & Contact */}
               {reviewStep === 3 && (
-              <motion.div
-                key="review-step-3"
-                initial={{ x: 300, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                exit={{ x: -300, opacity: 0 }}
-                transition={{ duration: 0.3 }}
-                className="absolute inset-0 p-8 overflow-y-auto"
-              >
-                <div className="max-w-3xl mx-auto space-y-6">
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-900 mb-1">Schedule & Contact</h3>
-                    <p className="text-sm text-gray-500">Event timing and contact information</p>
-                  </div>
+                <motion.div
+                  key="review-step-3"
+                  initial={{ x: 300, opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  exit={{ x: -300, opacity: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className="absolute inset-0 p-8 overflow-y-auto"
+                >
+                  <div className="max-w-3xl mx-auto space-y-6">
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-1">Schedule & Contact</h3>
+                      <p className="text-sm text-gray-500">Event timing and contact information</p>
+                    </div>
 
-                  <Separator />
+                    <Separator />
 
-                  <Card>
-                    <CardHeader className="bg-gray-50 border-b py-4 px-6">
-                      <CardTitle className="text-base font-semibold flex items-center gap-2">
-                        <CalendarIcon className="w-5 h-5 text-blue-600" />
-                        Event Schedule
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="p-6">
-                      <div className="space-y-6">
-                        <div>
-                          <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3 block">Day 1 - Primary Schedule</Label>
-                          <div className="space-y-3">
-                            <div className="flex items-center gap-2 text-sm">
-                              <CalendarIcon className="w-4 h-4 text-gray-400" />
-                              <span className="font-medium text-gray-900">
-                                {formData.startDate && format(formData.startDate, "PPP")}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-4 text-sm">
-                              <div className="flex items-center gap-2">
-                                <Clock className="w-4 h-4 text-gray-400" />
-                                <span className="text-gray-500">Start:</span>
+                    <Card>
+                      <CardHeader className="bg-gray-50 border-b py-4 px-6">
+                        <CardTitle className="text-base font-semibold flex items-center gap-2">
+                          <CalendarIcon className="w-5 h-5 text-blue-600" />
+                          Event Schedule
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="p-6">
+                        <div className="space-y-6">
+                          <div>
+                            <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3 block">Day 1 - Primary Schedule</Label>
+                            <div className="space-y-3">
+                              <div className="flex items-center gap-2 text-sm">
+                                <CalendarIcon className="w-4 h-4 text-gray-400" />
                                 <span className="font-medium text-gray-900">
-                                  {formData.startTime && formatTime(formData.startTime)}
+                                  {formData.startDate && format(formData.startDate, "PPP")}
                                 </span>
                               </div>
-                              <div className="flex items-center gap-2">
-                                <Clock className="w-4 h-4 text-gray-400" />
-                                <span className="text-gray-500">End:</span>
-                                <span className="font-medium text-gray-900">
-                                  {formData.endTime && formatTime(formData.endTime)}
-                                </span>
+                              <div className="flex items-center gap-4 text-sm">
+                                <div className="flex items-center gap-2">
+                                  <Clock className="w-4 h-4 text-gray-400" />
+                                  <span className="text-gray-500">Start:</span>
+                                  <span className="font-medium text-gray-900">
+                                    {formData.startTime && formatTime(formData.startTime)}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <Clock className="w-4 h-4 text-gray-400" />
+                                  <span className="text-gray-500">End:</span>
+                                  <span className="font-medium text-gray-900">
+                                    {formData.endTime && formatTime(formData.endTime)}
+                                  </span>
+                                </div>
                               </div>
                             </div>
                           </div>
-                        </div>
 
-                        {/* Additional Date Slots */}
-                        {formData.dateTimeSlots && formData.dateTimeSlots.length > 0 && (
-                          <div className="pt-4 border-t">
-                            <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3 block">
-                              Additional Days ({formData.dateTimeSlots.length})
-                            </Label>
-                            <div className="space-y-3">
-                              {formData.dateTimeSlots.map((slot, index) => (
-                                <div key={slot.id} className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                                  <div className="flex items-center justify-between">
-                                    <div className="space-y-2">
-                                      <p className="text-xs font-medium text-blue-900">Day {index + 2}</p>
-                                      <div className="flex items-center gap-4 text-sm">
-                                        <div className="flex items-center gap-2">
-                                          <CalendarIcon className="w-4 h-4 text-blue-600" />
-                                          <span className="font-medium text-blue-900">
-                                            {format(slot.date, "PPP")}
-                                          </span>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                          <Clock className="w-4 h-4 text-blue-600" />
-                                          <span className="font-medium text-blue-900">
-                                            {formatTime(slot.startTime)} - {formatTime(slot.endTime)}
-                                          </span>
+                          {/* Additional Date Slots */}
+                          {formData.dateTimeSlots && formData.dateTimeSlots.length > 0 && (
+                            <div className="pt-4 border-t">
+                              <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3 block">
+                                Additional Days ({formData.dateTimeSlots.length})
+                              </Label>
+                              <div className="space-y-3">
+                                {formData.dateTimeSlots.map((slot, index) => (
+                                  <div key={slot.id} className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                    <div className="flex items-center justify-between">
+                                      <div className="space-y-2">
+                                        <p className="text-xs font-medium text-blue-900">Day {index + 2}</p>
+                                        <div className="flex items-center gap-4 text-sm">
+                                          <div className="flex items-center gap-2">
+                                            <CalendarIcon className="w-4 h-4 text-blue-600" />
+                                            <span className="font-medium text-blue-900">
+                                              {format(slot.date, "PPP")}
+                                            </span>
+                                          </div>
+                                          <div className="flex items-center gap-2">
+                                            <Clock className="w-4 h-4 text-blue-600" />
+                                            <span className="font-medium text-blue-900">
+                                              {formatTime(slot.startTime)} - {formatTime(slot.endTime)}
+                                            </span>
+                                          </div>
                                         </div>
                                       </div>
                                     </div>
                                   </div>
-                                </div>
-                              ))}
+                                ))}
+                              </div>
                             </div>
-                          </div>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
 
-                  <Card>
-                    <CardHeader className="bg-gray-50 border-b py-4 px-6">
-                      <CardTitle className="text-base font-semibold flex items-center gap-2">
-                        <User className="w-5 h-5 text-blue-600" />
-                        Contact Information
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="p-6">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="space-y-2">
-                          <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Contact Number</Label>
-                          <p className="text-base font-medium text-gray-900">{formData.contactNumber}</p>
+                    <Card>
+                      <CardHeader className="bg-gray-50 border-b py-4 px-6">
+                        <CardTitle className="text-base font-semibold flex items-center gap-2">
+                          <User className="w-5 h-5 text-blue-600" />
+                          Contact Information
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="p-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div className="space-y-2">
+                            <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Contact Number</Label>
+                            <p className="text-base font-medium text-gray-900">{formData.contactNumber}</p>
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Email Address</Label>
+                            <p className="text-base font-medium text-gray-900">{formData.contactEmail}</p>
+                          </div>
                         </div>
-                        <div className="space-y-2">
-                          <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Email Address</Label>
-                          <p className="text-base font-medium text-gray-900">{formData.contactEmail}</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-              </motion.div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                </motion.div>
               )}
             </div>
 
@@ -7036,7 +7042,7 @@ const RequestEventPage: React.FC = () => {
                   }
                   return a.localeCompare(b);
                 });
-                
+
                 return sortedLocations.map((loc, idx) => (
                   <div key={idx} className="flex items-center gap-1.5 text-sm">
                     <div className="w-1.5 h-1.5 rounded-full bg-blue-600"></div>
