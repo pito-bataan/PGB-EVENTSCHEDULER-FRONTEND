@@ -48,6 +48,8 @@ import {
 
   ChevronDown,
 
+  ChevronLeft,
+
   ChevronRight,
 
   ClipboardList
@@ -88,7 +90,9 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
 
     email: user?.email || "user@bataan.gov.ph",
 
-    department: user?.department || "Department"
+    department: user?.department || "Department",
+
+    role: ''
 
   });
 
@@ -114,7 +118,9 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
 
           email: parsedUser.email || user?.email || "user@bataan.gov.ph",
 
-          department: parsedUser.department || parsedUser.departmentName || user?.department || "Department"
+          department: parsedUser.department || parsedUser.departmentName || user?.department || "Department",
+
+          role: (parsedUser.role || '').toString()
 
         });
 
@@ -127,6 +133,10 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
     }
 
   }, [user]);
+
+  const userRole = (currentUser.role || '').toString().trim().toLowerCase();
+  const isAdminLike = userRole === 'admin' || userRole === 'superadmin';
+  const adminHomeHref = userRole === 'superadmin' ? '/admin/dashboard' : '/admin/calendar';
 
   const [isCollapsed, setIsCollapsed] = useState(false);
 
@@ -1707,6 +1717,8 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
       label: 'Requesting of Event',
 
       items: [
+
+        ...(isAdminLike ? [{ icon: ChevronLeft, label: 'Back to Admin Panel', href: adminHomeHref }] : []),
 
         { icon: LayoutDashboard, label: 'Dashboard', href: '/users/dashboard' },
 

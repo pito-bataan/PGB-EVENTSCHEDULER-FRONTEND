@@ -3422,6 +3422,11 @@ const RequestEventPage: React.FC = () => {
         ? '4th Flr. Conference Room (Entire)' : sug.rooms[0];
     }
 
+    // Populate the participants field in Step 1 with the value entered in auto-suggest
+    if (autoSuggestParticipants) {
+      handleInputChange("participants", autoSuggestParticipants);
+    }
+
     await handleLocationChange(primaryLocation);
 
     // For partial combos (2 rooms/sections) override the locations array
@@ -7795,6 +7800,52 @@ const RequestEventPage: React.FC = () => {
         }}
       >
         <DialogContent className="sm:max-w-xl max-h-[92vh] flex flex-col p-0 gap-0 overflow-hidden rounded-2xl border-0 shadow-2xl">
+
+          {/* ── Venue Search Loading Overlay (inside modal) ── */}
+          {loadingAutoSuggest && (
+            <div className="absolute inset-0 z-50 flex flex-col items-center justify-center rounded-2xl bg-white/90 backdrop-blur-[2px]">
+              {/* Spinner ring */}
+              <div className="relative flex items-center justify-center w-20 h-20 mb-5">
+                <span className="absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-20 animate-ping" />
+                <svg className="absolute w-20 h-20 animate-spin" viewBox="0 0 80 80" fill="none">
+                  <circle cx="40" cy="40" r="34" stroke="#ede9fe" strokeWidth="6" />
+                  <path d="M40 6 A34 34 0 0 1 74 40" stroke="#7c3aed" strokeWidth="6" strokeLinecap="round" />
+                </svg>
+                <div className="w-11 h-11 rounded-full bg-violet-50 flex items-center justify-center z-10">
+                  <MapPin className="w-5 h-5 text-violet-600" />
+                </div>
+              </div>
+
+              {/* Text */}
+              <p className="text-sm font-semibold text-gray-800 tracking-tight mb-1">
+                Finding suitable venues…
+              </p>
+              <p className="text-xs text-gray-400 text-center leading-relaxed">
+                Scanning availability for{' '}
+                <span className="font-medium text-violet-500">
+                  {autoSuggestParticipants} participant{parseInt(autoSuggestParticipants) !== 1 ? 's' : ''}
+                </span>
+              </p>
+
+              {/* Bouncing dots */}
+              <div className="flex items-center gap-1.5 mt-4">
+                {[0, 1, 2].map((i) => (
+                  <span
+                    key={i}
+                    className="w-1.5 h-1.5 rounded-full bg-violet-400"
+                    style={{ animation: `venueDotsbounce 1.2s ease-in-out ${i * 0.2}s infinite` }}
+                  />
+                ))}
+              </div>
+
+              <style>{`
+                @keyframes venueDotsbounce {
+                  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+                  40% { transform: scale(1); opacity: 1; }
+                }
+              `}</style>
+            </div>
+          )}
 
           {/* ── Header ── */}
           <div className="flex-shrink-0 px-6 pt-6 pb-5">

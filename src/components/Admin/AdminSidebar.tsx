@@ -18,6 +18,8 @@ import {
 
   CalendarDays, 
 
+  CalendarPlus,
+
   Building2,
 
   Activity,
@@ -153,6 +155,10 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ user }) => {
     { icon: List, label: 'Overall Events', href: '/admin/overall-events', roles: ['superadmin'] },
 
     { icon: CalendarDays, label: 'Calendar', href: '/admin/calendar', roles: ['superadmin', 'admin'] },
+
+    { icon: CalendarPlus, label: 'Request Event', href: '/users/request-event', roles: ['superadmin', 'admin'] },
+
+    { icon: FileText, label: 'My Events', href: '/users/my-events', roles: ['superadmin', 'admin'] },
 
     { icon: FileText, label: 'Event Reports', href: '/admin/event-reports', roles: ['superadmin'] },
 
