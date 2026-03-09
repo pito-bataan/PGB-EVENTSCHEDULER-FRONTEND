@@ -15,6 +15,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   Select,
   SelectContent,
@@ -59,7 +60,11 @@ import {
   Clock,
   Loader2,
   User,
-  MapPin
+  MapPin,
+  Sparkles,
+  Users,
+  Wand2,
+  Ban
 } from 'lucide-react';
 
 interface DepartmentRequirement {
@@ -136,6 +141,17 @@ interface Department {
 
 const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api`;
 
+type AutoSuggestedLocation = {
+  name: string;
+  chairs: number;
+  isMulti: boolean;
+  rooms: string[];
+  note?: string;
+  isBooked: boolean;
+  bookedOnDates: string[];
+};
+// ─────────────────────────────────────────────────────────────────────────────
+
 const RequestEventPage: React.FC = () => {
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(1);
@@ -190,6 +206,20 @@ const RequestEventPage: React.FC = () => {
   const [showLocationRequirementsModal, setShowLocationRequirementsModal] = useState(false);
   const [locationRequirements, setLocationRequirements] = useState<Array<{ name: string; quantity: number }>>([]);
   const [showEventTypeAlert, setShowEventTypeAlert] = useState(false);
+
+  // ── Auto Suggest Location state ────────────────────────────────────────────
+  const [locationMode, setLocationMode] = useState<'manual' | 'auto-suggest'>('manual');
+  const [showAutoSuggestModal, setShowAutoSuggestModal] = useState(false);
+  const [autoSuggestParticipants, setAutoSuggestParticipants] = useState('');
+  const [autoSuggestStartDate, setAutoSuggestStartDate] = useState<Date | undefined>(undefined);
+  const [autoSuggestEndDate, setAutoSuggestEndDate] = useState<Date | undefined>(undefined);
+  const [autoSuggestStartTime, setAutoSuggestStartTime] = useState('');
+  const [autoSuggestEndTime, setAutoSuggestEndTime] = useState('');
+  const [suggestedLocations, setSuggestedLocations] = useState<AutoSuggestedLocation[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [selectedSuggestion, setSelectedSuggestion] = useState<string | null>(null);
+  const [loadingAutoSuggest, setLoadingAutoSuggest] = useState(false);
+  // ──────────────────────────────────────────────────────────────────────────
   const [loadingLocationRequirements, setLoadingLocationRequirements] = useState(false);
   const [loadingDepartmentRequirements, setLoadingDepartmentRequirements] = useState(false);
   const [locationRoomTypes, setLocationRoomTypes] = useState<string[]>([]);
@@ -1770,6 +1800,8 @@ const RequestEventPage: React.FC = () => {
     if (date1.toDateString() !== date2.toDateString()) {
       return false;
     }
+    // If times are missing, treat as full day conflict to early-warn user 
+    if (!start1 || !end1 || !start2 || !end2) return true;
 
     // Convert time strings to minutes for easier comparison
     const timeToMinutes = (time: string) => {
@@ -2985,6 +3017,259 @@ const RequestEventPage: React.FC = () => {
     return errors;
   };
 
+  // ── Auto Suggest: helpers & logic ─────────────────────────────────────────
+
+  // Build every calendar date between start and end (inclusive)
+  const buildDateRange = (start: Date, end: Date): Date[] => {
+    const result: Date[] = [];
+    const cur = new Date(start); cur.setHours(0, 0, 0, 0);
+    const fin = new Date(end);   fin.setHours(0, 0, 0, 0);
+    while (cur <= fin) { result.push(new Date(cur)); cur.setDate(cur.getDate() + 1); }
+    return result;
+  };
+
+  // Returns which of the given dates have a time-overlap conflict for locationName
+  // against the list of all events fetched from the API.
+  const getBookedDatesForLocation = (
+    locationName: string,
+    datesToCheck: Date[],
+    allEvents: any[],
+    selStartTime: string,
+    selEndTime: string
+  ): string[] => {
+    const toMin = (t: string) => {
+      if (!t) return 0;
+      const [h, m] = t.split(':').map(Number);
+      return h * 60 + m;
+    };
+    const selStart = selStartTime ? toMin(selStartTime) : null;
+    const selEnd   = selEndTime   ? toMin(selEndTime)   : null;
+
+    return datesToCheck
+      .filter((d) => {
+        const dayStr = d.toDateString();
+        return allEvents.some((ev) => {
+          if (ev.status !== 'approved' && ev.status !== 'submitted') return false;
+          // Location conflict check (uses existing locationsConflict function)
+          const evLocs =
+            ev.locations && Array.isArray(ev.locations) && ev.locations.length > 0
+              ? ev.locations : [ev.location];
+          if (!evLocs.some((l: string) => locationsConflict(l, locationName))) return false;
+
+          // Find which time block this event occupies on `d`
+          let evStart: string | null = null;
+          let evEnd:   string | null = null;
+          const mainDay = ev.startDate ? new Date(ev.startDate).toDateString() : '';
+          if (mainDay === dayStr) {
+            evStart = ev.startTime || null;
+            evEnd   = ev.endTime   || null;
+          } else if (Array.isArray(ev.dateTimeSlots)) {
+            const slot = ev.dateTimeSlots.find(
+              (s: any) => s.startDate && new Date(s.startDate).toDateString() === dayStr
+            );
+            if (slot) { evStart = slot.startTime || null; evEnd = slot.endTime || null; }
+          }
+
+          // If we have time info on both sides → time-overlap check
+          if (selStart !== null && selEnd !== null && evStart && evEnd) {
+            return selStart < toMin(evEnd) && selEnd > toMin(evStart);
+          }
+          // No time info → date-level block
+          return !!evStart || mainDay === dayStr;
+        });
+      })
+      .map((d) => d.toDateString());
+  };
+
+  // Fetch events from API then build suggestion list with booking status.
+  const runAutoSuggest = async () => {
+    if (!autoSuggestParticipants || !autoSuggestStartDate || !autoSuggestEndDate) return;
+    const count = parseInt(autoSuggestParticipants) || 0;
+    if (count <= 0) { toast.error('Please enter a valid number of participants'); return; }
+
+    setLoadingAutoSuggest(true);
+    setShowSuggestions(false);
+    setSuggestedLocations([]);
+    setSelectedSuggestion(null);
+
+    try {
+      const token = localStorage.getItem('authToken');
+
+      // Fetch all location-requirements docs once
+      const locReqRes = await fetch(`${API_BASE_URL}/location-requirements`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const allLocReqs: any[] = locReqRes.ok ? await locReqRes.json() : [];
+
+      // Fetch all events once (for booking conflict checks)
+      const evRes = await fetch(`${API_BASE_URL}/events`, {
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      });
+      const allEvents: any[] = evRes.ok ? (await evRes.json()).data || [] : [];
+
+      const dateRange = buildDateRange(autoSuggestStartDate, autoSuggestEndDate);
+
+      // Helper: extract TOTAL chair count for a location by summing ALL
+      // chair-type requirements (e.g. Monoblock chairs + Tiffany chairs + Chairs).
+      // Returns { total, breakdown } — breakdown is shown as a note on the venue card.
+      const extractChairs = (locName: string): { total: number; breakdown: string } => {
+        const exactDoc = allLocReqs.find((doc: any) => {
+          if (doc.locationNames && Array.isArray(doc.locationNames)) {
+            return doc.locationNames.length === 1 && doc.locationNames[0] === locName;
+          }
+          return doc.locationName === locName;
+        });
+        const groupDocs = allLocReqs.filter((doc: any) => {
+          if (doc.locationNames && Array.isArray(doc.locationNames)) {
+            return doc.locationNames.length > 1 && doc.locationNames.includes(locName);
+          }
+          return false;
+        });
+        const candidates = [...(exactDoc ? [exactDoc] : []), ...groupDocs];
+        if (candidates.length === 0) return { total: 0, breakdown: '' };
+        const best = candidates.reduce((prev, cur) => {
+          const pLen = prev.locationNames?.length ?? 1;
+          const cLen = cur.locationNames?.length ?? 1;
+          return cLen < pLen ? cur : prev;
+        });
+        if (!Array.isArray(best.requirements)) return { total: 0, breakdown: '' };
+        // Sum ALL requirements whose name contains "chair" (Monoblock, Tiffany, plain Chairs…)
+        const chairReqs = best.requirements.filter(
+          (r: any) => typeof r.name === 'string' && /chair/i.test(r.name)
+        );
+        if (chairReqs.length === 0) return { total: 0, breakdown: '' };
+        const total = chairReqs.reduce((sum: number, r: any) => sum + (Number(r.quantity) || 0), 0);
+        // Show breakdown only when there are multiple chair types (e.g. Pavilion)
+        const breakdown = chairReqs.length > 1
+          ? chairReqs.map((r: any) => `${Number(r.quantity)} ${r.name}`).join(' + ')
+          : '';
+        return { total, breakdown };
+      };
+
+      const results: AutoSuggestedLocation[] = [];
+
+      // 1) All PGB non-conference locations
+      locationData.filter((l) => !l.isCustom).forEach((loc) => {
+        if (/4th Flr\. Conference Room/.test(loc.name)) return;
+        if (/Pavilion.*Section [ABC]$/.test(loc.name)) return;
+        const { total: chairs, breakdown } = extractChairs(loc.name);
+        if (chairs <= 0) return;
+        if (chairs < count) return;
+        const bookedOnDates = getBookedDatesForLocation(
+          loc.name, dateRange, allEvents, autoSuggestStartTime, autoSuggestEndTime
+        );
+        results.push({
+          name: loc.name, chairs, isMulti: false, rooms: [loc.name],
+          note: breakdown || undefined,
+          isBooked: bookedOnDates.length > 0, bookedOnDates,
+        });
+      });
+
+      // 2) Conference room combos — additive chairs per room from API
+      const CR = [
+        '4th Flr. Conference Room 1',
+        '4th Flr. Conference Room 2',
+        '4th Flr. Conference Room 3',
+      ];
+      const crChairs: Record<string, number> = {};
+      CR.forEach((room) => { crChairs[room] = extractChairs(room).total; });
+      const availableCRs = CR.filter((r) => crChairs[r] > 0);
+
+      if (availableCRs.length > 0) {
+        for (let mask = 1; mask < (1 << availableCRs.length); mask++) {
+          const combo: string[] = [];
+          availableCRs.forEach((r, i) => { if (mask & (1 << i)) combo.push(r); });
+          const totalChairs = combo.reduce((sum, r) => sum + crChairs[r], 0);
+          if (totalChairs < count) continue;
+          const isAllThree = combo.length === availableCRs.length && availableCRs.length === 3;
+          const label = isAllThree
+            ? '4th Flr. Conference Room (Entire)'
+            : combo.length === 1 ? combo[0] : combo.join(' + ');
+          if (results.some((r) => r.name === label)) continue;
+          const allBookedDates: string[] = [];
+          combo.forEach((room) => {
+            getBookedDatesForLocation(room, dateRange, allEvents, autoSuggestStartTime, autoSuggestEndTime)
+              .forEach((d) => { if (!allBookedDates.includes(d)) allBookedDates.push(d); });
+          });
+          results.push({
+            name: label, chairs: totalChairs, isMulti: combo.length > 1, rooms: combo,
+            note: combo.length > 1
+              ? `${combo.map((r) => r.replace('4th Flr. Conference Room ', 'CR')).join(' + ')} · ${totalChairs} chairs`
+              : undefined,
+            isBooked: allBookedDates.length > 0, bookedOnDates: allBookedDates,
+          });
+        }
+      }
+
+      if (results.length === 0) {
+        setShowSuggestions(true);
+        setSuggestedLocations([]);
+        return;
+      }
+
+      results.sort((a, b) => {
+        if (a.isBooked !== b.isBooked) return a.isBooked ? 1 : -1;
+        return a.chairs - b.chairs;
+      });
+
+      setSuggestedLocations(results);
+      setShowSuggestions(true);
+    } catch {
+      toast.error('Failed to check venue availability. Please try again.');
+    } finally {
+      setLoadingAutoSuggest(false);
+    }
+  };
+
+  // Apply chosen suggestion → pre-fills location + schedule → opens Schedule Modal
+  const applyAutoSuggestion = async (sug: AutoSuggestedLocation) => {
+    if (!formData.eventType) { setShowEventTypeAlert(true); return; }
+    setSelectedSuggestion(sug.name);
+    setShowAutoSuggestModal(false);
+
+    const primaryLocation = sug.isMulti && sug.rooms.length === 3
+      ? '4th Flr. Conference Room (Entire)' : sug.rooms[0];
+
+    await handleLocationChange(primaryLocation);
+
+    if (sug.isMulti && sug.rooms.length === 2) {
+      setTimeout(() => {
+        handleInputChange('locations', sug.rooms);
+        handleInputChange('multipleLocations', true);
+      }, 50);
+    }
+
+    if (autoSuggestStartDate) {
+      const endD = autoSuggestEndDate ?? autoSuggestStartDate;
+      setTimeout(() => {
+        handleInputChange('startDate', autoSuggestStartDate);
+        handleInputChange('endDate', endD);
+        if (autoSuggestStartTime) handleInputChange('startTime', autoSuggestStartTime);
+        if (autoSuggestEndTime)   handleInputChange('endTime',   autoSuggestEndTime);
+
+        // Build dateTimeSlots for multi-day events
+        if (endD.getTime() !== autoSuggestStartDate.getTime() && autoSuggestStartTime && autoSuggestEndTime) {
+          const slots: DateTimeSlot[] = [];
+          const cur = new Date(autoSuggestStartDate);
+          cur.setDate(cur.getDate() + 1);
+          while (cur <= endD) {
+            slots.push({ id: `auto-${cur.getTime()}`, date: new Date(cur),
+              startTime: autoSuggestStartTime, endTime: autoSuggestEndTime });
+            cur.setDate(cur.getDate() + 1);
+          }
+          handleInputChange('dateTimeSlots', slots);
+        }
+        // Show requirements modal first (if location has requirements), then schedule modal.
+        // The requirements modal's "Continue" button already opens the schedule modal.
+        setShowLocationRequirementsModal(true);
+      }, 120);
+    } else {
+      // No dates pre-filled — go straight to requirements then schedule
+      setShowLocationRequirementsModal(true);
+    }
+  };
+  // ──────────────────────────────────────────────────────────────────────────
+
   return (
     <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-4 md:space-y-6">
       {/* Header */}
@@ -3024,10 +3309,10 @@ const RequestEventPage: React.FC = () => {
                 <React.Fragment key={step.id}>
                   <div className="flex items-center gap-2 md:gap-3">
                     <div className={`w-7 h-7 md:w-8 md:h-8 rounded-full flex items-center justify-center text-xs font-medium transition-all flex-shrink-0 ${isCompleted
-                        ? 'bg-green-100 text-green-700 border border-green-200'
-                        : isActive
-                          ? 'bg-blue-100 text-blue-700 border border-blue-200'
-                          : 'bg-gray-100 text-gray-400 border border-gray-200'
+                      ? 'bg-green-100 text-green-700 border border-green-200'
+                      : isActive
+                        ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                        : 'bg-gray-100 text-gray-400 border border-gray-200'
                       }`}>
                       {isCompleted ? <Check className="w-4 h-4" /> : step.id}
                     </div>
@@ -3082,8 +3367,8 @@ const RequestEventPage: React.FC = () => {
                         type="button"
                         onClick={() => setFormData(prev => ({ ...prev, eventType: 'simple-meeting' }))}
                         className={`px-3 py-1.5 text-xs font-medium transition-colors ${formData.eventType === 'simple-meeting'
-                            ? 'bg-green-600 text-white'
-                            : 'bg-white text-gray-700 hover:bg-gray-50'
+                          ? 'bg-green-600 text-white'
+                          : 'bg-white text-gray-700 hover:bg-gray-50'
                           }`}
                       >
                         Simple Meeting
@@ -3092,8 +3377,8 @@ const RequestEventPage: React.FC = () => {
                         type="button"
                         onClick={() => setFormData(prev => ({ ...prev, eventType: 'simple' }))}
                         className={`px-3 py-1.5 text-xs font-medium transition-colors border-l ${formData.eventType === 'simple'
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-white text-gray-700 hover:bg-gray-50'
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-white text-gray-700 hover:bg-gray-50'
                           }`}
                       >
                         Simple Event
@@ -3102,8 +3387,8 @@ const RequestEventPage: React.FC = () => {
                         type="button"
                         onClick={() => setFormData(prev => ({ ...prev, eventType: 'complex' }))}
                         className={`px-3 py-1.5 text-xs font-medium transition-colors border-l ${formData.eventType === 'complex'
-                            ? 'bg-purple-600 text-white'
-                            : 'bg-white text-gray-700 hover:bg-gray-50'
+                          ? 'bg-purple-600 text-white'
+                          : 'bg-white text-gray-700 hover:bg-gray-50'
                           }`}
                       >
                         Complex Event
@@ -3138,22 +3423,25 @@ const RequestEventPage: React.FC = () => {
                     />
                   </div>
                   <div>
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="location" className="text-sm font-medium">Location <span className="text-red-500">*</span></Label>
-                      {/* Show matching count next to label when typing custom location */}
-                      {showCustomLocation && formData.location.trim() && locations.filter(loc =>
+                    {/* Location label — clean, no toggle here */}
+                    <Label htmlFor="location" className="text-sm font-medium">
+                      Location <span className="text-red-500">*</span>
+                    </Label>
+
+                    {/* Custom location match hint */}
+                    {showCustomLocation && formData.location.trim() && locations.filter(loc =>
                         loc.toLowerCase().includes(formData.location.trim().toLowerCase()) &&
                         loc !== 'Add Custom Location'
                       ).length > 0 && (
-                          <div className="flex items-center gap-1.5 text-amber-600 text-xs">
-                            <AlertCircle className="w-3.5 h-3.5" />
-                            <span>Found {locations.filter(loc =>
-                              loc.toLowerCase().includes(formData.location.trim().toLowerCase()) &&
-                              loc !== 'Add Custom Location'
-                            ).length} matching location(s). Click to select:</span>
-                          </div>
-                        )}
-                    </div>
+                        <div className="flex items-center gap-1.5 text-amber-600 text-xs mt-1">
+                          <AlertCircle className="w-3.5 h-3.5" />
+                          <span>Found {locations.filter(loc =>
+                            loc.toLowerCase().includes(formData.location.trim().toLowerCase()) &&
+                            loc !== 'Add Custom Location'
+                          ).length} matching location(s). Click to select:</span>
+                        </div>
+                      )}
+
                     {!showCustomLocation ? (
                       <div className="flex gap-2">
                         <Select
@@ -3329,6 +3617,69 @@ const RequestEventPage: React.FC = () => {
                         </div>
                       </div>
                     )}
+
+                    {/* ── Manual / Auto Suggest toggle — below the dropdown ── */}
+                    <div className="flex items-center justify-between mt-2">
+                      <RadioGroup
+                        value={locationMode}
+                        onValueChange={(v) => {
+                          if (v === 'auto-suggest') {
+                            if (!checkEventTypeSelected()) return;
+                            setLocationMode('auto-suggest');
+                            setShowAutoSuggestModal(true);
+                          } else {
+                            setLocationMode('manual');
+                            setShowSuggestions(false);
+                            setSuggestedLocations([]);
+                            setSelectedSuggestion(null);
+                          }
+                        }}
+                        className="flex items-center"
+                      >
+                        <div className="flex items-center border rounded-lg overflow-hidden">
+                          <Label
+                            htmlFor="lmode-manual"
+                            className={`flex items-center gap-1.5 cursor-pointer text-xs px-3 py-1.5 transition-colors select-none ${
+                              locationMode === 'manual'
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-white text-gray-600 hover:bg-gray-50'
+                            }`}
+                          >
+                            <RadioGroupItem value="manual" id="lmode-manual" className="hidden" />
+                            Manual
+                          </Label>
+                          <Label
+                            htmlFor="lmode-auto"
+                            className={`flex items-center gap-1.5 cursor-pointer text-xs px-3 py-1.5 border-l transition-colors select-none ${
+                              locationMode === 'auto-suggest'
+                                ? 'bg-violet-600 text-white'
+                                : 'bg-white text-gray-600 hover:bg-gray-50'
+                            }`}
+                          >
+                            <RadioGroupItem value="auto-suggest" id="lmode-auto" className="hidden" />
+                            <Wand2 className="w-3 h-3" />
+                            Auto Suggest
+                          </Label>
+                        </div>
+                      </RadioGroup>
+
+                      {/* Auto-suggest selected badge */}
+                      {locationMode === 'auto-suggest' && selectedSuggestion && (
+                        <div className="flex items-center gap-1.5">
+                          <Badge className="bg-violet-100 text-violet-800 border border-violet-200 text-xs font-normal">
+                            <Sparkles className="w-2.5 h-2.5 mr-1" />
+                            <span className="max-w-[140px] truncate">{selectedSuggestion}</span>
+                          </Badge>
+                          <button
+                            type="button"
+                            onClick={() => setShowAutoSuggestModal(true)}
+                            className="text-[11px] text-violet-600 hover:underline whitespace-nowrap"
+                          >
+                            Change
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -4276,10 +4627,10 @@ const RequestEventPage: React.FC = () => {
                     <div
                       key={requirement.id}
                       className={`p-3 border rounded-lg transition-all ${!requirement.isAvailable
-                          ? 'bg-gray-50 border-gray-200 opacity-60 cursor-not-allowed'
-                          : requirement.selected
-                            ? 'bg-blue-50 border-blue-200 shadow-sm cursor-pointer'
-                            : 'bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50 cursor-pointer'
+                        ? 'bg-gray-50 border-gray-200 opacity-60 cursor-not-allowed'
+                        : requirement.selected
+                          ? 'bg-blue-50 border-blue-200 shadow-sm cursor-pointer'
+                          : 'bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50 cursor-pointer'
                         }`}
                       onClick={() => requirement.isAvailable && handleRequirementToggle(requirement.id)}
                     >
@@ -4493,8 +4844,8 @@ const RequestEventPage: React.FC = () => {
                 {!selectedDepartment?.toLowerCase().includes('pgso') && (
                   <div
                     className={`p-3 border-2 border-dashed rounded-lg cursor-pointer transition-all ${showCustomInput
-                        ? 'bg-blue-50 border-blue-300'
-                        : 'border-gray-300 hover:border-blue-300 hover:bg-blue-50'
+                      ? 'bg-blue-50 border-blue-300'
+                      : 'border-gray-300 hover:border-blue-300 hover:bg-blue-50'
                       }`}
                     onClick={() => setShowCustomInput(true)}
                   >
@@ -6661,10 +7012,10 @@ const RequestEventPage: React.FC = () => {
                     <div
                       key={step}
                       className={`h-2 w-12 rounded-full transition-all ${step === reviewStep
-                          ? 'bg-blue-600'
-                          : step < reviewStep
-                            ? 'bg-blue-200'
-                            : 'bg-gray-200'
+                        ? 'bg-blue-600'
+                        : step < reviewStep
+                          ? 'bg-blue-200'
+                          : 'bg-gray-200'
                         }`}
                     />
                   ))}
@@ -6704,8 +7055,8 @@ const RequestEventPage: React.FC = () => {
                       <div className="space-y-1.5">
                         <Label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Event Type</Label>
                         <Badge className={`${formData.eventType === 'simple-meeting' ? 'bg-green-600 text-white' :
-                            formData.eventType === 'simple' ? 'bg-blue-600 text-white' :
-                              'bg-purple-600 text-white'
+                          formData.eventType === 'simple' ? 'bg-blue-600 text-white' :
+                            'bg-purple-600 text-white'
                           }`}>
                           {formData.eventType === 'simple-meeting' ? 'Simple Meeting' :
                             formData.eventType === 'simple' ? 'Simple Event' : 'Complex Event'}
@@ -7241,6 +7592,304 @@ const RequestEventPage: React.FC = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ── Auto Suggest Location Modal ──────────────────────────────────────── */}
+      <Dialog
+        open={showAutoSuggestModal}
+        onOpenChange={(open) => {
+          setShowAutoSuggestModal(open);
+          if (!open && !selectedSuggestion) setLocationMode('manual');
+        }}
+      >
+        <DialogContent className="sm:max-w-xl max-h-[92vh] flex flex-col p-0 gap-0 overflow-hidden rounded-2xl border-0 shadow-2xl">
+
+          {/* ── Header ── */}
+          <div className="flex-shrink-0 px-6 pt-6 pb-5">
+            <div className="flex items-center gap-3 mb-1">
+              <div className="w-8 h-8 rounded-xl bg-violet-100 flex items-center justify-center">
+                <Wand2 className="w-4 h-4 text-violet-600" />
+              </div>
+              <div>
+                <h2 className="text-base font-semibold text-gray-900 leading-tight">Find a Venue</h2>
+                <p className="text-xs text-gray-400 leading-tight">We'll suggest locations that fit your needs</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setShowAutoSuggestModal(false); if (!selectedSuggestion) setLocationMode('manual'); }}
+                className="ml-auto w-7 h-7 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {/* ── Scrollable body ── */}
+          <div className="flex-1 overflow-y-auto px-6 pb-6 space-y-4">
+
+            {/* ── Inputs section ── */}
+            <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+
+              {/* Participants */}
+              <div>
+                <label className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5 flex items-center gap-1">
+                  <Users className="w-3 h-3" /> Participants <span className="text-red-400 normal-case tracking-normal font-normal">*</span>
+                </label>
+                <Input
+                  type="number" min="1" placeholder="How many people?"
+                  value={autoSuggestParticipants}
+                  onChange={(e) => {
+                    setAutoSuggestParticipants(e.target.value);
+                    setShowSuggestions(false); setSuggestedLocations([]); setSelectedSuggestion(null);
+                  }}
+                  className="h-9 bg-white border-gray-200 text-sm rounded-lg"
+                />
+              </div>
+
+              {/* Date row */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5 flex items-center gap-1">
+                    <CalendarIcon className="w-3 h-3" /> Start <span className="text-red-400 normal-case tracking-normal font-normal">*</span>
+                  </label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className="w-full h-9 justify-start text-left font-normal text-sm bg-white border-gray-200 rounded-lg">
+                        <CalendarIcon className="mr-1.5 h-3 w-3 flex-shrink-0 text-gray-400" />
+                        {autoSuggestStartDate ? format(autoSuggestStartDate, 'MMM dd, yyyy') : <span className="text-gray-400">Pick date</span>}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0">
+                      <Calendar mode="single" selected={autoSuggestStartDate}
+                        onSelect={(d) => {
+                          setAutoSuggestStartDate(d ?? undefined);
+                          if (!autoSuggestEndDate || (d && d > autoSuggestEndDate)) setAutoSuggestEndDate(d ?? undefined);
+                          setShowSuggestions(false); setSuggestedLocations([]);
+                        }}
+                        disabled={isDateDisabled} initialFocus />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5 flex items-center gap-1">
+                    <CalendarIcon className="w-3 h-3" /> End <span className="text-red-400 normal-case tracking-normal font-normal">*</span>
+                  </label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className="w-full h-9 justify-start text-left font-normal text-sm bg-white border-gray-200 rounded-lg"
+                        disabled={!autoSuggestStartDate}>
+                        <CalendarIcon className="mr-1.5 h-3 w-3 flex-shrink-0 text-gray-400" />
+                        {autoSuggestEndDate ? format(autoSuggestEndDate, 'MMM dd, yyyy') : <span className="text-gray-400">Pick date</span>}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0">
+                      <Calendar mode="single" selected={autoSuggestEndDate}
+                        onSelect={(d) => { setAutoSuggestEndDate(d ?? undefined); setShowSuggestions(false); setSuggestedLocations([]); }}
+                        disabled={(d) => isDateDisabled(d) || (!!autoSuggestStartDate && d < autoSuggestStartDate)}
+                        initialFocus />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </div>
+
+              {/* Multi-day notice */}
+              {autoSuggestStartDate && autoSuggestEndDate && autoSuggestEndDate.getTime() !== autoSuggestStartDate.getTime() && (
+                <div className="flex items-center gap-2 text-xs text-violet-700 bg-violet-50 border border-violet-100 rounded-lg px-3 py-2">
+                  <Info className="w-3 h-3 flex-shrink-0" />
+                  <span>
+                    <strong>{buildDateRange(autoSuggestStartDate, autoSuggestEndDate).length}-day event</strong> — venues booked on any of those days will be marked unavailable.
+                  </span>
+                </div>
+              )}
+
+              {/* Time row */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
+                    <Clock className="w-3 h-3" /> Start time
+                    <span className="text-gray-400 normal-case tracking-normal font-normal">(optional)</span>
+                  </label>
+                  <Select value={autoSuggestStartTime} onValueChange={(v) => {
+                    setAutoSuggestStartTime(v);
+                    const toMin = (t: string) => { const [h,m] = t.split(':').map(Number); return h*60+m; };
+                    if (autoSuggestEndTime && toMin(v) >= toMin(autoSuggestEndTime)) setAutoSuggestEndTime('');
+                    setShowSuggestions(false); setSuggestedLocations([]);
+                  }}>
+                    <SelectTrigger className="h-9 text-sm bg-white border-gray-200 rounded-lg"><SelectValue placeholder="Select" /></SelectTrigger>
+                    <SelectContent className="max-h-56">
+                      {generateTimeOptions().map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
+                    <Clock className="w-3 h-3" /> End time
+                    <span className="text-gray-400 normal-case tracking-normal font-normal">(optional)</span>
+                  </label>
+                  <Select value={autoSuggestEndTime}
+                    onValueChange={(v) => { setAutoSuggestEndTime(v); setShowSuggestions(false); setSuggestedLocations([]); }}
+                    disabled={!autoSuggestStartTime}>
+                    <SelectTrigger className="h-9 text-sm bg-white border-gray-200 rounded-lg" disabled={!autoSuggestStartTime}>
+                      <SelectValue placeholder={autoSuggestStartTime ? 'Select' : '—'} />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-56">
+                      {generateTimeOptions()
+                        .filter((t) => {
+                          if (!autoSuggestStartTime) return false;
+                          const toMin = (x: string) => { const [h,m] = x.split(':').map(Number); return h*60+m; };
+                          return toMin(t.value) > toMin(autoSuggestStartTime);
+                        })
+                        .map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Find button ── */}
+            <button
+              type="button"
+              disabled={!autoSuggestParticipants || !autoSuggestStartDate || !autoSuggestEndDate || loadingAutoSuggest}
+              onClick={runAutoSuggest}
+              className="w-full h-10 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium flex items-center justify-center gap-2 transition-colors"
+            >
+              {loadingAutoSuggest
+                ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Checking availability…</>
+                : <><Sparkles className="w-3.5 h-3.5" /> Find Suitable Venues</>}
+            </button>
+
+            {/* ── Results ── */}
+            {showSuggestions && (
+              <div className="space-y-3">
+                {/* Summary bar */}
+                <div className="flex items-center justify-between text-xs text-gray-500">
+                  <div className="flex items-center gap-3">
+                    <span className="flex items-center gap-1 text-emerald-600 font-medium">
+                      <CheckCircle className="w-3.5 h-3.5" />
+                      {suggestedLocations.filter(s => !s.isBooked).length} available
+                    </span>
+                    {suggestedLocations.filter(s => s.isBooked).length > 0 && (
+                      <>
+                        <span className="text-gray-300">·</span>
+                        <span className="flex items-center gap-1 text-red-500">
+                          <Ban className="w-3.5 h-3.5" />
+                          {suggestedLocations.filter(s => s.isBooked).length} booked
+                        </span>
+                      </>
+                    )}
+                  </div>
+                  <span className="text-gray-400">for {autoSuggestParticipants} participants</span>
+                </div>
+
+                {/* No results empty state */}
+                {suggestedLocations.length === 0 && (
+                  <div className="text-center py-8 text-gray-400">
+                    <MapPin className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                    <p className="text-sm">No venues found for this size</p>
+                    <p className="text-xs mt-1">Try reducing the participant count or selecting a location manually</p>
+                  </div>
+                )}
+
+                {/* Venue cards */}
+                <div className="space-y-2">
+                  {suggestedLocations.map((sug) => (
+                    <button
+                      key={sug.name}
+                      type="button"
+                      disabled={sug.isBooked}
+                      onClick={() => !sug.isBooked && applyAutoSuggestion(sug)}
+                      className={`w-full text-left rounded-xl border transition-all duration-150 group ${
+                        sug.isBooked
+                          ? 'border-gray-200 bg-gray-50 opacity-55 cursor-not-allowed'
+                          : selectedSuggestion === sug.name
+                          ? 'border-violet-400 bg-violet-50 shadow-sm'
+                          : 'border-gray-200 bg-white hover:border-violet-300 hover:shadow-sm cursor-pointer'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 px-4 py-3">
+
+                        {/* Icon */}
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                          sug.isBooked ? 'bg-gray-100' : 'bg-violet-50 group-hover:bg-violet-100'
+                        }`}>
+                          <MapPin className={`w-4 h-4 ${sug.isBooked ? 'text-gray-400' : 'text-violet-500'}`} />
+                        </div>
+
+                        {/* Name + meta */}
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm font-medium leading-tight truncate ${sug.isBooked ? 'text-gray-400' : 'text-gray-800'}`}>
+                            {sug.name}
+                          </p>
+                          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                            <span className={`text-xs ${sug.isBooked ? 'text-gray-400' : 'text-gray-500'}`}>
+                              {sug.chairs} seats
+                            </span>
+                            {sug.isMulti && (
+                              <>
+                                <span className="text-gray-300 text-xs">·</span>
+                                <span className="text-xs text-violet-500 font-medium">Multi-room</span>
+                              </>
+                            )}
+                            {sug.note && (
+                              <>
+                                <span className="text-gray-300 text-xs">·</span>
+                                <span className="text-xs text-gray-400 truncate">{sug.note}</span>
+                              </>
+                            )}
+                          </div>
+
+                          {/* Booked dates */}
+                          {sug.isBooked && sug.bookedOnDates.length > 0 && (
+                            <p className="text-[11px] text-red-400 mt-0.5 leading-tight">
+                              Booked: {sug.bookedOnDates.slice(0, 2).join(', ')}
+                              {sug.bookedOnDates.length > 2 && ` +${sug.bookedOnDates.length - 2} more`}
+                            </p>
+                          )}
+
+                          {/* Date/time preview for available */}
+                          {!sug.isBooked && autoSuggestStartDate && (
+                            <p className="text-[11px] text-violet-500 mt-0.5 flex items-center gap-1">
+                              <CalendarIcon className="w-2.5 h-2.5 flex-shrink-0" />
+                              {format(autoSuggestStartDate, 'MMM dd')}
+                              {autoSuggestEndDate && autoSuggestEndDate.getTime() !== autoSuggestStartDate.getTime()
+                                ? ` – ${format(autoSuggestEndDate, 'MMM dd, yyyy')}`
+                                : `, ${format(autoSuggestStartDate, 'yyyy')}`}
+                              {autoSuggestStartTime && ` · ${formatTime(autoSuggestStartTime)}${autoSuggestEndTime ? ` – ${formatTime(autoSuggestEndTime)}` : ''}`}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Right indicator */}
+                        <div className="flex-shrink-0 ml-1">
+                          {sug.isBooked ? (
+                            <span className="flex items-center gap-1 text-[10px] font-medium text-red-400 bg-red-50 border border-red-100 px-2 py-0.5 rounded-full">
+                              <Ban className="w-2.5 h-2.5" /> Booked
+                            </span>
+                          ) : selectedSuggestion === sug.name ? (
+                            <div className="w-5 h-5 rounded-full bg-violet-500 flex items-center justify-center">
+                              <Check className="w-3 h-3 text-white" />
+                            </div>
+                          ) : (
+                            <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-violet-400 transition-colors" />
+                          )}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Hint */}
+                {suggestedLocations.some(s => !s.isBooked) && (
+                  <p className="text-center text-[11px] text-gray-400 pt-1">
+                    Select a venue to auto-fill your schedule and view available equipment
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+      {/* ── End Auto Suggest Modal ──────────────────────────────────────────── */}
+
     </div>
   );
 };

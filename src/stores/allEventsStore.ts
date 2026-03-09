@@ -80,7 +80,7 @@ interface AllEventsState {
   events: Event[];
   departments: string[];
   selectedEvent: Event | null;
-  
+
   // Filters
   searchQuery: string;
   locationFilter: string;
@@ -90,16 +90,17 @@ interface AllEventsState {
   monthFilter: string;
   eventTypeFilter: string;
   sortBy: string;
-  
+
   // Loading & Cache
   loading: boolean;
   lastFetched: number | null;
   CACHE_DURATION: number;
-  
+
   // Actions
   fetchAllEvents: (force?: boolean) => Promise<void>;
   addNewEvent: (event: Event) => void;
   updateEventStatus: (eventId: string, newStatus: string) => void;
+  updateBacStatus: (eventId: string, bacApprovalStatus: string, status?: string, reason?: string) => void;
   setSelectedEvent: (event: Event | null) => void;
   setSearchQuery: (query: string) => void;
   setLocationFilter: (location: string) => void;
@@ -111,7 +112,7 @@ interface AllEventsState {
   setSortBy: (sortBy: string) => void;
   clearFilters: () => void;
   clearCache: () => void;
-  
+
   // Getters
   getFilteredEvents: () => Event[];
   getUniqueLocations: () => string[];
@@ -135,19 +136,19 @@ export const useAllEventsStore = create<AllEventsState>()(
       loading: false,
       lastFetched: null,
       CACHE_DURATION: 5 * 60 * 1000, // 5 minutes cache
-      
+
       // Actions
       fetchAllEvents: async (force = false) => {
         const state = get();
         const now = Date.now();
-        
+
         // Check cache (unless forced)
         if (!force && state.lastFetched && (now - state.lastFetched) < state.CACHE_DURATION) {
           return;
         }
-        
+
         set({ loading: true });
-        
+
         try {
           const token = localStorage.getItem('authToken');
           const headers = {
@@ -156,10 +157,10 @@ export const useAllEventsStore = create<AllEventsState>()(
           };
 
           const response = await axios.get(`${API_BASE_URL}/events`, { headers });
-          
+
           if (response.data.success) {
             const events = response.data.data || [];
-            
+
             // Extract unique departments
             const uniqueDepartments = new Set<string>();
             events.forEach((event: Event) => {
@@ -172,9 +173,9 @@ export const useAllEventsStore = create<AllEventsState>()(
                 uniqueDepartments.add(event.requestorDepartment.trim());
               }
             });
-            
+
             const departmentsList = Array.from(uniqueDepartments).sort();
-            
+
             // Store ALL events (admin needs to see everything)
             set({
               events: events,
@@ -187,7 +188,7 @@ export const useAllEventsStore = create<AllEventsState>()(
           set({ loading: false });
         }
       },
-      
+
       // Add new event to the store in real-time
       addNewEvent: (event: Event) => {
         const state = get();
@@ -200,7 +201,7 @@ export const useAllEventsStore = create<AllEventsState>()(
           });
         }
       },
-      
+
       // Update event status in real-time
       updateEventStatus: (eventId: string, newStatus: string) => {
         const state = get();
@@ -212,27 +213,40 @@ export const useAllEventsStore = create<AllEventsState>()(
           lastFetched: Date.now()
         });
       },
-      
+
+      // Update BAC approval status in real-time (and auto-reject event if BAC rejected)
+      updateBacStatus: (eventId: string, bacApprovalStatus: string, status?: string, reason?: string) => {
+        const state = get();
+        const updatedEvents = state.events.map(event => {
+          if (event._id !== eventId) return event;
+          const patch: Partial<Event> = { bacApprovalStatus: bacApprovalStatus as any };
+          if (status) patch.status = status as any;
+          if (reason) patch.reason = reason;
+          return { ...event, ...patch };
+        });
+        set({ events: updatedEvents, lastFetched: Date.now() });
+      },
+
       setSelectedEvent: (event: Event | null) => {
         set({ selectedEvent: event });
       },
-      
+
       setSearchQuery: (query: string) => {
         set({ searchQuery: query });
       },
-      
+
       setLocationFilter: (location: string) => {
         set({ locationFilter: location });
       },
-      
+
       setStatusFilter: (status: string) => {
         set({ statusFilter: status });
       },
-      
+
       setDepartmentFilter: (department: string) => {
         set({ departmentFilter: department });
       },
-      
+
       setDateFilter: (date: string) => {
         set({ dateFilter: date });
       },
@@ -240,15 +254,15 @@ export const useAllEventsStore = create<AllEventsState>()(
       setMonthFilter: (month: string) => {
         set({ monthFilter: month });
       },
-      
+
       setEventTypeFilter: (eventType: string) => {
         set({ eventTypeFilter: eventType });
       },
-      
+
       setSortBy: (sortBy: string) => {
         set({ sortBy: sortBy });
       },
-      
+
       clearFilters: () => {
         set({
           searchQuery: '',
@@ -260,7 +274,7 @@ export const useAllEventsStore = create<AllEventsState>()(
           eventTypeFilter: 'all'
         });
       },
-      
+
       clearCache: () => {
         set({
           events: [],
@@ -268,7 +282,7 @@ export const useAllEventsStore = create<AllEventsState>()(
           lastFetched: null
         });
       },
-      
+
       // Getters
       getFilteredEvents: () => {
         const state = get();
@@ -286,7 +300,7 @@ export const useAllEventsStore = create<AllEventsState>()(
 
           return allRequirements.length === 0;
         };
-        
+
         // Search filter
         if (state.searchQuery) {
           const query = state.searchQuery.toLowerCase();
@@ -297,36 +311,36 @@ export const useAllEventsStore = create<AllEventsState>()(
             event.location.toLowerCase().includes(query)
           );
         }
-        
+
         // Location filter
         if (state.locationFilter !== 'all') {
           filtered = filtered.filter(event => event.location === state.locationFilter);
         }
-        
+
         // Status filter
         if (state.statusFilter !== 'all') {
           filtered = filtered.filter(event => event.status === state.statusFilter);
         }
-        
+
         // Department filter
         if (state.departmentFilter !== 'all') {
-          filtered = filtered.filter(event => 
+          filtered = filtered.filter(event =>
             (event.taggedDepartments && event.taggedDepartments.includes(state.departmentFilter)) ||
             (event.requestorDepartment && event.requestorDepartment === state.departmentFilter)
           );
         }
-        
+
         // Event Type filter
         if (state.eventTypeFilter !== 'all') {
           filtered = filtered.filter(event => event.eventType === state.eventTypeFilter);
         }
-        
+
         // Date filter
         if (state.dateFilter !== 'all') {
           const now = new Date();
           filtered = filtered.filter(event => {
             const eventDate = new Date(event.startDate);
-            
+
             switch (state.dateFilter) {
               case 'today':
                 return eventDate.toDateString() === now.toDateString();
@@ -359,7 +373,7 @@ export const useAllEventsStore = create<AllEventsState>()(
         if (state.sortBy === 'no-requirements') {
           filtered = filtered.filter(hasNoRequirements);
         }
-        
+
         // If month filter is active, show upcoming events in that month first (soonest-first)
         // and push past events to the end (most recent past first).
         if (state.monthFilter !== 'all') {
@@ -397,30 +411,30 @@ export const useAllEventsStore = create<AllEventsState>()(
                 'cancelled': 2,
                 'completed': 1
               };
-              
+
               const aPriority = statusPriority[a.status as keyof typeof statusPriority] || 0;
               const bPriority = statusPriority[b.status as keyof typeof statusPriority] || 0;
-              
+
               // If different status priorities, sort by priority
               if (aPriority !== bPriority) {
                 return bPriority - aPriority;
               }
-              
+
               // If same status priority, sort by creation date (newest first)
               return new Date(b.createdAt || b.startDate).getTime() - new Date(a.createdAt || a.startDate).getTime();
-              
+
             case 'upcoming-events':
               // Sort by start date (upcoming events first)
               return new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
-              
+
             case 'recent-created':
               // Sort by creation date (most recent first)
               return new Date(b.createdAt || b.startDate).getTime() - new Date(a.createdAt || a.startDate).getTime();
-              
+
             case 'event-title':
               // Sort alphabetically by event title
               return a.eventTitle.localeCompare(b.eventTitle);
-              
+
             case 'requestor-name':
               // Sort alphabetically by requestor name
               return a.requestor.localeCompare(b.requestor);
@@ -428,14 +442,14 @@ export const useAllEventsStore = create<AllEventsState>()(
             case 'no-requirements':
               // Sort by creation date (most recent first)
               return new Date(b.createdAt || b.startDate).getTime() - new Date(a.createdAt || a.startDate).getTime();
-              
+
             default:
               // Default to status priority
               return new Date(b.createdAt || b.startDate).getTime() - new Date(a.createdAt || a.startDate).getTime();
           }
         });
       },
-      
+
       getUniqueLocations: () => {
         const state = get();
         const locations = new Set(state.events.map(event => event.location));

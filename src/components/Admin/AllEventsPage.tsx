@@ -119,7 +119,7 @@ const AllEventsPage: React.FC = () => {
   const canDeleteEvents = isSuperAdmin || roleFromStorage === 'admin';
   // Socket.IO for real-time updates
   const { socket } = useSocket();
-  
+
   // Zustand store
   const {
     events,
@@ -135,6 +135,7 @@ const AllEventsPage: React.FC = () => {
     fetchAllEvents,
     addNewEvent,
     updateEventStatus,
+    updateBacStatus,
     setSearchQuery,
     setStatusFilter,
     setMonthFilter,
@@ -154,7 +155,7 @@ const AllEventsPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<string>('all');
   const [enableEventDeletion, setEnableEventDeletion] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  
+
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 12;
@@ -172,10 +173,10 @@ const AllEventsPage: React.FC = () => {
   const [showApproveConfirm, setShowApproveConfirm] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [pendingCancelReason, setPendingCancelReason] = useState<string>('');
-  
+
   // Track last submitted events count for notifications
   const [lastSubmittedCount, setLastSubmittedCount] = useState(0);
-  
+
   // Use store's selected event or local state for status dialog
   const selectedEvent = storeSelectedEvent;
 
@@ -225,27 +226,54 @@ const AllEventsPage: React.FC = () => {
   // Note: Socket.IO listeners and notifications are now handled globally by AdminNotificationSystem
   // This component only needs to handle the table display and filtering
 
+  // ── Real-time BAC rejection → auto-reject event ──────────────────────
+  // When BAC rejects a location request the backend now also rejects the event.
+  // We listen here so the table row status flips immediately without a page refresh.
+  React.useEffect(() => {
+    if (!socket) return;
+    const handleBacUpdated = (data: any) => {
+      if (!data?.eventId) return;
+      const eventId = String(data.eventId);
+      updateBacStatus(
+        eventId,
+        data.bacApprovalStatus,
+        data.status,   // 'rejected' when BAC rejected
+        data.reason    // auto-filled rejection reason
+      );
+      // Toast only for rejections so admins are aware
+      if (data.bacApprovalStatus === 'rejected') {
+        toast.error('BAC Rejected a Request', {
+          description: `An event at the BAC Training Room was rejected by BAC and automatically set to Rejected.`,
+          duration: 8000
+        });
+      }
+    };
+    socket.on('bac-request-updated', handleBacUpdated);
+    return () => { socket.off('bac-request-updated', handleBacUpdated); };
+  }, [socket, updateBacStatus]);
+  // ─────────────────────────────────────────────────────────────────────
+
   // Check and auto-complete expired events (optimized - no API calls unless needed)
   const checkAndCompleteExpiredEvents = async () => {
     const now = new Date();
-    
+
     // Find events that should be marked as completed (client-side check only)
     const expiredEvents = events.filter(event => {
       // Only check approved events
       if (event.status !== 'approved') return false;
-      
+
       // Combine end date and end time
       const endDateTime = new Date(`${event.endDate}T${event.endTime}`);
-      
+
       // Check if event has ended
       return endDateTime < now;
     });
-    
+
     // ✅ NO API CALLS if no expired events found
     if (expiredEvents.length === 0) {
       return;
     }
-    
+
     // ⚠️ ONLY MAKE API CALLS when there are actually expired events
     const token = localStorage.getItem('authToken');
     const updatePromises = expiredEvents.map(async (event) => {
@@ -260,7 +288,7 @@ const AllEventsPage: React.FC = () => {
             }
           }
         );
-        
+
         if (response.data.success) {
           return { success: true, eventTitle: event.eventTitle };
         }
@@ -270,10 +298,10 @@ const AllEventsPage: React.FC = () => {
         return { success: false, eventTitle: event.eventTitle };
       }
     });
-    
+
     const results = await Promise.all(updatePromises);
     const successCount = results.filter(r => r.success).length;
-    
+
     if (successCount > 0) {
       // Refresh the events list to show updated statuses
       fetchAllEvents();
@@ -286,12 +314,12 @@ const AllEventsPage: React.FC = () => {
 
   useEffect(() => {
     fetchAllEvents();
-    
+
     // Set up interval for checking expired events every minute
     const intervalId = setInterval(() => {
       checkAndCompleteExpiredEvents();
     }, 60000); // Check every 60 seconds
-    
+
     return () => clearInterval(intervalId);
   }, []); // ✅ Empty dependency array - only runs once on mount
 
@@ -305,7 +333,7 @@ const AllEventsPage: React.FC = () => {
 
   // Get filtered events from store (all filtering done in Zustand)
   const filteredEvents = getFilteredEvents();
-  
+
   // Calculate counts for each status tab
   const statusCounts = {
     all: filteredEvents.length,
@@ -315,18 +343,18 @@ const AllEventsPage: React.FC = () => {
     completed: filteredEvents.filter(e => e.status === 'completed').length,
     cancelled: filteredEvents.filter(e => e.status === 'cancelled').length,
   };
-  
+
   // Filter events by active tab (store already handles sorting)
-  const tabFilteredEvents = activeTab === 'all' 
-    ? filteredEvents 
+  const tabFilteredEvents = activeTab === 'all'
+    ? filteredEvents
     : filteredEvents.filter(e => e.status === activeTab);
-  
+
   // Pagination calculations
   const totalPages = Math.ceil(tabFilteredEvents.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
   const paginatedEvents = tabFilteredEvents.slice(startIndex, endIndex);
-  
+
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
@@ -336,51 +364,51 @@ const AllEventsPage: React.FC = () => {
   const getStatusInfo = (status: string) => {
     switch (status) {
       case 'draft':
-        return { 
-          variant: 'secondary' as const, 
-          icon: <FileText className="w-3 h-3" />, 
+        return {
+          variant: 'secondary' as const,
+          icon: <FileText className="w-3 h-3" />,
           label: 'Draft',
           className: 'bg-gray-100 text-gray-700'
         };
       case 'submitted':
-        return { 
-          variant: 'default' as const, 
-          icon: <Clock3 className="w-3 h-3" />, 
+        return {
+          variant: 'default' as const,
+          icon: <Clock3 className="w-3 h-3" />,
           label: 'Submitted',
           className: 'bg-blue-100 text-blue-700'
         };
       case 'approved':
-        return { 
-          variant: 'default' as const, 
-          icon: <CheckCircle className="w-3 h-3" />, 
+        return {
+          variant: 'default' as const,
+          icon: <CheckCircle className="w-3 h-3" />,
           label: 'Approved',
           className: 'bg-green-100 text-green-700'
         };
       case 'rejected':
-        return { 
-          variant: 'destructive' as const, 
-          icon: <XCircle className="w-3 h-3" />, 
+        return {
+          variant: 'destructive' as const,
+          icon: <XCircle className="w-3 h-3" />,
           label: 'Rejected',
           className: 'bg-red-100 text-red-700'
         };
       case 'completed':
-        return { 
-          variant: 'default' as const, 
-          icon: <CheckCircle className="w-3 h-3" />, 
+        return {
+          variant: 'default' as const,
+          icon: <CheckCircle className="w-3 h-3" />,
           label: 'Completed',
           className: 'bg-purple-100 text-purple-700'
         };
       case 'cancelled':
-        return { 
-          variant: 'secondary' as const, 
-          icon: <XCircle className="w-3 h-3" />, 
+        return {
+          variant: 'secondary' as const,
+          icon: <XCircle className="w-3 h-3" />,
           label: 'Cancelled',
           className: 'bg-red-600 text-white'
         };
       default:
-        return { 
-          variant: 'secondary' as const, 
-          icon: <AlertCircle className="w-3 h-3" />, 
+        return {
+          variant: 'secondary' as const,
+          icon: <AlertCircle className="w-3 h-3" />,
           label: 'Unknown',
           className: 'bg-gray-100 text-gray-700'
         };
@@ -444,31 +472,31 @@ const AllEventsPage: React.FC = () => {
   // Check if all requirements are confirmed
   const areAllRequirementsConfirmed = (event: Event): boolean => {
     if (!event.departmentRequirements) return true;
-    
+
     const allRequirements: any[] = [];
     Object.values(event.departmentRequirements).forEach((deptReqs: any) => {
       if (Array.isArray(deptReqs)) {
         allRequirements.push(...deptReqs);
       }
     });
-    
+
     if (allRequirements.length === 0) return true;
-    
+
     return allRequirements.every(req => req.status === 'confirmed');
   };
 
   // Handle status change
   const handleStatusChange = async (newStatus: 'approved' | 'rejected' | 'cancelled', reason?: string) => {
     if (!selectedEvent) return;
-    
+
     try {
       const token = localStorage.getItem('authToken');
-      
+
       const payload: any = { status: newStatus };
       if (reason) {
         payload.reason = reason;
       }
-      
+
       const response = await axios.patch(
         `${API_BASE_URL}/events/${selectedEvent._id}/status`,
         payload,
@@ -479,7 +507,7 @@ const AllEventsPage: React.FC = () => {
           }
         }
       );
-      
+
       if (response.data.success) {
         const statusText = newStatus === 'approved' ? 'approved' : newStatus === 'rejected' ? 'rejected' : 'cancelled';
         toast.success(`Event ${statusText} successfully!`);
@@ -504,8 +532,8 @@ const AllEventsPage: React.FC = () => {
   // Handle checkbox selection
   const handleSelectEvent = (eventId: string) => {
     if (!enableEventDeletion) return;
-    setSelectedEvents(prev => 
-      prev.includes(eventId) 
+    setSelectedEvents(prev =>
+      prev.includes(eventId)
         ? prev.filter(id => id !== eventId)
         : [...prev, eventId]
     );
@@ -587,7 +615,7 @@ const AllEventsPage: React.FC = () => {
       if (diff !== 0) return diff;
       return String(a.eventTitle || '').localeCompare(String(b.eventTitle || ''));
     });
-    
+
     setShowPdfOptions(false);
     generatePdfPreview(sortedEventsToGenerate, {
       includeRequirementsPages: generateAll ? false : pdfIncludeRequirementsPages,
@@ -626,7 +654,7 @@ const AllEventsPage: React.FC = () => {
       try {
         logoImg = new Image();
         logoImg.crossOrigin = 'anonymous';
-        
+
         await new Promise((resolve, reject) => {
           logoImg!.onload = resolve;
           logoImg!.onerror = reject;
@@ -639,7 +667,7 @@ const AllEventsPage: React.FC = () => {
       // Function to add header to any page
       const addHeader = (isFirstPage = false) => {
         let yPos = margin;
-        
+
         // Add logo if available
         if (logoImg) {
           const logoWidth = 15;
@@ -654,14 +682,14 @@ const AllEventsPage: React.FC = () => {
         pdf.setFontSize(14);
         pdf.setFont('helvetica', 'bold');
         pdf.text('PROVINCIAL GOVERNMENT OF BATAAN', pageWidth / 2, yPos, { align: 'center' });
-        
+
         yPos += 6;
         pdf.setFontSize(10);
         pdf.setFont('helvetica', 'normal');
         pdf.text('Event Management System', pageWidth / 2, yPos, { align: 'center' });
-        
+
         yPos += 8;
-        
+
         // Only add generation date on first page
         if (isFirstPage) {
           pdf.setFontSize(9);
@@ -676,7 +704,7 @@ const AllEventsPage: React.FC = () => {
         pdf.setFont('helvetica', 'normal');
         pdf.text(`Approved Events • Date Range: ${rangeText}`, pageWidth / 2, yPos, { align: 'center' });
         yPos += 10;
-        
+
         return yPos;
       };
 
@@ -686,7 +714,7 @@ const AllEventsPage: React.FC = () => {
       // Process each event
       for (let i = 0; i < events.length; i++) {
         const event = events[i];
-        
+
         // Check if we need a new page
         if (yPosition > pageHeight - 60) {
           pdf.addPage();
@@ -706,7 +734,7 @@ const AllEventsPage: React.FC = () => {
         pdf.text('Requestor:', margin, yPosition);
         pdf.setFont('helvetica', 'normal');
         pdf.text(event.requestor, margin + 25, yPosition);
-        
+
         pdf.setFont('helvetica', 'bold');
         pdf.text('Department:', margin + 90, yPosition);
         pdf.setFont('helvetica', 'normal');
@@ -723,13 +751,13 @@ const AllEventsPage: React.FC = () => {
 
         // Check if event has multiple date/time slots (multi-day event)
         const hasSlots = event.dateTimeSlots && Array.isArray(event.dateTimeSlots) && event.dateTimeSlots.length > 0;
-        
+
         if (hasSlots) {
           // Multi-Day Event Schedule
           pdf.setFont('helvetica', 'bold');
           pdf.text('Multi-Day Event Schedule:', margin, yPosition);
           yPosition += 7;
-          
+
           // Day 1 - Main date slot
           pdf.setFont('helvetica', 'bold');
           pdf.text('Day 1:', margin + 5, yPosition);
@@ -740,7 +768,7 @@ const AllEventsPage: React.FC = () => {
             yPosition
           );
           yPosition += 6;
-          
+
           // Additional Days
           event.dateTimeSlots?.forEach((slot: any, idx: number) => {
             pdf.setFont('helvetica', 'bold');
@@ -760,7 +788,7 @@ const AllEventsPage: React.FC = () => {
           pdf.text('Start Date:', margin, yPosition);
           pdf.setFont('helvetica', 'normal');
           pdf.text(format(new Date(event.startDate), 'MMMM dd, yyyy'), margin + 25, yPosition);
-          
+
           pdf.setFont('helvetica', 'bold');
           pdf.text('Start Time:', margin + 90, yPosition);
           pdf.setFont('helvetica', 'normal');
@@ -771,7 +799,7 @@ const AllEventsPage: React.FC = () => {
           pdf.text('End Date:', margin, yPosition);
           pdf.setFont('helvetica', 'normal');
           pdf.text(format(new Date(event.endDate), 'MMMM dd, yyyy'), margin + 25, yPosition);
-          
+
           pdf.setFont('helvetica', 'bold');
           pdf.text('End Time:', margin + 90, yPosition);
           pdf.setFont('helvetica', 'normal');
@@ -782,7 +810,7 @@ const AllEventsPage: React.FC = () => {
         pdf.setFont('helvetica', 'bold');
         pdf.text(event.locations && event.locations.length > 1 ? 'Locations:' : 'Location:', margin, yPosition);
         pdf.setFont('helvetica', 'normal');
-        
+
         if (event.locations && event.locations.length > 1) {
           // Multiple locations - display each on a new line
           event.locations.forEach((loc, index) => {
@@ -799,7 +827,7 @@ const AllEventsPage: React.FC = () => {
           pdf.text(event.location, margin + 25, yPosition);
           yPosition += 7;
         }
-        
+
         pdf.setFont('helvetica', 'bold');
         pdf.text('Participants:', margin, yPosition);
         pdf.setFont('helvetica', 'normal');
@@ -811,7 +839,7 @@ const AllEventsPage: React.FC = () => {
           pdf.text('VIP:', margin, yPosition);
           pdf.setFont('helvetica', 'normal');
           pdf.text(`${event.vip || 0} VIPs`, margin + 25, yPosition);
-          
+
           pdf.setFont('helvetica', 'bold');
           pdf.text('VVIP:', margin + 90, yPosition);
           pdf.setFont('helvetica', 'normal');
@@ -832,7 +860,7 @@ const AllEventsPage: React.FC = () => {
         pdf.text('Email:', margin, yPosition);
         pdf.setFont('helvetica', 'normal');
         pdf.text(event.contactEmail, margin + 15, yPosition);
-        
+
         pdf.setFont('helvetica', 'bold');
         pdf.text('Phone:', margin + 90, yPosition);
         pdf.setFont('helvetica', 'normal');
@@ -885,7 +913,7 @@ const AllEventsPage: React.FC = () => {
             // Department requirements
             if (event.departmentRequirements && event.departmentRequirements[department]) {
               const deptReqs = event.departmentRequirements[department];
-              
+
               // Check if deptReqs is an array (your actual structure)
               if (Array.isArray(deptReqs) && deptReqs.length > 0) {
                 pdf.setFontSize(10);
@@ -898,13 +926,13 @@ const AllEventsPage: React.FC = () => {
                   if (req.selected) {
                     pdf.setFontSize(9);
                     pdf.setFont('helvetica', 'normal');
-                    
+
                     // Include quantity information in the requirement text
                     let reqText = `${reqIndex + 1}. ${req.name}`;
                     if (req.quantity && req.quantity > 0) {
                       reqText += ` (Quantity: ${req.quantity})`;
                     }
-                    
+
                     const splitReq = pdf.splitTextToSize(reqText, pageWidth - 2 * margin - 10);
                     pdf.text(splitReq, margin + 10, yPosition);
                     yPosition += splitReq.length * 4;
@@ -965,7 +993,7 @@ const AllEventsPage: React.FC = () => {
       const pdfUrl = URL.createObjectURL(pdfBlob);
       setPdfPreviewUrl(pdfUrl);
       setShowPdfPreview(true);
-      
+
     } catch (error) {
       console.error('Error generating PDF preview:', error);
       toast.error('Failed to generate PDF preview');
@@ -990,9 +1018,9 @@ const AllEventsPage: React.FC = () => {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      
+
       toast.success('PDF downloaded successfully!');
-      
+
     } catch (error) {
       console.error('Error downloading PDF:', error);
       toast.error('Failed to download PDF');
@@ -1319,15 +1347,14 @@ const AllEventsPage: React.FC = () => {
                             </TableCell>
                           )}
                           <TableCell>
-                            <Badge 
+                            <Badge
                               variant="outline"
-                              className={`text-xs ${
-                                event.eventType === 'simple-meeting'
+                              className={`text-xs ${event.eventType === 'simple-meeting'
                                   ? 'bg-green-50 text-green-700 border-green-200'
-                                  : event.eventType === 'complex' 
-                                  ? 'bg-purple-50 text-purple-700 border-purple-200' 
-                                  : 'bg-blue-50 text-blue-700 border-blue-200'
-                              }`}
+                                  : event.eventType === 'complex'
+                                    ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                    : 'bg-blue-50 text-blue-700 border-blue-200'
+                                }`}
                             >
                               {event.eventType === 'simple-meeting' ? 'Meeting' : event.eventType === 'complex' ? 'Complex' : 'Simple'}
                             </Badge>
@@ -1349,7 +1376,7 @@ const AllEventsPage: React.FC = () => {
                             {event.status === 'cancelled' ? (
                               <HoverCard openDelay={200}>
                                 <HoverCardTrigger asChild>
-                                  <Badge 
+                                  <Badge
                                     variant={statusInfo.variant}
                                     className={`gap-1 ${statusInfo.className || ''} cursor-help`}
                                   >
@@ -1365,7 +1392,7 @@ const AllEventsPage: React.FC = () => {
                                 </HoverCardContent>
                               </HoverCard>
                             ) : (
-                              <Badge 
+                              <Badge
                                 variant={statusInfo.variant}
                                 className={`gap-1 ${statusInfo.className || ''}`}
                               >
@@ -1386,8 +1413,8 @@ const AllEventsPage: React.FC = () => {
                                 {event.dateTimeSlots && event.dateTimeSlots.length > 0 && (
                                   <HoverCard openDelay={200}>
                                     <HoverCardTrigger asChild>
-                                      <Badge 
-                                        variant="secondary" 
+                                      <Badge
+                                        variant="secondary"
                                         className="text-[9px] bg-blue-100 text-blue-700 border-blue-200 cursor-pointer hover:bg-blue-200 whitespace-nowrap px-1.5 py-0"
                                       >
                                         Multi-Day
@@ -1474,7 +1501,7 @@ const AllEventsPage: React.FC = () => {
                                   Status
                                 </Button>
                               )}
-                              
+
                               <Dialog>
                                 <DialogTrigger asChild>
                                   <Button
@@ -1487,97 +1514,131 @@ const AllEventsPage: React.FC = () => {
                                     View
                                   </Button>
                                 </DialogTrigger>
-                              <DialogContent className="max-w-4xl w-[75vw] max-h-[80vh] overflow-y-auto sm:max-w-4xl">
-                                <DialogHeader className="border-b pb-3 mb-3">
-                                  <DialogTitle className="text-lg font-semibold text-gray-900 flex items-center justify-between gap-3">
-                                    <span>Event Details</span>
-                                    {selectedEvent && (
-                                      <Badge className={getStatusInfo(selectedEvent.status).className}>
-                                        {getStatusInfo(selectedEvent.status).icon}
-                                        <span className="ml-1">{getStatusInfo(selectedEvent.status).label}</span>
-                                      </Badge>
-                                    )}
-                                  </DialogTitle>
-                                  <DialogDescription className="text-xs text-gray-500">
-                                    Complete information for this event request
-                                  </DialogDescription>
-                                </DialogHeader>
+                                <DialogContent className="max-w-4xl w-[75vw] max-h-[80vh] overflow-y-auto sm:max-w-4xl">
+                                  <DialogHeader className="border-b pb-3 mb-3">
+                                    <DialogTitle className="text-lg font-semibold text-gray-900 flex items-center justify-between gap-3">
+                                      <span>Event Details</span>
+                                      {selectedEvent && (
+                                        <Badge className={getStatusInfo(selectedEvent.status).className}>
+                                          {getStatusInfo(selectedEvent.status).icon}
+                                          <span className="ml-1">{getStatusInfo(selectedEvent.status).label}</span>
+                                        </Badge>
+                                      )}
+                                    </DialogTitle>
+                                    <DialogDescription className="text-xs text-gray-500">
+                                      Complete information for this event request
+                                    </DialogDescription>
+                                  </DialogHeader>
 
-                                {selectedEvent && (
-                                  <div className="space-y-5 text-sm text-gray-900">
-                                    {/* Basic Info */}
-                                    <div className="rounded-xl border border-gray-100 bg-gray-50/70 px-4 py-4 space-y-3">
-                                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                        <div>
-                                          <label className="text-xs font-semibold text-gray-500 uppercase flex items-center gap-2 tracking-wide">
-                                            <FileText className="w-3.5 h-3.5" />
-                                            Event Title
-                                          </label>
-                                          <p className="mt-1 text-sm font-medium text-gray-900" title={selectedEvent.eventTitle}>
-                                            {selectedEvent.eventTitle}
-                                          </p>
-                                        </div>
-                                        <div>
-                                          <label className="text-xs font-semibold text-gray-500 uppercase flex items-center gap-2 tracking-wide">
-                                            <User className="w-3.5 h-3.5" />
-                                            Requestor
-                                          </label>
-                                          <p className="mt-1 text-sm text-gray-900">{selectedEvent.requestor}</p>
-                                        </div>
-                                        <div>
-                                          <label className="text-xs font-semibold text-gray-500 uppercase flex items-start gap-2 tracking-wide">
-                                            <MapPin className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
-                                            <span>Location{selectedEvent.locations && selectedEvent.locations.length > 1 ? 's' : ''}</span>
-                                          </label>
-                                          {selectedEvent.locations && selectedEvent.locations.length > 1 ? (
-                                            <div className="mt-1 ml-6 flex flex-col gap-1">
-                                              {selectedEvent.locations.map((loc, idx) => (
-                                                <p key={idx} className="text-sm text-gray-900">
-                                                  {loc}
-                                                </p>
-                                              ))}
-                                            </div>
-                                          ) : (
-                                            <p className="mt-1 ml-6 text-sm text-gray-900">{selectedEvent.location}</p>
-                                          )}
+                                  {selectedEvent && (
+                                    <div className="space-y-5 text-sm text-gray-900">
+                                      {/* Basic Info */}
+                                      <div className="rounded-xl border border-gray-100 bg-gray-50/70 px-4 py-4 space-y-3">
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                          <div>
+                                            <label className="text-xs font-semibold text-gray-500 uppercase flex items-center gap-2 tracking-wide">
+                                              <FileText className="w-3.5 h-3.5" />
+                                              Event Title
+                                            </label>
+                                            <p className="mt-1 text-sm font-medium text-gray-900" title={selectedEvent.eventTitle}>
+                                              {selectedEvent.eventTitle}
+                                            </p>
+                                          </div>
+                                          <div>
+                                            <label className="text-xs font-semibold text-gray-500 uppercase flex items-center gap-2 tracking-wide">
+                                              <User className="w-3.5 h-3.5" />
+                                              Requestor
+                                            </label>
+                                            <p className="mt-1 text-sm text-gray-900">{selectedEvent.requestor}</p>
+                                          </div>
+                                          <div>
+                                            <label className="text-xs font-semibold text-gray-500 uppercase flex items-start gap-2 tracking-wide">
+                                              <MapPin className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                                              <span>Location{selectedEvent.locations && selectedEvent.locations.length > 1 ? 's' : ''}</span>
+                                            </label>
+                                            {selectedEvent.locations && selectedEvent.locations.length > 1 ? (
+                                              <div className="mt-1 ml-6 flex flex-col gap-1">
+                                                {selectedEvent.locations.map((loc, idx) => (
+                                                  <p key={idx} className="text-sm text-gray-900">
+                                                    {loc}
+                                                  </p>
+                                                ))}
+                                              </div>
+                                            ) : (
+                                              <p className="mt-1 ml-6 text-sm text-gray-900">{selectedEvent.location}</p>
+                                            )}
+                                          </div>
                                         </div>
                                       </div>
-                                    </div>
 
-                                    {/* Date & Time & Status */}
-                                    <div className="rounded-xl border border-gray-100 bg-white px-4 py-4">
-                                      {selectedEvent.dateTimeSlots && selectedEvent.dateTimeSlots.length > 0 ? (
-                                        <>
-                                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                            <div className="md:col-span-2 space-y-3">
-                                              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                                                Multi-Day Event Schedule
-                                              </label>
-                                              
-                                              {/* Day 1 */}
-                                              <div className="flex items-center gap-2 text-sm">
-                                                <span className="font-medium text-gray-700">Day 1:</span>
-                                                <Calendar className="w-3.5 h-3.5 text-gray-400" />
-                                                <span className="text-gray-900">{format(new Date(selectedEvent.startDate), 'MMM d, yyyy')}</span>
-                                                <span className="text-gray-400">•</span>
-                                                <Clock className="w-3.5 h-3.5 text-gray-400" />
-                                                <span className="text-gray-900">{formatTime(selectedEvent.startTime)} - {formatTime(selectedEvent.endTime)}</span>
-                                              </div>
-                                              
-                                              {/* Additional Days */}
-                                              {selectedEvent.dateTimeSlots.map((slot: any, idx: number) => (
-                                                <div key={idx} className="flex items-center gap-2 text-sm">
-                                                  <span className="font-medium text-gray-700">Day {idx + 2}:</span>
+                                      {/* Date & Time & Status */}
+                                      <div className="rounded-xl border border-gray-100 bg-white px-4 py-4">
+                                        {selectedEvent.dateTimeSlots && selectedEvent.dateTimeSlots.length > 0 ? (
+                                          <>
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                              <div className="md:col-span-2 space-y-3">
+                                                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                                                  Multi-Day Event Schedule
+                                                </label>
+
+                                                {/* Day 1 */}
+                                                <div className="flex items-center gap-2 text-sm">
+                                                  <span className="font-medium text-gray-700">Day 1:</span>
                                                   <Calendar className="w-3.5 h-3.5 text-gray-400" />
-                                                  <span className="text-gray-900">{format(new Date(slot.startDate), 'MMM d, yyyy')}</span>
+                                                  <span className="text-gray-900">{format(new Date(selectedEvent.startDate), 'MMM d, yyyy')}</span>
                                                   <span className="text-gray-400">•</span>
                                                   <Clock className="w-3.5 h-3.5 text-gray-400" />
-                                                  <span className="text-gray-900">{formatTime(slot.startTime)} - {formatTime(slot.endTime)}</span>
+                                                  <span className="text-gray-900">{formatTime(selectedEvent.startTime)} - {formatTime(selectedEvent.endTime)}</span>
                                                 </div>
-                                              ))}
+
+                                                {/* Additional Days */}
+                                                {selectedEvent.dateTimeSlots.map((slot: any, idx: number) => (
+                                                  <div key={idx} className="flex items-center gap-2 text-sm">
+                                                    <span className="font-medium text-gray-700">Day {idx + 2}:</span>
+                                                    <Calendar className="w-3.5 h-3.5 text-gray-400" />
+                                                    <span className="text-gray-900">{format(new Date(slot.startDate), 'MMM d, yyyy')}</span>
+                                                    <span className="text-gray-400">•</span>
+                                                    <Clock className="w-3.5 h-3.5 text-gray-400" />
+                                                    <span className="text-gray-900">{formatTime(slot.startTime)} - {formatTime(slot.endTime)}</span>
+                                                  </div>
+                                                ))}
+                                              </div>
+
+                                              {/* Status in third column */}
+                                              <div>
+                                                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2">
+                                                  <Tag className="w-3.5 h-3.5" />
+                                                  Status
+                                                </label>
+                                                <div className="mt-2">
+                                                  <Badge className={getStatusInfo(selectedEvent.status).className}>
+                                                    {getStatusInfo(selectedEvent.status).icon}
+                                                    <span className="ml-1">{getStatusInfo(selectedEvent.status).label}</span>
+                                                  </Badge>
+                                                </div>
+                                              </div>
                                             </div>
-                                            
-                                            {/* Status in third column */}
+                                          </>
+                                        ) : (
+                                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                            <div>
+                                              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2">
+                                                <Calendar className="w-3.5 h-3.5" />
+                                                Event Date
+                                              </label>
+                                              <p className="mt-1 text-sm text-gray-900">
+                                                {format(new Date(selectedEvent.startDate), 'MMM dd, yyyy')}
+                                              </p>
+                                            </div>
+                                            <div>
+                                              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2">
+                                                <Clock className="w-3.5 h-3.5" />
+                                                Time
+                                              </label>
+                                              <p className="mt-1 text-sm text-gray-900">
+                                                {formatTime(selectedEvent.startTime)} - {formatTime(selectedEvent.endTime)}
+                                              </p>
+                                            </div>
                                             <div>
                                               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2">
                                                 <Tag className="w-3.5 h-3.5" />
@@ -1591,301 +1652,267 @@ const AllEventsPage: React.FC = () => {
                                               </div>
                                             </div>
                                           </div>
-                                        </>
-                                      ) : (
+                                        )}
+                                      </div>
+
+                                      {/* Participants & VIP Info */}
+                                      <div className="rounded-xl border border-gray-100 bg-white px-4 py-4">
                                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                           <div>
                                             <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2">
-                                              <Calendar className="w-3.5 h-3.5" />
-                                              Event Date
+                                              <Users className="w-3.5 h-3.5" />
+                                              Participants
                                             </label>
-                                            <p className="mt-1 text-sm text-gray-900">
-                                              {format(new Date(selectedEvent.startDate), 'MMM dd, yyyy')}
-                                            </p>
+                                            <p className="mt-1 text-sm text-gray-900">{selectedEvent.participants}</p>
                                           </div>
                                           <div>
                                             <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2">
-                                              <Clock className="w-3.5 h-3.5" />
-                                              Time
+                                              <Star className="w-3.5 h-3.5" />
+                                              VIP
                                             </label>
-                                            <p className="mt-1 text-sm text-gray-900">
-                                              {formatTime(selectedEvent.startTime)} - {formatTime(selectedEvent.endTime)}
-                                            </p>
+                                            <p className="mt-1 text-sm text-gray-900">{selectedEvent.vip || 0}</p>
                                           </div>
                                           <div>
                                             <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2">
-                                              <Tag className="w-3.5 h-3.5" />
-                                              Status
+                                              <Star className="w-3.5 h-3.5" />
+                                              VVIP
                                             </label>
-                                            <div className="mt-2">
-                                              <Badge className={getStatusInfo(selectedEvent.status).className}>
-                                                {getStatusInfo(selectedEvent.status).icon}
-                                                <span className="ml-1">{getStatusInfo(selectedEvent.status).label}</span>
-                                              </Badge>
-                                            </div>
+                                            <p className="mt-1 text-sm text-gray-900">{selectedEvent.vvip || 0}</p>
                                           </div>
-                                        </div>
-                                      )}
-                                    </div>
-
-                                    {/* Participants & VIP Info */}
-                                    <div className="rounded-xl border border-gray-100 bg-white px-4 py-4">
-                                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                        <div>
-                                          <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2">
-                                            <Users className="w-3.5 h-3.5" />
-                                            Participants
-                                          </label>
-                                          <p className="mt-1 text-sm text-gray-900">{selectedEvent.participants}</p>
-                                        </div>
-                                        <div>
-                                          <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2">
-                                            <Star className="w-3.5 h-3.5" />
-                                            VIP
-                                          </label>
-                                          <p className="mt-1 text-sm text-gray-900">{selectedEvent.vip || 0}</p>
-                                        </div>
-                                        <div>
-                                          <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2">
-                                            <Star className="w-3.5 h-3.5" />
-                                            VVIP
-                                          </label>
-                                          <p className="mt-1 text-sm text-gray-900">{selectedEvent.vvip || 0}</p>
                                         </div>
                                       </div>
-                                    </div>
 
-                                    {/* Department & Contact */}
-                                    <div className="rounded-xl border border-gray-100 bg-white px-4 py-4">
-                                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                        <div>
+                                      {/* Department & Contact */}
+                                      <div className="rounded-xl border border-gray-100 bg-white px-4 py-4">
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                          <div>
+                                            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2">
+                                              <Building2 className="w-3.5 h-3.5" />
+                                              Department
+                                            </label>
+                                            <p className="mt-1 text-sm text-gray-900">{selectedEvent.createdBy?.department || 'N/A'}</p>
+                                          </div>
+                                          <div>
+                                            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2">
+                                              <Phone className="w-3.5 h-3.5" />
+                                              Contact Number
+                                            </label>
+                                            <p className="mt-1 text-sm text-gray-900">{selectedEvent.contactNumber || 'N/A'}</p>
+                                          </div>
+                                          <div>
+                                            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2">
+                                              <Mail className="w-3.5 h-3.5" />
+                                              Contact Email
+                                            </label>
+                                            <p className="mt-1 text-sm text-gray-900">{selectedEvent.contactEmail || 'N/A'}</p>
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      {/* Tagged Departments */}
+                                      {selectedEvent.taggedDepartments && selectedEvent.taggedDepartments.length > 0 && (
+                                        <div className="rounded-xl border border-gray-100 bg-white px-4 py-4">
                                           <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2">
                                             <Building2 className="w-3.5 h-3.5" />
-                                            Department
+                                            Tagged Departments
                                           </label>
-                                          <p className="mt-1 text-sm text-gray-900">{selectedEvent.createdBy?.department || 'N/A'}</p>
-                                        </div>
-                                        <div>
-                                          <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2">
-                                            <Phone className="w-3.5 h-3.5" />
-                                            Contact Number
-                                          </label>
-                                          <p className="mt-1 text-sm text-gray-900">{selectedEvent.contactNumber || 'N/A'}</p>
-                                        </div>
-                                        <div>
-                                          <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2">
-                                            <Mail className="w-3.5 h-3.5" />
-                                            Contact Email
-                                          </label>
-                                          <p className="mt-1 text-sm text-gray-900">{selectedEvent.contactEmail || 'N/A'}</p>
-                                        </div>
-                                      </div>
-                                    </div>
-
-                                    {/* Tagged Departments */}
-                                    {selectedEvent.taggedDepartments && selectedEvent.taggedDepartments.length > 0 && (
-                                      <div className="rounded-xl border border-gray-100 bg-white px-4 py-4">
-                                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2">
-                                          <Building2 className="w-3.5 h-3.5" />
-                                          Tagged Departments
-                                        </label>
-                                        <div className="mt-2 flex flex-wrap gap-2">
-                                          {selectedEvent.taggedDepartments.map((dept, index) => (
-                                            <Badge key={index} variant="secondary" className="text-xs bg-gray-50 text-gray-800 border-gray-200">{dept}</Badge>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    )}
-
-                                    {/* View Description Button */}
-                                    <div className="pt-4 border-t border-gray-100 mt-2">
-                                      <Button
-                                        variant="outline"
-                                        onClick={() => setShowDescription(!showDescription)}
-                                        className="gap-2 text-sm"
-                                      >
-                                        <FileText className="w-4 h-4" />
-                                        {showDescription ? 'Hide Description' : 'View Description'}
-                                      </Button>
-                                      
-                                      {showDescription && selectedEvent.description && (
-                                        <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-100">
-                                          <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Event Description</label>
-                                          <p className="mt-2 text-sm text-gray-900 whitespace-pre-wrap">
-                                            {selectedEvent.description}
-                                          </p>
+                                          <div className="mt-2 flex flex-wrap gap-2">
+                                            {selectedEvent.taggedDepartments.map((dept, index) => (
+                                              <Badge key={index} variant="secondary" className="text-xs bg-gray-50 text-gray-800 border-gray-200">{dept}</Badge>
+                                            ))}
+                                          </div>
                                         </div>
                                       )}
-                                      
-                                      {showDescription && !selectedEvent.description && (
-                                        <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-100">
-                                          <p className="text-sm text-gray-500">No description provided for this event.</p>
+
+                                      {/* View Description Button */}
+                                      <div className="pt-4 border-t border-gray-100 mt-2">
+                                        <Button
+                                          variant="outline"
+                                          onClick={() => setShowDescription(!showDescription)}
+                                          className="gap-2 text-sm"
+                                        >
+                                          <FileText className="w-4 h-4" />
+                                          {showDescription ? 'Hide Description' : 'View Description'}
+                                        </Button>
+
+                                        {showDescription && selectedEvent.description && (
+                                          <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-100">
+                                            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Event Description</label>
+                                            <p className="mt-2 text-sm text-gray-900 whitespace-pre-wrap">
+                                              {selectedEvent.description}
+                                            </p>
+                                          </div>
+                                        )}
+
+                                        {showDescription && !selectedEvent.description && (
+                                          <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-100">
+                                            <p className="text-sm text-gray-500">No description provided for this event.</p>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
+                                </DialogContent>
+                              </Dialog>
+
+                              {/* Files Button */}
+                              <Dialog>
+                                <DialogTrigger asChild>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="gap-1"
+                                    onClick={() => setStoreSelectedEvent(event)}
+                                  >
+                                    <Paperclip className="w-3 h-3" />
+                                    Files
+                                  </Button>
+                                </DialogTrigger>
+                                <DialogContent className="sm:max-w-[600px]">
+                                  <DialogHeader>
+                                    <DialogTitle>Event Files</DialogTitle>
+                                    <DialogDescription>
+                                      {selectedEvent?.eventTitle}
+                                    </DialogDescription>
+                                  </DialogHeader>
+
+                                  {selectedEvent && (
+                                    <div className="space-y-4 py-4">
+                                      {/* Event Attachments */}
+                                      {selectedEvent.attachments && selectedEvent.attachments.length > 0 && (
+                                        <div className="space-y-3">
+                                          <h4 className="text-sm font-medium text-muted-foreground">Attachments</h4>
+                                          <div className="space-y-2">
+                                            {selectedEvent.attachments.map((attachment: any, index: number) => (
+                                              <div key={index} className="group flex items-center gap-3 rounded-lg border p-3 hover:bg-accent transition-colors">
+                                                <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                                                <div className="flex-1 min-w-0">
+                                                  <p className="text-sm font-medium truncate max-w-[260px] sm:max-w-md" title={attachment.originalName}>
+                                                    {attachment.originalName}
+                                                  </p>
+                                                  <p className="text-xs text-muted-foreground">
+                                                    {(attachment.size / 1024).toFixed(1)} KB
+                                                  </p>
+                                                </div>
+                                                <div className="flex gap-1 shrink-0">
+                                                  <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-8 w-8"
+                                                    onClick={() => window.open(`${API_BASE_URL}/events/attachment/${attachment.filename}`, '_blank')}
+                                                  >
+                                                    <Eye className="h-4 w-4" />
+                                                  </Button>
+                                                  <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-8 w-8"
+                                                    onClick={() => {
+                                                      const link = document.createElement('a');
+                                                      link.href = `${API_BASE_URL}/events/attachment/${attachment.filename}?download=true`;
+                                                      link.download = attachment.originalName;
+                                                      link.click();
+                                                    }}
+                                                  >
+                                                    <Download className="h-4 w-4" />
+                                                  </Button>
+                                                </div>
+                                              </div>
+                                            ))}
+                                          </div>
                                         </div>
                                       )}
+
+                                      {/* Government Files */}
+                                      {selectedEvent.govFiles && (selectedEvent.govFiles.brieferTemplate || selectedEvent.govFiles.programme) && (
+                                        <div className="space-y-3">
+                                          <h4 className="text-sm font-medium text-muted-foreground">Government Files</h4>
+                                          <div className="space-y-2">
+                                            {selectedEvent.govFiles.brieferTemplate && (
+                                              <div className="group flex items-center gap-3 rounded-lg border p-3 hover:bg-accent transition-colors">
+                                                <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                                                <div className="flex-1 min-w-0">
+                                                  <p className="text-sm font-medium">Event Briefer</p>
+                                                  <p className="text-xs text-muted-foreground truncate max-w-[260px] sm:max-w-md" title={selectedEvent.govFiles.brieferTemplate.originalName}>
+                                                    {selectedEvent.govFiles.brieferTemplate.originalName}
+                                                  </p>
+                                                </div>
+                                                <div className="flex gap-1 shrink-0">
+                                                  <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-8 w-8"
+                                                    onClick={() => window.open(`${API_BASE_URL}/events/govfile/${selectedEvent.govFiles.brieferTemplate?.filename}`, '_blank')}
+                                                  >
+                                                    <Eye className="h-4 w-4" />
+                                                  </Button>
+                                                  <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-8 w-8"
+                                                    onClick={() => {
+                                                      const link = document.createElement('a');
+                                                      link.href = `${API_BASE_URL}/events/govfile/${selectedEvent.govFiles.brieferTemplate?.filename}?download=true`;
+                                                      link.download = selectedEvent.govFiles.brieferTemplate?.originalName || 'event-briefer';
+                                                      link.click();
+                                                    }}
+                                                  >
+                                                    <Download className="h-4 w-4" />
+                                                  </Button>
+                                                </div>
+                                              </div>
+                                            )}
+
+                                            {selectedEvent.govFiles.programme && (
+                                              <div className="group flex items-center gap-3 rounded-lg border p-3 hover:bg-accent transition-colors">
+                                                <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                                                <div className="flex-1 min-w-0">
+                                                  <p className="text-sm font-medium">Program Flow</p>
+                                                  <p className="text-xs text-muted-foreground truncate max-w-[260px] sm:max-w-md" title={selectedEvent.govFiles.programme.originalName}>
+                                                    {selectedEvent.govFiles.programme.originalName}
+                                                  </p>
+                                                </div>
+                                                <div className="flex gap-1 shrink-0">
+                                                  <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-8 w-8"
+                                                    onClick={() => window.open(`${API_BASE_URL}/events/govfile/${selectedEvent.govFiles.programme?.filename}`, '_blank')}
+                                                  >
+                                                    <Eye className="h-4 w-4" />
+                                                  </Button>
+                                                  <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-8 w-8"
+                                                    onClick={() => {
+                                                      const link = document.createElement('a');
+                                                      link.href = `${API_BASE_URL}/events/govfile/${selectedEvent.govFiles.programme?.filename}?download=true`;
+                                                      link.download = selectedEvent.govFiles.programme?.originalName || 'program-flow';
+                                                      link.click();
+                                                    }}
+                                                  >
+                                                    <Download className="h-4 w-4" />
+                                                  </Button>
+                                                </div>
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {/* Empty State */}
+                                      {(!selectedEvent.attachments || selectedEvent.attachments.length === 0) &&
+                                        (!selectedEvent.govFiles || (!selectedEvent.govFiles.brieferTemplate && !selectedEvent.govFiles.programme)) && (
+                                          <div className="flex flex-col items-center justify-center py-8 text-center">
+                                            <FileText className="h-12 w-12 text-muted-foreground/50 mb-2" />
+                                            <p className="text-sm text-muted-foreground">No files uploaded</p>
+                                          </div>
+                                        )}
                                     </div>
-                                  </div>
-                                )}
-                              </DialogContent>
-                            </Dialog>
-                            
-                            {/* Files Button */}
-                            <Dialog>
-                              <DialogTrigger asChild>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="gap-1"
-                                  onClick={() => setStoreSelectedEvent(event)}
-                                >
-                                  <Paperclip className="w-3 h-3" />
-                                  Files
-                                </Button>
-                              </DialogTrigger>
-                              <DialogContent className="sm:max-w-[600px]">
-                                <DialogHeader>
-                                  <DialogTitle>Event Files</DialogTitle>
-                                  <DialogDescription>
-                                    {selectedEvent?.eventTitle}
-                                  </DialogDescription>
-                                </DialogHeader>
-                                
-                                {selectedEvent && (
-                                  <div className="space-y-4 py-4">
-                                    {/* Event Attachments */}
-                                    {selectedEvent.attachments && selectedEvent.attachments.length > 0 && (
-                                      <div className="space-y-3">
-                                        <h4 className="text-sm font-medium text-muted-foreground">Attachments</h4>
-                                        <div className="space-y-2">
-                                          {selectedEvent.attachments.map((attachment: any, index: number) => (
-                                            <div key={index} className="group flex items-center gap-3 rounded-lg border p-3 hover:bg-accent transition-colors">
-                                              <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
-                                              <div className="flex-1 min-w-0">
-                                                <p className="text-sm font-medium truncate max-w-[260px] sm:max-w-md" title={attachment.originalName}>
-                                                  {attachment.originalName}
-                                                </p>
-                                                <p className="text-xs text-muted-foreground">
-                                                  {(attachment.size / 1024).toFixed(1)} KB
-                                                </p>
-                                              </div>
-                                              <div className="flex gap-1 shrink-0">
-                                                <Button
-                                                  variant="ghost"
-                                                  size="icon"
-                                                  className="h-8 w-8"
-                                                  onClick={() => window.open(`${API_BASE_URL}/events/attachment/${attachment.filename}`, '_blank')}
-                                                >
-                                                  <Eye className="h-4 w-4" />
-                                                </Button>
-                                                <Button
-                                                  variant="ghost"
-                                                  size="icon"
-                                                  className="h-8 w-8"
-                                                  onClick={() => {
-                                                    const link = document.createElement('a');
-                                                    link.href = `${API_BASE_URL}/events/attachment/${attachment.filename}?download=true`;
-                                                    link.download = attachment.originalName;
-                                                    link.click();
-                                                  }}
-                                                >
-                                                  <Download className="h-4 w-4" />
-                                                </Button>
-                                              </div>
-                                            </div>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    )}
-
-                                    {/* Government Files */}
-                                    {selectedEvent.govFiles && (selectedEvent.govFiles.brieferTemplate || selectedEvent.govFiles.programme) && (
-                                      <div className="space-y-3">
-                                        <h4 className="text-sm font-medium text-muted-foreground">Government Files</h4>
-                                        <div className="space-y-2">
-                                          {selectedEvent.govFiles.brieferTemplate && (
-                                            <div className="group flex items-center gap-3 rounded-lg border p-3 hover:bg-accent transition-colors">
-                                              <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
-                                              <div className="flex-1 min-w-0">
-                                                <p className="text-sm font-medium">Event Briefer</p>
-                                                <p className="text-xs text-muted-foreground truncate max-w-[260px] sm:max-w-md" title={selectedEvent.govFiles.brieferTemplate.originalName}>
-                                                  {selectedEvent.govFiles.brieferTemplate.originalName}
-                                                </p>
-                                              </div>
-                                              <div className="flex gap-1 shrink-0">
-                                                <Button
-                                                  variant="ghost"
-                                                  size="icon"
-                                                  className="h-8 w-8"
-                                                  onClick={() => window.open(`${API_BASE_URL}/events/govfile/${selectedEvent.govFiles.brieferTemplate?.filename}`, '_blank')}
-                                                >
-                                                  <Eye className="h-4 w-4" />
-                                                </Button>
-                                                <Button
-                                                  variant="ghost"
-                                                  size="icon"
-                                                  className="h-8 w-8"
-                                                  onClick={() => {
-                                                    const link = document.createElement('a');
-                                                    link.href = `${API_BASE_URL}/events/govfile/${selectedEvent.govFiles.brieferTemplate?.filename}?download=true`;
-                                                    link.download = selectedEvent.govFiles.brieferTemplate?.originalName || 'event-briefer';
-                                                    link.click();
-                                                  }}
-                                                >
-                                                  <Download className="h-4 w-4" />
-                                                </Button>
-                                              </div>
-                                            </div>
-                                          )}
-
-                                          {selectedEvent.govFiles.programme && (
-                                            <div className="group flex items-center gap-3 rounded-lg border p-3 hover:bg-accent transition-colors">
-                                              <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
-                                              <div className="flex-1 min-w-0">
-                                                <p className="text-sm font-medium">Program Flow</p>
-                                                <p className="text-xs text-muted-foreground truncate max-w-[260px] sm:max-w-md" title={selectedEvent.govFiles.programme.originalName}>
-                                                  {selectedEvent.govFiles.programme.originalName}
-                                                </p>
-                                              </div>
-                                              <div className="flex gap-1 shrink-0">
-                                                <Button
-                                                  variant="ghost"
-                                                  size="icon"
-                                                  className="h-8 w-8"
-                                                  onClick={() => window.open(`${API_BASE_URL}/events/govfile/${selectedEvent.govFiles.programme?.filename}`, '_blank')}
-                                                >
-                                                  <Eye className="h-4 w-4" />
-                                                </Button>
-                                                <Button
-                                                  variant="ghost"
-                                                  size="icon"
-                                                  className="h-8 w-8"
-                                                  onClick={() => {
-                                                    const link = document.createElement('a');
-                                                    link.href = `${API_BASE_URL}/events/govfile/${selectedEvent.govFiles.programme?.filename}?download=true`;
-                                                    link.download = selectedEvent.govFiles.programme?.originalName || 'program-flow';
-                                                    link.click();
-                                                  }}
-                                                >
-                                                  <Download className="h-4 w-4" />
-                                                </Button>
-                                              </div>
-                                            </div>
-                                          )}
-                                        </div>
-                                      </div>
-                                    )}
-
-                                    {/* Empty State */}
-                                    {(!selectedEvent.attachments || selectedEvent.attachments.length === 0) && 
-                                     (!selectedEvent.govFiles || (!selectedEvent.govFiles.brieferTemplate && !selectedEvent.govFiles.programme)) && (
-                                      <div className="flex flex-col items-center justify-center py-8 text-center">
-                                        <FileText className="h-12 w-12 text-muted-foreground/50 mb-2" />
-                                        <p className="text-sm text-muted-foreground">No files uploaded</p>
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-                              </DialogContent>
-                            </Dialog>
+                                  )}
+                                </DialogContent>
+                              </Dialog>
                             </div>
                           </TableCell>
                         </TableRow>
@@ -1919,19 +1946,19 @@ const AllEventsPage: React.FC = () => {
                 </div>
               </div>
             </div>
-            
+
             {/* Pagination - Right Aligned */}
             {totalPages > 1 && (
               <div className="flex justify-end">
                 <Pagination>
                   <PaginationContent>
                     <PaginationItem>
-                      <PaginationPrevious 
+                      <PaginationPrevious
                         onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                         className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
                       />
                     </PaginationItem>
-                    
+
                     {[...Array(totalPages)].map((_, index) => {
                       const pageNumber = index + 1;
                       // Show first page, last page, current page, and pages around current
@@ -1963,9 +1990,9 @@ const AllEventsPage: React.FC = () => {
                       }
                       return null;
                     })}
-                    
+
                     <PaginationItem>
-                      <PaginationNext 
+                      <PaginationNext
                         onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                         className={currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
                       />
@@ -1990,7 +2017,7 @@ const AllEventsPage: React.FC = () => {
               Export is optimized to include approved events only when generating all, with optional date range.
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="space-y-4">
             <div className="text-sm text-gray-600">
               <p>Selected Events: <span className="font-medium">{selectedEvents.length}</span></p>
@@ -2032,7 +2059,7 @@ const AllEventsPage: React.FC = () => {
                 If no range is selected, it will export all approved dates.
               </div>
             </div>
-            
+
             <div className="flex flex-col gap-3">
               <Button
                 onClick={() => handleGeneratePdf(false)}
@@ -2043,7 +2070,7 @@ const AllEventsPage: React.FC = () => {
                 <CheckSquare className="w-4 h-4" />
                 Generate Selected Events ({selectedEvents.length})
               </Button>
-              
+
               <Button
                 onClick={() => handleGeneratePdf(true)}
                 className="gap-2 justify-start"
@@ -2086,7 +2113,7 @@ const AllEventsPage: React.FC = () => {
               This is exactly how your PDF will look when downloaded
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="flex-1 overflow-hidden bg-gray-100 rounded-lg">
             {pdfPreviewUrl ? (
               <iframe
@@ -2104,7 +2131,7 @@ const AllEventsPage: React.FC = () => {
               </div>
             )}
           </div>
-          
+
           <div className="flex justify-end gap-2 mt-4">
             <Button variant="outline" onClick={() => setShowPdfPreview(false)}>
               Close Preview
@@ -2135,7 +2162,7 @@ const AllEventsPage: React.FC = () => {
               )}
             </DialogDescription>
           </DialogHeader>
-          
+
           {selectedEvent && (
             <div className="space-y-4">
               {/* Requirements List */}
@@ -2155,7 +2182,7 @@ const AllEventsPage: React.FC = () => {
                         }
                       });
                     }
-                    
+
                     if (allRequirements.length === 0) {
                       return (
                         <div className="text-center py-12">
@@ -2163,10 +2190,10 @@ const AllEventsPage: React.FC = () => {
                         </div>
                       );
                     }
-                    
+
                     const confirmedCount = allRequirements.filter(req => req.status === 'confirmed').length;
                     const pendingCount = allRequirements.filter(req => req.status === 'pending' || !req.status).length;
-                    
+
                     return (
                       <div className="space-y-4">
                         {/* Summary */}
@@ -2179,7 +2206,7 @@ const AllEventsPage: React.FC = () => {
                             Pending: {pendingCount}
                           </Badge>
                         </div>
-                        
+
                         {/* Requirements List - Grid layout for 3+ requirements */}
                         <div className={allRequirements.length >= 3 ? "grid grid-cols-3 gap-2" : "space-y-2"}>
                           {allRequirements.map((req, index) => (
@@ -2190,13 +2217,12 @@ const AllEventsPage: React.FC = () => {
                                     <Badge variant="secondary" className="text-xs w-fit">
                                       {req.department}
                                     </Badge>
-                                    <Badge 
+                                    <Badge
                                       variant={req.status === 'confirmed' ? 'default' : 'outline'}
-                                      className={`text-xs w-fit ${
-                                        req.status === 'confirmed' 
-                                          ? 'bg-green-100 text-green-800 border-green-200' 
+                                      className={`text-xs w-fit ${req.status === 'confirmed'
+                                          ? 'bg-green-100 text-green-800 border-green-200'
                                           : 'bg-orange-100 text-orange-800 border-orange-200'
-                                      }`}
+                                        }`}
                                     >
                                       {req.status === 'confirmed' ? 'Confirmed' : 'Pending'}
                                     </Badge>
@@ -2215,7 +2241,7 @@ const AllEventsPage: React.FC = () => {
                   })()}
                 </div>
               </div>
-              
+
               {/* Action Buttons */}
               <div className="grid grid-cols-3 gap-2 pt-2 border-t">
                 <Button
@@ -2230,7 +2256,7 @@ const AllEventsPage: React.FC = () => {
                 >
                   Reject Event
                 </Button>
-                
+
                 {/* Cancel Dropdown with Reasons */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -2295,7 +2321,7 @@ const AllEventsPage: React.FC = () => {
               Please provide a reason for rejecting this event. This will be sent to the requestor.
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Rejection Reason *</label>
@@ -2335,7 +2361,7 @@ const AllEventsPage: React.FC = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>Approve Event?</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to approve the event <strong>"{selectedEvent?.eventTitle}"</strong>? 
+              Are you sure you want to approve the event <strong>"{selectedEvent?.eventTitle}"</strong>?
               This action will notify the event creator and all tagged departments.
             </AlertDialogDescription>
           </AlertDialogHeader>
