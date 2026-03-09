@@ -3109,10 +3109,20 @@ const RequestEventPage: React.FC = () => {
 
       const dateRange = buildDateRange(autoSuggestStartDate, autoSuggestEndDate);
 
+      // Venue max-capacity overrides — for venues whose physical capacity exceeds
+      // the default equipment quantity in requirements (e.g. BPC has ~750 default
+      // chairs on-hand but can physically seat up to 5 000 pax).
+      const VENUE_MAX_CAPACITY: Record<string, number> = {
+        "Bataan People's Center": 5000,
+      };
+
       // Helper: extract TOTAL chair count for a location by summing ALL
       // chair-type requirements (e.g. Monoblock chairs + Tiffany chairs + Chairs).
-      // Returns { total, breakdown } — breakdown is shown as a note on the venue card.
-      const extractChairs = (locName: string): { total: number; breakdown: string } => {
+      // Returns { total, capacity, breakdown }
+      //   total    — actual default chairs from requirements doc
+      //   capacity — max pax the venue can hold (may be larger than total due to override)
+      //   breakdown — human-readable note shown on the venue card
+      const extractChairs = (locName: string): { total: number; capacity: number; breakdown: string } => {
         const exactDoc = allLocReqs.find((doc: any) => {
           if (doc.locationNames && Array.isArray(doc.locationNames)) {
             return doc.locationNames.length === 1 && doc.locationNames[0] === locName;
@@ -3126,33 +3136,153 @@ const RequestEventPage: React.FC = () => {
           return false;
         });
         const candidates = [...(exactDoc ? [exactDoc] : []), ...groupDocs];
-        if (candidates.length === 0) return { total: 0, breakdown: '' };
+        const maxCapacityOverride = VENUE_MAX_CAPACITY[locName];
+        if (candidates.length === 0) {
+          return { total: maxCapacityOverride ?? 0, capacity: maxCapacityOverride ?? 0, breakdown: '' };
+        }
         const best = candidates.reduce((prev, cur) => {
           const pLen = prev.locationNames?.length ?? 1;
           const cLen = cur.locationNames?.length ?? 1;
           return cLen < pLen ? cur : prev;
         });
-        if (!Array.isArray(best.requirements)) return { total: 0, breakdown: '' };
-        // Sum ALL requirements whose name contains "chair" (Monoblock, Tiffany, plain Chairs…)
+        if (!Array.isArray(best.requirements)) {
+          return { total: maxCapacityOverride ?? 0, capacity: maxCapacityOverride ?? 0, breakdown: '' };
+        }
+        // Sum ALL requirements whose name contains "chair" (Monoblock, Tiffany, plain Chairs...)
         const chairReqs = best.requirements.filter(
           (r: any) => typeof r.name === 'string' && /chair/i.test(r.name)
         );
-        if (chairReqs.length === 0) return { total: 0, breakdown: '' };
+        if (chairReqs.length === 0) {
+          return { total: maxCapacityOverride ?? 0, capacity: maxCapacityOverride ?? 0, breakdown: '' };
+        }
         const total = chairReqs.reduce((sum: number, r: any) => sum + (Number(r.quantity) || 0), 0);
+        // capacity = max of actual chairs OR the venue override (e.g. BPC can seat 5000 even if only 750 chairs are default)
+        const capacity = maxCapacityOverride ? Math.max(total, maxCapacityOverride) : total;
         // Show breakdown only when there are multiple chair types (e.g. Pavilion)
         const breakdown = chairReqs.length > 1
           ? chairReqs.map((r: any) => `${Number(r.quantity)} ${r.name}`).join(' + ')
           : '';
-        return { total, breakdown };
+        return { total, capacity, breakdown };
       };
+
+      // ── Shared Pavilion pool ───────────────────────────────────────────────
+      // ALL Pavilion locations (Kalayaan Entire + all Kagitingan sections) draw
+      // from a single shared inventory pool of chairs/tables.
+      // Find the overall Pavilion requirements doc — it should cover all Pavilion
+      // location names (or at minimum the Kagitingan sections + Kalayaan).
+      const ALL_PAVILION_LOCATIONS = [
+        'Pavilion - Kagitingan Hall - Section A',
+        'Pavilion - Kagitingan Hall - Section B',
+        'Pavilion - Kagitingan Hall - Section C',
+        'Pavilion - Kalayaan Ballroom',
+      ];
+
+      const pavilionOverallDoc = allLocReqs.find((doc: any) => {
+        if (!doc.locationNames || !Array.isArray(doc.locationNames)) return false;
+        // A doc that covers ALL Pavilion locations (the master pool doc)
+        return ALL_PAVILION_LOCATIONS.every((l) => doc.locationNames.includes(l));
+      }) || allLocReqs.find((doc: any) => {
+        // Fallback: a doc that covers at least the 3 Kagitingan sections
+        if (!doc.locationNames || !Array.isArray(doc.locationNames)) return false;
+        const KAGITINGAN_SECTIONS = [
+          'Pavilion - Kagitingan Hall - Section A',
+          'Pavilion - Kagitingan Hall - Section B',
+          'Pavilion - Kagitingan Hall - Section C',
+        ];
+        return KAGITINGAN_SECTIONS.every((s) => doc.locationNames.includes(s));
+      });
+
+      // Total shared chair pool
+      const pavilionPoolChairs = (() => {
+        if (!pavilionOverallDoc || !Array.isArray(pavilionOverallDoc.requirements)) return 0;
+        const chairReqs = pavilionOverallDoc.requirements.filter(
+          (r: any) => typeof r.name === 'string' && /chair/i.test(r.name)
+        );
+        return chairReqs.reduce((sum: number, r: any) => sum + (Number(r.quantity) || 0), 0);
+      })();
+
+      // How many chairs are already consumed by ANY approved/submitted Pavilion booking on a given day
+      const getPavilionChairsBookedOnDate = (dayStr: string): number => {
+        let booked = 0;
+        allEvents.forEach((ev: any) => {
+          if (ev.status !== 'approved' && ev.status !== 'submitted') return;
+          const evLocs: string[] =
+            ev.locations && Array.isArray(ev.locations) && ev.locations.length > 0
+              ? ev.locations : [ev.location || ''];
+          // Any Pavilion location counts against the shared pool
+          const isPavilion = evLocs.some((l: string) => /Pavilion/i.test(l));
+          if (!isPavilion) return;
+
+          const mainDay = ev.startDate ? new Date(ev.startDate).toDateString() : '';
+          const onThisDay =
+            mainDay === dayStr ||
+            (Array.isArray(ev.dateTimeSlots) &&
+              ev.dateTimeSlots.some(
+                (s: any) => s.startDate && new Date(s.startDate).toDateString() === dayStr
+              ));
+          if (!onThisDay) return;
+
+          if (ev.taggedDepartments && ev.departmentRequirements) {
+            ev.taggedDepartments.forEach((dept: string) => {
+              const reqs = ev.departmentRequirements[dept];
+              if (!Array.isArray(reqs)) return;
+              reqs.forEach((req: any) => {
+                if (req.selected && typeof req.name === 'string' && /chair/i.test(req.name)) {
+                  booked += Number(req.quantity) || 0;
+                }
+              });
+            });
+          }
+        });
+        return booked;
+      };
+
+      // Remaining shared pool across the full date range (worst day = minimum)
+      const getPavilionRemainingChairs = (): number => {
+        if (pavilionPoolChairs <= 0) return 0;
+        if (dateRange.length === 0) return pavilionPoolChairs;
+        const perDay = dateRange.map((d) => {
+          const booked = getPavilionChairsBookedOnDate(d.toDateString());
+          return Math.max(0, pavilionPoolChairs - booked);
+        });
+        return Math.min(...perDay);
+      };
+
+      const pavilionRemainingChairs = getPavilionRemainingChairs();
+      // ──────────────────────────────────────────────────────────────────────
 
       const results: AutoSuggestedLocation[] = [];
 
-      // 1) All PGB non-conference locations
+      // 1) All PGB non-conference, non-Kagitingan-section locations.
+      // For Pavilion locations: use the shared remaining pool instead of the raw default count.
+      // Skip Kagitingan sections (handled in step 3) and Kalayaan sections A/B/C (Entire-only).
       locationData.filter((l) => !l.isCustom).forEach((loc) => {
         if (/4th Flr\. Conference Room/.test(loc.name)) return;
-        if (/Pavilion.*Section [ABC]$/.test(loc.name)) return;
-        const { total: chairs, breakdown } = extractChairs(loc.name);
+        if (/Pavilion.*Kagitingan.*Section [ABC]$/i.test(loc.name)) return;
+        if (/Pavilion.*Kalayaan.*Section [ABC]$/i.test(loc.name)) return;
+
+        const isPavilionLoc = /Pavilion/i.test(loc.name);
+
+        let chairs: number;
+        let breakdown: string;
+        if (isPavilionLoc) {
+          // Use shared remaining pool for all Pavilion locations (Kalayaan Entire, Kagitingan Entire, etc.)
+          chairs = pavilionRemainingChairs;
+          breakdown = pavilionRemainingChairs < pavilionPoolChairs
+            ? `${pavilionRemainingChairs} of ${pavilionPoolChairs} chairs available (shared pool)`
+            : '';
+        } else {
+          const extracted = extractChairs(loc.name);
+          // Use capacity (may be higher than total due to venue override e.g. BPC = 5000)
+          // for filtering, but show total chairs + a capacity note on the card.
+          chairs = extracted.capacity;
+          breakdown = extracted.capacity > extracted.total && extracted.total > 0
+            ? `${extracted.total} default chairs · up to ${extracted.capacity.toLocaleString()} pax capacity`
+            : extracted.capacity > extracted.total && extracted.total === 0
+              ? `up to ${extracted.capacity.toLocaleString()} pax capacity`
+              : extracted.breakdown;
+        }
+
         if (chairs <= 0) return;
         if (chairs < count) return;
         const bookedOnDates = getBookedDatesForLocation(
@@ -3201,6 +3331,58 @@ const RequestEventPage: React.FC = () => {
         }
       }
 
+      // 3) Pavilion - Kagitingan Hall sections (A, B, C — individually bookable)
+      // Chairs come from the SAME shared Pavilion pool as Kalayaan — already computed
+      // above as `pavilionRemainingChairs`. We just need section-level booking checks
+      // (to mark a specific section as "Booked" if the slot is taken) and filter by
+      // the remaining shared pool vs. participant count.
+      // Kalayaan has no sections — it is Entire-only and already handled in step 1.
+      if (pavilionPoolChairs > 0) {
+        const KAGITINGAN_SECTIONS = [
+          'Pavilion - Kagitingan Hall - Section A',
+          'Pavilion - Kagitingan Hall - Section B',
+          'Pavilion - Kagitingan Hall - Section C',
+        ];
+
+        // Only show Kagitingan sections if the shared remaining pool meets the count
+        if (pavilionRemainingChairs >= count) {
+          for (let mask = 1; mask < (1 << KAGITINGAN_SECTIONS.length); mask++) {
+            const combo: string[] = [];
+            KAGITINGAN_SECTIONS.forEach((s, i) => { if (mask & (1 << i)) combo.push(s); });
+
+            // Section booking check: is any section in this combo already time-blocked?
+            const allBookedDates: string[] = [];
+            combo.forEach((sec) => {
+              getBookedDatesForLocation(sec, dateRange, allEvents, autoSuggestStartTime, autoSuggestEndTime)
+                .forEach((d) => { if (!allBookedDates.includes(d)) allBookedDates.push(d); });
+            });
+
+            const isAllSections = combo.length === KAGITINGAN_SECTIONS.length;
+            const label = isAllSections
+              ? 'Pavilion - Kagitingan Hall (Entire)'
+              : combo.length === 1
+                ? combo[0]
+                : combo.map((s) => s.replace('Pavilion - Kagitingan Hall - ', '')).join(' + ') + ' (Kagitingan Hall)';
+
+            if (results.some((r) => r.name === label)) continue;
+
+            results.push({
+              name: label,
+              chairs: pavilionRemainingChairs,
+              isMulti: combo.length > 1,
+              rooms: combo,
+              note: combo.length > 1
+                ? `${combo.map((s) => s.replace('Pavilion - Kagitingan Hall - ', '')).join(' + ')} · ${pavilionRemainingChairs} chairs available (shared pool)`
+                : pavilionRemainingChairs < pavilionPoolChairs
+                  ? `${pavilionRemainingChairs} of ${pavilionPoolChairs} chairs available (shared pool)`
+                  : undefined,
+              isBooked: allBookedDates.length > 0,
+              bookedOnDates: allBookedDates,
+            });
+          }
+        }
+      }
+
       if (results.length === 0) {
         setShowSuggestions(true);
         setSuggestedLocations([]);
@@ -3221,17 +3403,28 @@ const RequestEventPage: React.FC = () => {
     }
   };
 
-  // Apply chosen suggestion → pre-fills location + schedule → opens Schedule Modal
+  // Apply chosen suggestion -> pre-fills location + schedule -> opens Schedule Modal
   const applyAutoSuggestion = async (sug: AutoSuggestedLocation) => {
     if (!formData.eventType) { setShowEventTypeAlert(true); return; }
     setSelectedSuggestion(sug.name);
     setShowAutoSuggestModal(false);
 
-    const primaryLocation = sug.isMulti && sug.rooms.length === 3
-      ? '4th Flr. Conference Room (Entire)' : sug.rooms[0];
+    const isKagitinganCombo = sug.rooms.every((r) => /Pavilion.*Kagitingan.*Section [ABC]$/i.test(r));
+
+    let primaryLocation: string;
+    if (isKagitinganCombo) {
+      // All three sections -> use Entire; otherwise first section directly
+      primaryLocation = sug.rooms.length === 3
+        ? 'Pavilion - Kagitingan Hall (Entire)'
+        : sug.rooms[0];
+    } else {
+      primaryLocation = sug.isMulti && sug.rooms.length === 3
+        ? '4th Flr. Conference Room (Entire)' : sug.rooms[0];
+    }
 
     await handleLocationChange(primaryLocation);
 
+    // For partial combos (2 rooms/sections) override the locations array
     if (sug.isMulti && sug.rooms.length === 2) {
       setTimeout(() => {
         handleInputChange('locations', sug.rooms);
@@ -3619,7 +3812,7 @@ const RequestEventPage: React.FC = () => {
                     )}
 
                     {/* ── Manual / Auto Suggest toggle — below the dropdown ── */}
-                    <div className="flex items-center justify-between mt-2">
+                    <div className="flex flex-wrap items-center gap-2 mt-2">
                       <RadioGroup
                         value={locationMode}
                         onValueChange={(v) => {
@@ -3634,7 +3827,7 @@ const RequestEventPage: React.FC = () => {
                             setSelectedSuggestion(null);
                           }
                         }}
-                        className="flex items-center"
+                        className="flex items-center shrink-0"
                       >
                         <div className="flex items-center border rounded-lg overflow-hidden">
                           <Label
@@ -3665,18 +3858,18 @@ const RequestEventPage: React.FC = () => {
 
                       {/* Auto-suggest selected badge */}
                       {locationMode === 'auto-suggest' && selectedSuggestion && (
-                        <div className="flex items-center gap-1.5">
-                          <Badge className="bg-violet-100 text-violet-800 border border-violet-200 text-xs font-normal">
-                            <Sparkles className="w-2.5 h-2.5 mr-1" />
-                            <span className="max-w-[140px] truncate">{selectedSuggestion}</span>
-                          </Badge>
-                          <button
-                            type="button"
-                            onClick={() => setShowAutoSuggestModal(true)}
-                            className="text-[11px] text-violet-600 hover:underline whitespace-nowrap"
-                          >
-                            Change
-                          </button>
+                        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                          <div className="flex items-center gap-1 min-w-0 flex-1 bg-violet-50 border border-violet-200 rounded-lg px-2.5 py-1">
+                            <Sparkles className="w-3 h-3 text-violet-500 shrink-0" />
+                            <span className="text-xs text-violet-800 font-medium truncate min-w-0 flex-1">{selectedSuggestion}</span>
+                            <button
+                              type="button"
+                              onClick={() => setShowAutoSuggestModal(true)}
+                              className="shrink-0 text-[11px] font-medium text-violet-600 hover:text-violet-800 hover:underline whitespace-nowrap ml-1"
+                            >
+                              Change
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>
