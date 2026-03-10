@@ -3563,7 +3563,11 @@ const RequestEventPage: React.FC = () => {
                     <div className="flex border rounded-lg overflow-hidden">
                       <button
                         type="button"
-                        onClick={() => setFormData(prev => ({ ...prev, eventType: 'simple-meeting' }))}
+                        onClick={() => {
+                          setFormData(prev => ({ ...prev, eventType: 'simple-meeting' }));
+                          setLocationMode('auto-suggest');
+                          setShowAutoSuggestModal(true);
+                        }}
                         className={`px-3 py-1.5 text-xs font-medium transition-colors ${formData.eventType === 'simple-meeting'
                           ? 'bg-green-600 text-white'
                           : 'bg-white text-gray-700 hover:bg-gray-50'
@@ -3573,7 +3577,11 @@ const RequestEventPage: React.FC = () => {
                       </button>
                       <button
                         type="button"
-                        onClick={() => setFormData(prev => ({ ...prev, eventType: 'simple' }))}
+                        onClick={() => {
+                          setFormData(prev => ({ ...prev, eventType: 'simple' }));
+                          setLocationMode('auto-suggest');
+                          setShowAutoSuggestModal(true);
+                        }}
                         className={`px-3 py-1.5 text-xs font-medium transition-colors border-l ${formData.eventType === 'simple'
                           ? 'bg-blue-600 text-white'
                           : 'bg-white text-gray-700 hover:bg-gray-50'
@@ -3583,7 +3591,11 @@ const RequestEventPage: React.FC = () => {
                       </button>
                       <button
                         type="button"
-                        onClick={() => setFormData(prev => ({ ...prev, eventType: 'complex' }))}
+                        onClick={() => {
+                          setFormData(prev => ({ ...prev, eventType: 'complex' }));
+                          setLocationMode('auto-suggest');
+                          setShowAutoSuggestModal(true);
+                        }}
                         className={`px-3 py-1.5 text-xs font-medium transition-colors border-l ${formData.eventType === 'complex'
                           ? 'bg-purple-600 text-white'
                           : 'bg-white text-gray-700 hover:bg-gray-50'
@@ -3817,64 +3829,65 @@ const RequestEventPage: React.FC = () => {
                     )}
 
                     {/* ── Manual / Auto Suggest toggle — below the dropdown ── */}
-                    <div className="flex flex-wrap items-center gap-2 mt-2">
-                      <RadioGroup
-                        value={locationMode}
-                        onValueChange={(v) => {
-                          if (v === 'auto-suggest') {
-                            if (!checkEventTypeSelected()) return;
-                            setLocationMode('auto-suggest');
-                            setShowAutoSuggestModal(true);
-                          } else {
+                    <div className="mt-2 space-y-2">
+                      <div className="flex items-center gap-2">
+                        {/* Manual button */}
+                        <button
+                          type="button"
+                          onClick={() => {
                             setLocationMode('manual');
                             setShowSuggestions(false);
                             setSuggestedLocations([]);
                             setSelectedSuggestion(null);
-                          }
-                        }}
-                        className="flex items-center shrink-0"
-                      >
-                        <div className="flex items-center border rounded-lg overflow-hidden">
-                          <Label
-                            htmlFor="lmode-manual"
-                            className={`flex items-center gap-1.5 cursor-pointer text-xs px-3 py-1.5 transition-colors select-none ${
-                              locationMode === 'manual'
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-white text-gray-600 hover:bg-gray-50'
-                            }`}
-                          >
-                            <RadioGroupItem value="manual" id="lmode-manual" className="hidden" />
-                            Manual
-                          </Label>
-                          <Label
-                            htmlFor="lmode-auto"
-                            className={`flex items-center gap-1.5 cursor-pointer text-xs px-3 py-1.5 border-l transition-colors select-none ${
-                              locationMode === 'auto-suggest'
-                                ? 'bg-violet-600 text-white'
-                                : 'bg-white text-gray-600 hover:bg-gray-50'
-                            }`}
-                          >
-                            <RadioGroupItem value="auto-suggest" id="lmode-auto" className="hidden" />
-                            <Wand2 className="w-3 h-3" />
-                            Auto Suggest
-                          </Label>
+                          }}
+                          className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-all select-none font-medium ${
+                            locationMode === 'manual'
+                              ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                              : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300 hover:text-gray-700'
+                          }`}
+                        >
+                          <MapPin className="w-3 h-3" />
+                          Manual
+                        </button>
+
+                        {/* OR divider */}
+                        <div className="flex items-center gap-1.5">
+                          <div className="h-px w-4 bg-gray-200" />
+                          <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">or</span>
+                          <div className="h-px w-4 bg-gray-200" />
                         </div>
-                      </RadioGroup>
+
+                        {/* Auto Suggest button */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!checkEventTypeSelected()) return;
+                            setLocationMode('auto-suggest');
+                            setShowAutoSuggestModal(true);
+                          }}
+                          className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-all select-none font-medium ${
+                            locationMode === 'auto-suggest'
+                              ? 'bg-violet-600 text-white border-violet-600 shadow-sm'
+                              : 'bg-white text-gray-500 border-gray-200 hover:border-violet-300 hover:text-violet-600'
+                          }`}
+                        >
+                          <Wand2 className="w-3 h-3" />
+                          Auto Suggest
+                        </button>
+                      </div>
 
                       {/* Auto-suggest selected badge */}
                       {locationMode === 'auto-suggest' && selectedSuggestion && (
-                        <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                          <div className="flex items-center gap-1 min-w-0 flex-1 bg-violet-50 border border-violet-200 rounded-lg px-2.5 py-1">
-                            <Sparkles className="w-3 h-3 text-violet-500 shrink-0" />
-                            <span className="text-xs text-violet-800 font-medium truncate min-w-0 flex-1">{selectedSuggestion}</span>
-                            <button
-                              type="button"
-                              onClick={() => setShowAutoSuggestModal(true)}
-                              className="shrink-0 text-[11px] font-medium text-violet-600 hover:text-violet-800 hover:underline whitespace-nowrap ml-1"
-                            >
-                              Change
-                            </button>
-                          </div>
+                        <div className="flex items-center gap-1 bg-violet-50 border border-violet-200 rounded-lg px-2.5 py-1.5 w-fit max-w-full">
+                          <Sparkles className="w-3 h-3 text-violet-500 shrink-0" />
+                          <span className="text-xs text-violet-800 font-medium truncate">{selectedSuggestion}</span>
+                          <button
+                            type="button"
+                            onClick={() => setShowAutoSuggestModal(true)}
+                            className="shrink-0 text-[11px] font-medium text-violet-600 hover:text-violet-800 hover:underline whitespace-nowrap ml-1"
+                          >
+                            Change
+                          </button>
                         </div>
                       )}
                     </div>
