@@ -3429,11 +3429,32 @@ const RequestEventPage: React.FC = () => {
 
     await handleLocationChange(primaryLocation);
 
-    // For partial combos (2 rooms/sections) override the locations array
+    // For partial combos (2 rooms/sections) override the locations array and fetch grouped requirements
     if (sug.isMulti && sug.rooms.length === 2) {
-      setTimeout(() => {
+      setTimeout(async () => {
         handleInputChange('locations', sug.rooms);
         handleInputChange('multipleLocations', true);
+        try {
+          const token = localStorage.getItem('authToken');
+          if (token) {
+            const response = await fetch(`${API_BASE_URL}/location-requirements`, {
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (response.ok) {
+              const allRequirements = await response.json();
+              const groupedRequirement = allRequirements.find((req: any) => {
+                if (!req.locationNames || !Array.isArray(req.locationNames)) return false;
+                return sug.rooms.every(loc => req.locationNames.includes(loc));
+              });
+              if (groupedRequirement && groupedRequirement.requirements.length > 0) {
+                setLocationRequirements(groupedRequirement.requirements);
+                setSelectedLocation(sug.rooms.join(' + '));
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Error fetching combined requirements for auto-suggest:', error);
+        }
       }, 50);
     }
 
