@@ -59,6 +59,13 @@ export interface Event {
   departmentRequirements: any;
   status: 'draft' | 'submitted' | 'approved' | 'rejected' | 'completed' | 'cancelled';
   reason?: string;
+  cancelledBy?: {
+    userId?: string;
+    name: string;
+    email: string;
+    role: string;
+  };
+  cancelledAt?: string;
   submittedAt?: string;
 
   bacApprovalStatus?: 'pending' | 'approved' | 'rejected';
@@ -286,7 +293,16 @@ export const useAllEventsStore = create<AllEventsState>()(
       // Getters
       getFilteredEvents: () => {
         const state = get();
-        let filtered = [...state.events];
+        let filtered = state.events.filter(event => {
+          // Hide BAC-pending events from the Admin views
+          const isBACLocation = event.location === '5th Flr. Training Room 1 (BAC)';
+          const isPendingBAC = !event.bacApprovalStatus || event.bacApprovalStatus === 'pending';
+          
+          if (isBACLocation && isPendingBAC) {
+            return false;
+          }
+          return true;
+        });
 
         const hasNoRequirements = (event: Event) => {
           if (!event.departmentRequirements) return true;

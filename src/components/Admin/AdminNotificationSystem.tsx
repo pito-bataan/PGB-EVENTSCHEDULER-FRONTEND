@@ -196,6 +196,14 @@ export default function AdminNotificationSystem() {
           
           // Show push notification for new submitted events
           if (data.status?.toLowerCase() === 'submitted') {
+            const isBACLocation = data.location === '5th Flr. Training Room 1 (BAC)';
+            const isPendingBAC = !data.bacApprovalStatus || data.bacApprovalStatus === 'pending';
+            
+            if (isBACLocation && isPendingBAC) {
+              console.log('⏭️ Skipping push notification for Admin because event is waiting for BAC approval');
+              return;
+            }
+
             const eventTitle = data.title || data.eventTitle || 'New Event';
             const requestor = data.requestor || data.createdBy || 'Unknown';
             const department = data.requestorDepartment || data.department || data.departmentName || 'Unknown Department';

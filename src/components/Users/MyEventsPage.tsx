@@ -10738,7 +10738,7 @@ const MyEventsPage: React.FC = () => {
 
             <DialogDescription>
 
-              Update event information (for submitted events only)
+              Update event information and upload additional files
 
             </DialogDescription>
 

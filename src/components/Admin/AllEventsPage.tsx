@@ -1386,8 +1386,28 @@ const AllEventsPage: React.FC = () => {
                                 </HoverCardTrigger>
                                 <HoverCardContent className="w-80" side="right" align="start" sideOffset={5}>
                                   <div className="space-y-2">
-                                    <h4 className="text-[12px] font-semibold text-slate-900">Cancellation Reason</h4>
-                                    <p className="text-[11px] text-slate-700">{event.reason || 'No reason provided.'}</p>
+                                    <h4 className="text-[12px] font-semibold text-slate-900">Cancellation Details</h4>
+                                    <p className="text-[11px] text-slate-700">
+                                      <span className="font-medium">Reason: </span>
+                                      {event.reason || 'No reason provided.'}
+                                    </p>
+                                    {event.cancelledBy && (
+                                      <p className="text-[11px] text-slate-700">
+                                        <span className="font-medium">Cancelled by: </span>
+                                        {event.cancelledBy.name}
+                                        {event.cancelledBy.role && (
+                                          <span className="ml-1 text-[10px] text-slate-500 bg-slate-100 rounded px-1 py-0.5">
+                                            {event.cancelledBy.role}
+                                          </span>
+                                        )}
+                                      </p>
+                                    )}
+                                    {event.cancelledAt && (
+                                      <p className="text-[11px] text-slate-500">
+                                        <span className="font-medium">Date: </span>
+                                        {new Date(event.cancelledAt).toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                      </p>
+                                    )}
                                   </div>
                                 </HoverCardContent>
                               </HoverCard>
@@ -1724,7 +1744,45 @@ const AllEventsPage: React.FC = () => {
                                         </div>
                                       )}
 
-                                      {/* View Description Button */}
+                                       {/* Cancellation Audit — only shown for cancelled events */}
+                                       {selectedEvent.status === 'cancelled' && (
+                                         <div className="rounded-xl border border-red-100 bg-red-50/60 px-4 py-4">
+                                           <label className="text-xs font-semibold text-red-600 uppercase tracking-wide flex items-center gap-2">
+                                             <XCircle className="w-3.5 h-3.5" />
+                                             Cancellation Audit
+                                           </label>
+                                           <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+                                             <div>
+                                               <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1">Reason</p>
+                                               <p className="text-sm text-gray-900">{selectedEvent.reason || 'No reason provided.'}</p>
+                                             </div>
+                                             <div>
+                                               <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1">Cancelled By</p>
+                                               {selectedEvent.cancelledBy ? (
+                                                 <div>
+                                                   <p className="text-sm font-semibold text-gray-900">{selectedEvent.cancelledBy.name}</p>
+                                                   <p className="text-xs text-gray-500">{selectedEvent.cancelledBy.email}</p>
+                                                   <Badge variant="outline" className="text-[10px] mt-1 capitalize border-red-200 text-red-700 bg-white">
+                                                     {selectedEvent.cancelledBy.role}
+                                                   </Badge>
+                                                 </div>
+                                               ) : (
+                                                 <p className="text-sm text-gray-400 italic">Not recorded</p>
+                                               )}
+                                             </div>
+                                             <div>
+                                               <p className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1">Date &amp; Time Cancelled</p>
+                                               <p className="text-sm text-gray-900">
+                                                 {selectedEvent.cancelledAt
+                                                   ? new Date(selectedEvent.cancelledAt).toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                                                   : 'Not recorded'}
+                                               </p>
+                                             </div>
+                                           </div>
+                                         </div>
+                                       )}
+
+                                       {/* View Description Button */}
                                       <div className="pt-4 border-t border-gray-100 mt-2">
                                         <Button
                                           variant="outline"
