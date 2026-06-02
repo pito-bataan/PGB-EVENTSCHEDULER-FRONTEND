@@ -3,8 +3,11 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import CustomCalendar, { type CalendarEvent } from '@/components/ui/custom-calendar';
-import { MapPin, Calendar as CalendarIcon, RefreshCw } from 'lucide-react';
+import { MapPin, Calendar as CalendarIcon, RefreshCw, Sparkles, Users, Check, Ban, Building2 } from 'lucide-react';
 import axios from 'axios';
 import { toast } from 'sonner';
 
@@ -45,6 +48,16 @@ type EventRecord = {
   status?: string;
 };
 
+interface AutoSuggestedLocation {
+  name: string;
+  chairs: number;
+  isMulti: boolean;
+  rooms: string[];
+  note?: string;
+  isBooked: boolean;
+  bookedOnDates: string[];
+}
+
 const LocationAvailabilityCalendarPage: React.FC = () => {
   const [locations, setLocations] = useState<LocationItem[]>([]);
   const [selectedLocation, setSelectedLocation] = useState<string>('');
@@ -52,6 +65,14 @@ const LocationAvailabilityCalendarPage: React.FC = () => {
   const [bookedDates, setBookedDates] = useState<Map<string, EventRecord[]>>(new Map());
   const [loadingLocations, setLoadingLocations] = useState(false);
   const [loadingCalendar, setLoadingCalendar] = useState(false);
+
+  // Auto-suggest states
+  const [showAutoSuggestModal, setShowAutoSuggestModal] = useState(false);
+  const [autoSuggestParticipants, setAutoSuggestParticipants] = useState('');
+  const [suggestedLocations, setSuggestedLocations] = useState<AutoSuggestedLocation[]>([]);
+  const [loadingAutoSuggest, setLoadingAutoSuggest] = useState(false);
+  const [selectedSuggestion, setSelectedSuggestion] = useState<string | null>(null);
+  const [selectedComboRooms, setSelectedComboRooms] = useState<string[]>([]); // Track multi-room combo
 
   const getAuthHeaders = () => {
     const token = localStorage.getItem('authToken');
@@ -120,16 +141,13 @@ const LocationAvailabilityCalendarPage: React.FC = () => {
     const isConferenceRoom2 = loc2.includes('Conference Room');
 
     if (isConferenceRoom1 && isConferenceRoom2) {
-      const getBaseRoom = (loc: string) => {
-        const match = loc.match(/(.+Conference Room)\s*\d+/);
-        if (match) return match[1].trim();
-        return loc.trim();
-      };
+      // If either is "(Entire)", they conflict with any conference room
+      const isEntire1 = loc1.includes('(Entire)');
+      const isEntire2 = loc2.includes('(Entire)');
+      if (isEntire1 || isEntire2) return true;
 
-      const baseRoom1 = getBaseRoom(loc1);
-      const baseRoom2 = getBaseRoom(loc2);
-      if (baseRoom1 !== baseRoom2) return false;
-      return true;
+      // Otherwise, check if they're the same specific room
+      return loc1 === loc2;
     }
 
     return false;
@@ -240,9 +258,13 @@ const LocationAvailabilityCalendarPage: React.FC = () => {
           ? evt.locations
           : (evt.location ? [evt.location] : []);
 
+        // If a multi-room combo is selected, check if event conflicts with ANY room in the combo
+        const locationsToCheck = selectedComboRooms.length > 0 ? selectedComboRooms : [locationName];
+        
         const hasLocationConflict = eventLocations.some((eventLoc) =>
-          locationsConflict(eventLoc, locationName)
+          locationsToCheck.some((checkLoc) => locationsConflict(eventLoc, checkLoc))
         );
+        
         if (!hasLocationConflict) return;
 
         const addBooking = (dateStr: string) => {
@@ -352,6 +374,165 @@ const LocationAvailabilityCalendarPage: React.FC = () => {
     [calendarEvents]
   );
 
+  // Auto-suggest: Find suitable venues based on PAX
+  const handleFindSuitableVenues = async () => {
+    const count = parseInt(autoSuggestParticipants);
+    if (!count || count < 1) {
+      toast.error('Please enter a valid number of participants');
+      return;
+    }
+
+    setLoadingAutoSuggest(true);
+    setSuggestedLocations([]);
+    setSelectedSuggestion(null);
+
+    try {
+      const results: AutoSuggestedLocation[] = [];
+
+      // Helper: Extract chair count from location name
+      const extractChairs = (loc: string) => {
+        const match = loc.match(/(\d+)\s*chairs?/i);
+        return match ? parseInt(match[1]) : 0;
+      };
+
+      // 1) Single locations (Atrium, Grand Lobby, etc.)
+      const singleLocations = [
+        'Atrium',
+        'Grand Lobby Entrance',
+        'Main Entrance Lobby',
+        'Main Entrance Leasable Area',
+        'Bataan People\'s Center',
+        'Capitol Quadrangle',
+        '1BOSSCO',
+        'Emiliana Hall'
+      ];
+
+      singleLocations.forEach((loc) => {
+        const chairs = extractChairs(loc);
+        if (chairs >= count) {
+          results.push({
+            name: loc,
+            chairs,
+            isMulti: false,
+            rooms: [loc],
+            isBooked: false,
+            bookedOnDates: []
+          });
+        }
+      });
+
+      // 2) 4th Floor Conference Rooms (combinable)
+      const CR = [
+        '4th Flr. Conference Room 1',
+        '4th Flr. Conference Room 2',
+        '4th Flr. Conference Room 3'
+      ];
+
+      const crChairs: Record<string, number> = {
+        '4th Flr. Conference Room 1': 30,
+        '4th Flr. Conference Room 2': 30,
+        '4th Flr. Conference Room 3': 30
+      };
+
+      // Generate all combinations
+      for (let mask = 1; mask < (1 << CR.length); mask++) {
+        const combo: string[] = [];
+        CR.forEach((r, i) => { if (mask & (1 << i)) combo.push(r); });
+        const totalChairs = combo.reduce((sum, r) => sum + (crChairs[r] || 0), 0);
+        if (totalChairs < count) continue;
+
+        const isAllThree = combo.length === CR.length;
+        const label = isAllThree
+          ? '4th Flr. Conference Room (Entire)'
+          : combo.length === 1 ? combo[0] : combo.join(' + ');
+
+        if (results.some((r) => r.name === label)) continue;
+
+        results.push({
+          name: label,
+          chairs: totalChairs,
+          isMulti: combo.length > 1,
+          rooms: combo,
+          note: combo.length > 1
+            ? `${combo.map((r) => r.replace('4th Flr. Conference Room ', 'CR')).join(' + ')} · ${totalChairs} chairs`
+            : undefined,
+          isBooked: false,
+          bookedOnDates: []
+        });
+      }
+
+      // 3) Pavilion - Kagitingan Hall sections (combinable, shared pool of 450 chairs)
+      const KAGITINGAN_SECTIONS = [
+        'Pavilion - Kagitingan Hall - Section A',
+        'Pavilion - Kagitingan Hall - Section B',
+        'Pavilion - Kagitingan Hall - Section C'
+      ];
+
+      const pavilionPoolChairs = 450;
+
+      for (let mask = 1; mask < (1 << KAGITINGAN_SECTIONS.length); mask++) {
+        const combo: string[] = [];
+        KAGITINGAN_SECTIONS.forEach((s, i) => { if (mask & (1 << i)) combo.push(s); });
+
+        const isAllSections = combo.length === KAGITINGAN_SECTIONS.length;
+        const label = isAllSections
+          ? 'Pavilion - Kagitingan Hall (Entire)'
+          : combo.length === 1
+            ? combo[0]
+            : combo.map((s) => s.replace('Pavilion - Kagitingan Hall - ', '')).join(' + ') + ' (Kagitingan Hall)';
+
+        if (results.some((r) => r.name === label)) continue;
+
+        results.push({
+          name: label,
+          chairs: pavilionPoolChairs,
+          isMulti: combo.length > 1,
+          rooms: combo,
+          note: combo.length > 1
+            ? `${combo.map((s) => s.replace('Pavilion - Kagitingan Hall - ', '')).join(' + ')} · ${pavilionPoolChairs} chairs available (shared pool)`
+            : `${pavilionPoolChairs} chairs available (shared pool)`,
+          isBooked: false,
+          bookedOnDates: []
+        });
+      }
+
+      // Sort by chair count (smallest that fits first)
+      results.sort((a, b) => a.chairs - b.chairs);
+
+      setSuggestedLocations(results);
+    } catch (error) {
+      console.error('Auto suggest error:', error);
+      toast.error('Failed to find suitable venues. Please try again.');
+    } finally {
+      setLoadingAutoSuggest(false);
+    }
+  };
+
+  // Apply chosen suggestion
+  const applyAutoSuggestion = (sug: AutoSuggestedLocation) => {
+    setSelectedSuggestion(sug.name);
+    setShowAutoSuggestModal(false);
+
+    // Track the combo rooms so we can show bookings for ALL rooms in the combo
+    if (sug.isMulti) {
+      setSelectedComboRooms(sug.rooms);
+    } else {
+      setSelectedComboRooms([]);
+    }
+
+    // Select the first room to load its calendar
+    const primaryLocation = sug.rooms[0];
+    setSelectedLocation(primaryLocation);
+
+    if (sug.isMulti) {
+      toast.success(`Viewing availability for: ${sug.name}`, {
+        description: `Showing bookings for all rooms in this combo.`
+      });
+    } else {
+      toast.success(`Viewing availability for: ${sug.name}`);
+    }
+  };
+
   return (
     <div className="p-4 md:p-6 max-w-6xl mx-auto">
       <Card className="shadow-lg">
@@ -368,6 +549,15 @@ const LocationAvailabilityCalendarPage: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-2">
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => setShowAutoSuggestModal(true)}
+                className="bg-violet-600 hover:bg-violet-700 text-white gap-2"
+              >
+                <Sparkles className="w-4 h-4" />
+                Find Suitable Venues
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
@@ -386,7 +576,10 @@ const LocationAvailabilityCalendarPage: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div className="md:col-span-2">
               <label className="text-sm font-medium text-gray-700 mb-2 block">Location</label>
-              <Select value={selectedLocation} onValueChange={setSelectedLocation}>
+              <Select value={selectedLocation} onValueChange={(value) => {
+                setSelectedLocation(value);
+                setSelectedComboRooms([]); // Reset combo when manually selecting
+              }}>
                 <SelectTrigger className="w-full" disabled={loadingLocations || locations.length === 0}>
                   <SelectValue placeholder={loadingLocations ? 'Loading locations...' : 'Select location'} />
                 </SelectTrigger>
@@ -468,6 +661,134 @@ const LocationAvailabilityCalendarPage: React.FC = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* Auto-Suggest Modal */}
+      <Dialog open={showAutoSuggestModal} onOpenChange={setShowAutoSuggestModal}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-violet-600" />
+              Find Suitable Venues
+            </DialogTitle>
+            <DialogDescription>
+              Enter the number of participants to see available venues that can accommodate them.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            {/* Participants Input */}
+            <div>
+              <Label htmlFor="participants" className="flex items-center gap-2 mb-2">
+                <Users className="w-4 h-4" />
+                PARTICIPANTS *
+              </Label>
+              <Input
+                id="participants"
+                type="number"
+                min="1"
+                placeholder="Enter number of participants"
+                value={autoSuggestParticipants}
+                onChange={(e) => setAutoSuggestParticipants(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleFindSuitableVenues();
+                  }
+                }}
+              />
+            </div>
+
+            {/* Find Button */}
+            <Button
+              onClick={handleFindSuitableVenues}
+              disabled={loadingAutoSuggest || !autoSuggestParticipants}
+              className="w-full bg-violet-600 hover:bg-violet-700 text-white gap-2"
+            >
+              <Sparkles className="w-4 h-4" />
+              {loadingAutoSuggest ? 'Searching...' : 'Find Suitable Venues'}
+            </Button>
+
+            {/* Results Summary */}
+            {suggestedLocations.length > 0 && (
+              <div className="flex items-center gap-4 text-sm">
+                <Badge variant="outline" className="gap-1">
+                  <Building2 className="w-3 h-3 text-violet-600" />
+                  {suggestedLocations.length} venues found
+                </Badge>
+                <span className="text-muted-foreground">
+                  for {autoSuggestParticipants} participants
+                </span>
+              </div>
+            )}
+
+            {/* Suggested Locations */}
+            {suggestedLocations.length > 0 && (
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {suggestedLocations.map((sug) => (
+                  <button
+                    key={sug.name}
+                    type="button"
+                    onClick={() => applyAutoSuggestion(sug)}
+                    className={`w-full text-left rounded-xl border transition-all duration-150 group ${
+                      selectedSuggestion === sug.name
+                        ? 'border-violet-400 bg-violet-50 shadow-sm'
+                        : 'border-gray-200 bg-white hover:border-violet-300 hover:shadow-sm cursor-pointer'
+                    } p-4`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Building2 className="w-4 h-4 text-violet-600 flex-shrink-0" />
+                          <h4 className="font-semibold text-gray-900 truncate">
+                            {sug.name}
+                          </h4>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600">
+                          <span className="flex items-center gap-1">
+                            <Users className="w-3 h-3" />
+                            {sug.chairs} seats
+                          </span>
+                          {sug.isMulti && (
+                            <>
+                              <span className="text-gray-300 text-xs">·</span>
+                              <Badge variant="secondary" className="text-xs">
+                                Multi-room
+                              </Badge>
+                            </>
+                          )}
+                        </div>
+
+                        {sug.note && (
+                          <p className="text-xs text-gray-500 mt-1">{sug.note}</p>
+                        )}
+                      </div>
+
+                      <div className="flex-shrink-0">
+                        {selectedSuggestion === sug.name ? (
+                          <div className="w-5 h-5 rounded-full bg-violet-500 flex items-center justify-center">
+                            <Check className="w-3 h-3 text-white" />
+                          </div>
+                        ) : (
+                          <div className="w-5 h-5 rounded-full border-2 border-gray-300 group-hover:border-violet-400 transition-colors" />
+                        )}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* No Results */}
+            {!loadingAutoSuggest && suggestedLocations.length === 0 && autoSuggestParticipants && (
+              <div className="text-center py-8 text-gray-500">
+                <Building2 className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                <p className="text-sm">No suitable venues found for {autoSuggestParticipants} participants.</p>
+                <p className="text-xs text-gray-400 mt-1">Try adjusting the number of participants.</p>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

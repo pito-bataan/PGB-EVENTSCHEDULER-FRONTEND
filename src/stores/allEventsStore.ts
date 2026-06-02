@@ -72,6 +72,12 @@ export interface Event {
   bacApprovedAt?: string;
   bacApprovedBy?: string;
   bacNotes?: string;
+  
+  autoApproved?: boolean; // Auto-approved by system (10 days before event)
+  autoApprovedByBAC?: boolean; // Auto-approved when BAC approved
+  approvedAt?: string;
+  approvedBy?: string;
+  
   createdBy: {
     _id: string;
     name: string;

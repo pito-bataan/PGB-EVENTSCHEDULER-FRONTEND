@@ -140,7 +140,11 @@ import {
 
   Check,
 
-  X
+  X,
+  Sparkles,
+  Wand2,
+  Info,
+  Ban
 
 } from 'lucide-react';
 
@@ -264,7 +268,15 @@ interface Event {
 
 }
 
-
+interface AutoSuggestedLocation {
+  name: string;
+  chairs: number;
+  isMulti: boolean;
+  rooms: string[];
+  note?: string;
+  isBooked: boolean;
+  bookedOnDates: string[];
+}
 
 const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api`;
 
@@ -360,6 +372,8 @@ const MyEventsPage: React.FC = () => {
 
     location: '',
 
+    locations: [] as string[],
+
     startDate: '',
 
     startTime: '',
@@ -393,6 +407,19 @@ const MyEventsPage: React.FC = () => {
   const [venueConflictingEvents, setVenueConflictingEvents] = useState<any[]>([]);
 
   const [allEventsOnDate, setAllEventsOnDate] = useState<any[]>([]); // All events on selected date for REQ checking
+
+  // Auto Suggest states for Edit Schedule
+  const [showAutoSuggestModal, setShowAutoSuggestModal] = useState(false);
+  const [autoSuggestParticipants, setAutoSuggestParticipants] = useState('');
+  const [autoSuggestStartDate, setAutoSuggestStartDate] = useState<Date | undefined>();
+  const [autoSuggestEndDate, setAutoSuggestEndDate] = useState<Date | undefined>();
+  const [autoSuggestStartTime, setAutoSuggestStartTime] = useState('');
+  const [autoSuggestEndTime, setAutoSuggestEndTime] = useState('');
+  const [suggestedLocations, setSuggestedLocations] = useState<AutoSuggestedLocation[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [loadingAutoSuggest, setLoadingAutoSuggest] = useState(false);
+  const [selectedSuggestion, setSelectedSuggestion] = useState<string | null>(null);
+  const [scheduleMode, setScheduleMode] = useState<'manual' | 'auto-suggest'>('manual');
 
   
 
@@ -2220,6 +2247,405 @@ const MyEventsPage: React.FC = () => {
 
 
 
+  // ── Auto Suggest: helpers & logic ─────────────────────────────────────────
+
+  // Build every calendar date between start and end (inclusive)
+  const buildDateRange = (start: Date, end: Date): Date[] => {
+    const result: Date[] = [];
+    const cur = new Date(start); cur.setHours(0, 0, 0, 0);
+    const fin = new Date(end);   fin.setHours(0, 0, 0, 0);
+    while (cur <= fin) { result.push(new Date(cur)); cur.setDate(cur.getDate() + 1); }
+    return result;
+  };
+
+  // Helper to check if two locations conflict (same location or overlapping conference rooms)
+  const locationsConflict = (loc1: string, loc2: string): boolean => {
+    if (loc1 === loc2) return true;
+    // Conference room logic
+    const isCR1 = /4th Flr\. Conference Room/.test(loc1);
+    const isCR2 = /4th Flr\. Conference Room/.test(loc2);
+    if (isCR1 && isCR2) {
+      if (loc1.includes('(Entire)') || loc2.includes('(Entire)')) return true;
+      return loc1 === loc2;
+    }
+    return false;
+  };
+
+  // Returns which of the given dates have a time-overlap conflict for locationName
+  const getBookedDatesForLocation = (
+    locationName: string,
+    datesToCheck: Date[],
+    allEvents: any[],
+    selStartTime: string,
+    selEndTime: string
+  ): string[] => {
+    const toMin = (t: string) => {
+      if (!t) return 0;
+      const [h, m] = t.split(':').map(Number);
+      return h * 60 + m;
+    };
+    const selStart = selStartTime ? toMin(selStartTime) : null;
+    const selEnd   = selEndTime   ? toMin(selEndTime)   : null;
+
+    return datesToCheck
+      .filter((d) => {
+        const dayStr = d.toDateString();
+        return allEvents.some((ev) => {
+          if (ev.status !== 'approved' && ev.status !== 'submitted') return false;
+          // Skip the current event being edited
+          if (selectedEditEvent && ev._id === selectedEditEvent._id) return false;
+          
+          const evLocs =
+            ev.locations && Array.isArray(ev.locations) && ev.locations.length > 0
+              ? ev.locations : [ev.location];
+          if (!evLocs.some((l: string) => locationsConflict(l, locationName))) return false;
+
+          let evStart: string | null = null;
+          let evEnd:   string | null = null;
+          const mainDay = ev.startDate ? new Date(ev.startDate).toDateString() : '';
+          if (mainDay === dayStr) {
+            evStart = ev.startTime || null;
+            evEnd   = ev.endTime   || null;
+          } else if (Array.isArray(ev.dateTimeSlots)) {
+            const slot = ev.dateTimeSlots.find(
+              (s: any) => s.startDate && new Date(s.startDate).toDateString() === dayStr
+            );
+            if (slot) { evStart = slot.startTime || null; evEnd = slot.endTime || null; }
+          }
+
+          if (selStart !== null && selEnd !== null && evStart && evEnd) {
+            return selStart < toMin(evEnd) && selEnd > toMin(evStart);
+          }
+          return !!evStart || mainDay === dayStr;
+        });
+      })
+      .map((d) => d.toDateString());
+  };
+
+  // Fetch events from API then build suggestion list with booking status
+  const runAutoSuggest = async () => {
+    if (!autoSuggestParticipants || !autoSuggestStartDate || !autoSuggestEndDate) return;
+    const count = parseInt(autoSuggestParticipants) || 0;
+    if (count <= 0) { toast.error('Please enter a valid number of participants'); return; }
+
+    setLoadingAutoSuggest(true);
+    setShowSuggestions(false);
+    setSuggestedLocations([]);
+    setSelectedSuggestion(null);
+
+    try {
+      const token = localStorage.getItem('authToken');
+
+      // Fetch all location-requirements docs
+      const locReqRes = await fetch(`${API_BASE_URL}/location-requirements`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const allLocReqs: any[] = locReqRes.ok ? await locReqRes.json() : [];
+
+      // Fetch all events for booking conflict checks
+      const evRes = await fetch(`${API_BASE_URL}/events`, {
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      });
+      const allEvents: any[] = evRes.ok ? (await evRes.json()).data || [] : [];
+
+      const dateRange = buildDateRange(autoSuggestStartDate, autoSuggestEndDate);
+
+      const VENUE_MAX_CAPACITY: Record<string, number> = {
+        "Bataan People's Center": 5000,
+      };
+
+      const extractChairs = (locName: string): { total: number; capacity: number; breakdown: string } => {
+        const exactDoc = allLocReqs.find((doc: any) => {
+          if (doc.locationNames && Array.isArray(doc.locationNames)) {
+            return doc.locationNames.length === 1 && doc.locationNames[0] === locName;
+          }
+          return doc.locationName === locName;
+        });
+        const groupDocs = allLocReqs.filter((doc: any) => {
+          if (doc.locationNames && Array.isArray(doc.locationNames)) {
+            return doc.locationNames.length > 1 && doc.locationNames.includes(locName);
+          }
+          return false;
+        });
+        const candidates = [...(exactDoc ? [exactDoc] : []), ...groupDocs];
+        const maxCapacityOverride = VENUE_MAX_CAPACITY[locName];
+        if (candidates.length === 0) {
+          return { total: maxCapacityOverride ?? 0, capacity: maxCapacityOverride ?? 0, breakdown: '' };
+        }
+        const best = candidates.reduce((prev, cur) => {
+          const pLen = prev.locationNames?.length ?? 1;
+          const cLen = cur.locationNames?.length ?? 1;
+          return cLen < pLen ? cur : prev;
+        });
+        if (!Array.isArray(best.requirements)) {
+          return { total: maxCapacityOverride ?? 0, capacity: maxCapacityOverride ?? 0, breakdown: '' };
+        }
+        const chairReqs = best.requirements.filter(
+          (r: any) => typeof r.name === 'string' && /chair/i.test(r.name)
+        );
+        if (chairReqs.length === 0) {
+          return { total: maxCapacityOverride ?? 0, capacity: maxCapacityOverride ?? 0, breakdown: '' };
+        }
+        const total = chairReqs.reduce((sum: number, r: any) => sum + (Number(r.quantity) || 0), 0);
+        const capacity = maxCapacityOverride ? Math.max(total, maxCapacityOverride) : total;
+        const breakdown = chairReqs.length > 1
+          ? chairReqs.map((r: any) => `${Number(r.quantity)} ${r.name}`).join(' + ')
+          : '';
+        return { total, capacity, breakdown };
+      };
+
+      // ── Shared Pavilion pool ───────────────────────────────────────────────
+      // ALL Pavilion locations (Kalayaan Entire + all Kagitingan sections) draw
+      // from a single shared inventory pool of chairs/tables.
+      const ALL_PAVILION_LOCATIONS = [
+        'Pavilion - Kagitingan Hall - Section A',
+        'Pavilion - Kagitingan Hall - Section B',
+        'Pavilion - Kagitingan Hall - Section C',
+        'Pavilion - Kalayaan Ballroom',
+      ];
+
+      const pavilionOverallDoc = allLocReqs.find((doc: any) => {
+        if (!doc.locationNames || !Array.isArray(doc.locationNames)) return false;
+        return ALL_PAVILION_LOCATIONS.every((l) => doc.locationNames.includes(l));
+      }) || allLocReqs.find((doc: any) => {
+        if (!doc.locationNames || !Array.isArray(doc.locationNames)) return false;
+        const KAGITINGAN_SECTIONS = [
+          'Pavilion - Kagitingan Hall - Section A',
+          'Pavilion - Kagitingan Hall - Section B',
+          'Pavilion - Kagitingan Hall - Section C',
+        ];
+        return KAGITINGAN_SECTIONS.every((s) => doc.locationNames.includes(s));
+      });
+
+      const pavilionPoolChairs = (() => {
+        if (!pavilionOverallDoc || !Array.isArray(pavilionOverallDoc.requirements)) return 0;
+        const chairReqs = pavilionOverallDoc.requirements.filter(
+          (r: any) => typeof r.name === 'string' && /chair/i.test(r.name)
+        );
+        return chairReqs.reduce((sum: number, r: any) => sum + (Number(r.quantity) || 0), 0);
+      })();
+
+      const getPavilionChairsBookedOnDate = (dayStr: string): number => {
+        let booked = 0;
+        allEvents.forEach((ev: any) => {
+          if (ev.status !== 'approved' && ev.status !== 'submitted') return;
+          if (selectedEditEvent && ev._id === selectedEditEvent._id) return;
+          const evLocs: string[] =
+            ev.locations && Array.isArray(ev.locations) && ev.locations.length > 0
+              ? ev.locations : [ev.location || ''];
+          const isPavilion = evLocs.some((l: string) => /Pavilion/i.test(l));
+          if (!isPavilion) return;
+
+          const mainDay = ev.startDate ? new Date(ev.startDate).toDateString() : '';
+          const onThisDay =
+            mainDay === dayStr ||
+            (Array.isArray(ev.dateTimeSlots) &&
+              ev.dateTimeSlots.some(
+                (s: any) => s.startDate && new Date(s.startDate).toDateString() === dayStr
+              ));
+          if (!onThisDay) return;
+
+          if (ev.taggedDepartments && ev.departmentRequirements) {
+            ev.taggedDepartments.forEach((dept: string) => {
+              const reqs = ev.departmentRequirements[dept];
+              if (!Array.isArray(reqs)) return;
+              reqs.forEach((req: any) => {
+                if (req.selected && typeof req.name === 'string' && /chair/i.test(req.name)) {
+                  booked += Number(req.quantity) || 0;
+                }
+              });
+            });
+          }
+        });
+        return booked;
+      };
+
+      const getPavilionRemainingChairs = (): number => {
+        if (pavilionPoolChairs <= 0) return 0;
+        if (dateRange.length === 0) return pavilionPoolChairs;
+        const perDay = dateRange.map((d) => {
+          const booked = getPavilionChairsBookedOnDate(d.toDateString());
+          return Math.max(0, pavilionPoolChairs - booked);
+        });
+        return Math.min(...perDay);
+      };
+
+      const pavilionRemainingChairs = getPavilionRemainingChairs();
+      // ──────────────────────────────────────────────────────────────────────
+
+      const results: AutoSuggestedLocation[] = [];
+
+      // 1) All PGB non-conference, non-Kagitingan-section locations
+      locations.filter((l) => l !== 'Add Custom Location' && !/4th Flr\. Conference Room/.test(l)).forEach((loc) => {
+        if (/Pavilion.*Kagitingan.*Section [ABC]$/i.test(loc)) return;
+        if (/Pavilion.*Kalayaan.*Section [ABC]$/i.test(loc)) return;
+
+        const isPavilionLoc = /Pavilion/i.test(loc);
+
+        let chairs: number;
+        let breakdown: string;
+        if (isPavilionLoc) {
+          chairs = pavilionRemainingChairs;
+          breakdown = pavilionRemainingChairs < pavilionPoolChairs
+            ? `${pavilionRemainingChairs} of ${pavilionPoolChairs} chairs available (shared pool)`
+            : '';
+        } else {
+          const extracted = extractChairs(loc);
+          chairs = extracted.capacity;
+          breakdown = extracted.capacity > extracted.total && extracted.total > 0
+            ? `${extracted.total} default chairs · up to ${extracted.capacity.toLocaleString()} pax capacity`
+            : extracted.capacity > extracted.total && extracted.total === 0
+              ? `up to ${extracted.capacity.toLocaleString()} pax capacity`
+              : extracted.breakdown;
+        }
+
+        if (chairs <= 0) return;
+        if (chairs < count) return;
+        const bookedOnDates = getBookedDatesForLocation(
+          loc, dateRange, allEvents, autoSuggestStartTime, autoSuggestEndTime
+        );
+        results.push({
+          name: loc, chairs, isMulti: false, rooms: [loc],
+          note: breakdown || undefined,
+          isBooked: bookedOnDates.length > 0, bookedOnDates,
+        });
+      });
+
+      // Conference room combos
+      const CR = [
+        '4th Flr. Conference Room 1',
+        '4th Flr. Conference Room 2',
+        '4th Flr. Conference Room 3',
+      ];
+      const crChairs: Record<string, number> = {};
+      CR.forEach((room) => { crChairs[room] = extractChairs(room).total; });
+      const availableCRs = CR.filter((r) => crChairs[r] > 0);
+
+      if (availableCRs.length > 0) {
+        for (let mask = 1; mask < (1 << availableCRs.length); mask++) {
+          const combo: string[] = [];
+          availableCRs.forEach((r, i) => { if (mask & (1 << i)) combo.push(r); });
+          const totalChairs = combo.reduce((sum, r) => sum + crChairs[r], 0);
+          if (totalChairs < count) continue;
+          const isAllThree = combo.length === availableCRs.length && availableCRs.length === 3;
+          const label = isAllThree
+            ? '4th Flr. Conference Room (Entire)'
+            : combo.length === 1 ? combo[0] : combo.join(' + ');
+          if (results.some((r) => r.name === label)) continue;
+          const allBookedDates: string[] = [];
+          combo.forEach((room) => {
+            getBookedDatesForLocation(room, dateRange, allEvents, autoSuggestStartTime, autoSuggestEndTime)
+              .forEach((d) => { if (!allBookedDates.includes(d)) allBookedDates.push(d); });
+          });
+          results.push({
+            name: label, chairs: totalChairs, isMulti: combo.length > 1, rooms: combo,
+            note: combo.length > 1
+              ? `${combo.map((r) => r.replace('4th Flr. Conference Room ', 'CR')).join(' + ')} · ${totalChairs} chairs`
+              : undefined,
+            isBooked: allBookedDates.length > 0, bookedOnDates: allBookedDates,
+          });
+        }
+      }
+
+      // 3) Pavilion - Kagitingan Hall sections (A, B, C — individually bookable)
+      if (pavilionPoolChairs > 0) {
+        const KAGITINGAN_SECTIONS = [
+          'Pavilion - Kagitingan Hall - Section A',
+          'Pavilion - Kagitingan Hall - Section B',
+          'Pavilion - Kagitingan Hall - Section C',
+        ];
+
+        if (pavilionRemainingChairs >= count) {
+          for (let mask = 1; mask < (1 << KAGITINGAN_SECTIONS.length); mask++) {
+            const combo: string[] = [];
+            KAGITINGAN_SECTIONS.forEach((s, i) => { if (mask & (1 << i)) combo.push(s); });
+
+            const allBookedDates: string[] = [];
+            combo.forEach((sec) => {
+              getBookedDatesForLocation(sec, dateRange, allEvents, autoSuggestStartTime, autoSuggestEndTime)
+                .forEach((d) => { if (!allBookedDates.includes(d)) allBookedDates.push(d); });
+            });
+
+            const isAllSections = combo.length === KAGITINGAN_SECTIONS.length;
+            const label = isAllSections
+              ? 'Pavilion - Kagitingan Hall (Entire)'
+              : combo.length === 1
+                ? combo[0]
+                : combo.map((s) => s.replace('Pavilion - Kagitingan Hall - ', '')).join(' + ') + ' (Kagitingan Hall)';
+
+            if (results.some((r) => r.name === label)) continue;
+
+            results.push({
+              name: label,
+              chairs: pavilionRemainingChairs,
+              isMulti: combo.length > 1,
+              rooms: combo,
+              note: combo.length > 1
+                ? `${combo.map((s) => s.replace('Pavilion - Kagitingan Hall - ', '')).join(' + ')} · ${pavilionRemainingChairs} chairs available (shared pool)`
+                : pavilionRemainingChairs < pavilionPoolChairs
+                  ? `${pavilionRemainingChairs} of ${pavilionPoolChairs} chairs available (shared pool)`
+                  : undefined,
+              isBooked: allBookedDates.length > 0,
+              bookedOnDates: allBookedDates,
+            });
+          }
+        }
+      }
+
+      if (results.length === 0) {
+        setShowSuggestions(true);
+        setSuggestedLocations([]);
+        return;
+      }
+
+      results.sort((a, b) => {
+        if (a.isBooked !== b.isBooked) return a.isBooked ? 1 : -1;
+        return a.chairs - b.chairs;
+      });
+
+      setSuggestedLocations(results);
+      setShowSuggestions(true);
+    } catch (error) {
+      console.error('Auto suggest error:', error);
+      toast.error('Failed to check venue availability. Please try again.');
+    } finally {
+      setLoadingAutoSuggest(false);
+    }
+  };
+
+  // Apply chosen suggestion to edit form
+  const applyAutoSuggestion = (sug: AutoSuggestedLocation) => {
+    console.log('[applyAutoSuggestion] sug.name:', sug.name, '| sug.rooms:', sug.rooms, '| sug.isMulti:', sug.isMulti);
+    setSelectedSuggestion(sug.name);
+    setShowAutoSuggestModal(false);
+
+    const primaryLocation = sug.isMulti && sug.rooms.length === 3
+      ? '4th Flr. Conference Room (Entire)' : sug.rooms[0];
+
+    const allLocations = sug.isMulti && sug.rooms.length > 1 ? sug.rooms : [primaryLocation];
+
+    console.log('[applyAutoSuggestion] setting location:', primaryLocation, '| locations:', allLocations);
+
+    setEditFormData(prev => ({
+      ...prev,
+      location: primaryLocation,
+      locations: allLocations,
+      startDate: autoSuggestStartDate ? format(autoSuggestStartDate, 'yyyy-MM-dd') : prev.startDate,
+      endDate: autoSuggestEndDate ? format(autoSuggestEndDate, 'yyyy-MM-dd') : prev.endDate,
+      startTime: autoSuggestStartTime || prev.startTime,
+      endTime: autoSuggestEndTime || prev.endTime,
+    }));
+
+    // Fetch available dates for the selected location
+    if (primaryLocation) {
+      fetchAvailableDates(primaryLocation);
+    }
+
+    toast.success(`Applied suggestion: ${sug.name}`);
+  };
+
+  // ──────────────────────────────────────────────────────────────────────────
+
   const timeToMinutes = (time: string) => {
 
     const [hours, minutes] = String(time || '').split(':').map(Number);
@@ -3007,6 +3433,8 @@ const MyEventsPage: React.FC = () => {
     setEditFormData({
 
       location: event.location,
+
+      locations: Array.isArray(event.locations) && event.locations.length > 0 ? event.locations : (event.location ? [event.location] : []),
 
       startDate: event.startDate,
 
@@ -4606,6 +5034,8 @@ const MyEventsPage: React.FC = () => {
 
       String(editFormData.location || '') === String(selectedEditEvent.location || '') &&
 
+      JSON.stringify((editFormData.locations || []).slice().sort()) === JSON.stringify((Array.isArray(selectedEditEvent.locations) ? selectedEditEvent.locations : [selectedEditEvent.location]).slice().sort()) &&
+
       String(editFormData.startDate || '').split('T')[0] === String(selectedEditEvent.startDate || '').split('T')[0] &&
 
       String(editFormData.startTime || '') === String(selectedEditEvent.startTime || '') &&
@@ -4792,11 +5222,15 @@ const MyEventsPage: React.FC = () => {
 
       }));
 
-
+    console.log('[handleSaveEditedEvent] editFormData.location:', editFormData.location, '| editFormData.locations:', editFormData.locations);
 
     const updateData = {
 
       location: editFormData.location,
+
+      locations: editFormData.locations && editFormData.locations.length > 1 ? editFormData.locations : undefined,
+
+      multipleLocations: editFormData.locations && editFormData.locations.length > 1,
 
       startDate: editFormData.startDate,
 
@@ -7950,7 +8384,11 @@ const MyEventsPage: React.FC = () => {
 
               <h2 className="text-xl font-semibold text-gray-900">
 
-                Schedule Event at {editFormData.location || selectedEditEvent?.location || 'Selected Location'}
+                Schedule Event at {
+                  (editFormData.locations && editFormData.locations.length > 1)
+                    ? editFormData.locations.join(' + ')
+                    : (editFormData.location || selectedEditEvent?.location || 'Selected Location')
+                }
 
               </h2>
 
@@ -8052,6 +8490,38 @@ const MyEventsPage: React.FC = () => {
 
 
 
+              {/* Find Venue Button */}
+              <div className="bg-gradient-to-r from-violet-50 to-purple-50 border border-violet-200 rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-violet-100 flex items-center justify-center">
+                      <Wand2 className="w-5 h-5 text-violet-600" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-900">Need help finding a venue?</h3>
+                      <p className="text-xs text-gray-600 mt-0.5">Let us suggest available locations based on your event details</p>
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      if (selectedEditEvent) {
+                        setAutoSuggestParticipants(selectedEditEvent.participants.toString());
+                        setAutoSuggestStartDate(new Date(editFormData.startDate || selectedEditEvent.startDate));
+                        setAutoSuggestEndDate(new Date(editFormData.endDate || selectedEditEvent.endDate));
+                        setAutoSuggestStartTime(editFormData.startTime || selectedEditEvent.startTime);
+                        setAutoSuggestEndTime(editFormData.endTime || selectedEditEvent.endTime);
+                      }
+                      setShowAutoSuggestModal(true);
+                    }}
+                    className="bg-violet-600 hover:bg-violet-700 text-white gap-2 whitespace-nowrap"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    Find Venue
+                  </Button>
+                </div>
+              </div>
+
               {/* Location Section */}
 
               <div>
@@ -8078,7 +8548,7 @@ const MyEventsPage: React.FC = () => {
 
                         setShowCustomLocationInput(false);
 
-                        setEditFormData(prev => ({ ...prev, location: value }));
+                        setEditFormData(prev => ({ ...prev, location: value, locations: [value] }));
 
                         fetchAvailableDates(value); // Fetch available dates for selected location
 
@@ -8608,7 +9078,11 @@ const MyEventsPage: React.FC = () => {
 
                     <p className="text-sm text-blue-700 mt-1 font-medium">
 
-                      Location: {editFormData.location || selectedEditEvent?.location || 'Selected Location'}
+                      Location: {
+                        (editFormData.locations && editFormData.locations.length > 1)
+                          ? editFormData.locations.join(' + ')
+                          : (editFormData.location || selectedEditEvent?.location || 'Selected Location')
+                      }
 
                     </p>
 
@@ -11504,6 +11978,275 @@ const MyEventsPage: React.FC = () => {
 
         </DialogContent>
 
+      </Dialog>
+
+      {/* Auto Suggest Modal - Simplified Version */}
+      <Dialog open={showAutoSuggestModal} onOpenChange={setShowAutoSuggestModal}>
+        <DialogContent className="sm:max-w-xl max-h-[92vh] flex flex-col p-0 gap-0 overflow-hidden rounded-2xl border-0 shadow-2xl">
+          
+          {/* Header */}
+          <div className="flex-shrink-0 px-6 pt-6 pb-5">
+            <div className="flex items-center gap-3 mb-1">
+              <div className="w-8 h-8 rounded-xl bg-violet-100 flex items-center justify-center">
+                <Wand2 className="w-4 h-4 text-violet-600" />
+              </div>
+              <div>
+                <h2 className="text-base font-semibold text-gray-900 leading-tight">Find a Venue</h2>
+                <p className="text-xs text-gray-400 leading-tight">We'll suggest locations that fit your needs</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAutoSuggestModal(false)}
+                className="ml-auto w-7 h-7 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Body */}
+          <div className="flex-1 overflow-y-auto px-6 pb-6 space-y-4">
+            
+            {/* Inputs section */}
+            <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+
+              {/* Participants */}
+              <div>
+                <label className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5 flex items-center gap-1">
+                  <Users className="w-3 h-3" /> Participants <span className="text-red-400 normal-case tracking-normal font-normal">*</span>
+                </label>
+                <Input
+                  type="number" min="1" placeholder="How many people?"
+                  value={autoSuggestParticipants}
+                  onChange={(e) => setAutoSuggestParticipants(e.target.value)}
+                  className="h-9 bg-white border-gray-200 text-sm rounded-lg"
+                />
+              </div>
+
+              {/* Date row */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5 flex items-center gap-1">
+                    <CalendarIcon className="w-3 h-3" /> Start <span className="text-red-400 normal-case tracking-normal font-normal">*</span>
+                  </label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className="w-full h-9 justify-start text-left font-normal text-sm bg-white border-gray-200 rounded-lg">
+                        <CalendarIcon className="mr-1.5 h-3 w-3 flex-shrink-0 text-gray-400" />
+                        {autoSuggestStartDate ? format(autoSuggestStartDate, 'MMM dd, yyyy') : <span className="text-gray-400">Pick date</span>}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0">
+                      <Calendar mode="single" selected={autoSuggestStartDate}
+                        onSelect={(d) => {
+                          setAutoSuggestStartDate(d ?? undefined);
+                          if (!autoSuggestEndDate || (d && d > autoSuggestEndDate)) setAutoSuggestEndDate(d ?? undefined);
+                        }}
+                        initialFocus />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5 flex items-center gap-1">
+                    <CalendarIcon className="w-3 h-3" /> End <span className="text-red-400 normal-case tracking-normal font-normal">*</span>
+                  </label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className="w-full h-9 justify-start text-left font-normal text-sm bg-white border-gray-200 rounded-lg"
+                        disabled={!autoSuggestStartDate}>
+                        <CalendarIcon className="mr-1.5 h-3 w-3 flex-shrink-0 text-gray-400" />
+                        {autoSuggestEndDate ? format(autoSuggestEndDate, 'MMM dd, yyyy') : <span className="text-gray-400">Pick date</span>}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0">
+                      <Calendar mode="single" selected={autoSuggestEndDate}
+                        onSelect={(d) => setAutoSuggestEndDate(d ?? undefined)}
+                        disabled={(d) => !!autoSuggestStartDate && d < autoSuggestStartDate}
+                        initialFocus />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </div>
+
+              {/* Time row */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
+                    <Clock className="w-3 h-3" /> Start time
+                    <span className="text-gray-400 normal-case tracking-normal font-normal">(optional)</span>
+                  </label>
+                  <Select value={autoSuggestStartTime} onValueChange={(v) => setAutoSuggestStartTime(v)}>
+                    <SelectTrigger className="h-9 text-sm bg-white border-gray-200 rounded-lg"><SelectValue placeholder="Select" /></SelectTrigger>
+                    <SelectContent className="max-h-56">
+                      {generateTimeOptions().map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
+                    <Clock className="w-3 h-3" /> End time
+                    <span className="text-gray-400 normal-case tracking-normal font-normal">(optional)</span>
+                  </label>
+                  <Select value={autoSuggestEndTime} onValueChange={(v) => setAutoSuggestEndTime(v)} disabled={!autoSuggestStartTime}>
+                    <SelectTrigger className="h-9 text-sm bg-white border-gray-200 rounded-lg" disabled={!autoSuggestStartTime}>
+                      <SelectValue placeholder={autoSuggestStartTime ? 'Select' : '—'} />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-56">
+                      {generateTimeOptions()
+                        .filter((t) => {
+                          if (!autoSuggestStartTime) return false;
+                          const toMin = (x: string) => { const [h,m] = x.split(':').map(Number); return h*60+m; };
+                          return toMin(t.value) > toMin(autoSuggestStartTime);
+                        })
+                        .map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+
+            {/* Find button */}
+            <button
+              type="button"
+              disabled={!autoSuggestParticipants || !autoSuggestStartDate || !autoSuggestEndDate || loadingAutoSuggest}
+              onClick={runAutoSuggest}
+              className="w-full h-10 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium flex items-center justify-center gap-2 transition-colors"
+            >
+              {loadingAutoSuggest
+                ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Checking availability…</>
+                : <><Sparkles className="w-3.5 h-3.5" /> Find Suitable Venues</>}
+            </button>
+
+            {/* Results */}
+            {showSuggestions && (
+              <div className="space-y-3">
+                {/* Summary bar */}
+                <div className="flex items-center justify-between text-xs text-gray-500">
+                  <div className="flex items-center gap-3">
+                    <span className="flex items-center gap-1 text-emerald-600 font-medium">
+                      <CheckCircle className="w-3.5 h-3.5" />
+                      {suggestedLocations.filter(s => !s.isBooked).length} available
+                    </span>
+                    {suggestedLocations.filter(s => s.isBooked).length > 0 && (
+                      <>
+                        <span className="text-gray-300">·</span>
+                        <span className="flex items-center gap-1 text-red-500">
+                          <Ban className="w-3.5 h-3.5" />
+                          {suggestedLocations.filter(s => s.isBooked).length} booked
+                        </span>
+                      </>
+                    )}
+                  </div>
+                  <span className="text-gray-400">for {autoSuggestParticipants} participants</span>
+                </div>
+
+                {/* No results empty state */}
+                {suggestedLocations.length === 0 && (
+                  <div className="text-center py-8 text-gray-400">
+                    <MapPin className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                    <p className="text-sm">No venues found for this size</p>
+                    <p className="text-xs mt-1">Try reducing the participant count or selecting a location manually</p>
+                  </div>
+                )}
+
+                {/* Venue cards */}
+                <div className="space-y-2">
+                  {suggestedLocations.map((sug) => (
+                    <button
+                      key={sug.name}
+                      type="button"
+                      disabled={sug.isBooked}
+                      onClick={() => !sug.isBooked && applyAutoSuggestion(sug)}
+                      className={`w-full text-left rounded-xl border transition-all duration-150 group ${
+                        sug.isBooked
+                          ? 'border-gray-200 bg-gray-50 opacity-55 cursor-not-allowed'
+                          : selectedSuggestion === sug.name
+                          ? 'border-violet-400 bg-violet-50 shadow-sm'
+                          : 'border-gray-200 bg-white hover:border-violet-300 hover:shadow-sm cursor-pointer'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 px-4 py-3">
+
+                        {/* Icon */}
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                          sug.isBooked ? 'bg-gray-100' : 'bg-violet-50 group-hover:bg-violet-100'
+                        }`}>
+                          <MapPin className={`w-4 h-4 ${sug.isBooked ? 'text-gray-400' : 'text-violet-500'}`} />
+                        </div>
+
+                        {/* Name + meta */}
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm font-medium leading-tight truncate ${sug.isBooked ? 'text-gray-400' : 'text-gray-800'}`}>
+                            {sug.name}
+                          </p>
+                          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                            <span className={`text-xs ${sug.isBooked ? 'text-gray-400' : 'text-gray-500'}`}>
+                              {sug.chairs} seats
+                            </span>
+                            {sug.isMulti && (
+                              <>
+                                <span className="text-gray-300 text-xs">·</span>
+                                <span className="text-xs text-violet-500 font-medium">Multi-room</span>
+                              </>
+                            )}
+                            {sug.note && (
+                              <>
+                                <span className="text-gray-300 text-xs">·</span>
+                                <span className="text-xs text-gray-400 truncate">{sug.note}</span>
+                              </>
+                            )}
+                          </div>
+
+                          {/* Booked dates */}
+                          {sug.isBooked && sug.bookedOnDates.length > 0 && (
+                            <p className="text-[11px] text-red-400 mt-0.5 leading-tight">
+                              Booked: {sug.bookedOnDates.slice(0, 2).join(', ')}
+                              {sug.bookedOnDates.length > 2 && ` +${sug.bookedOnDates.length - 2} more`}
+                            </p>
+                          )}
+
+                          {/* Date/time preview for available */}
+                          {!sug.isBooked && autoSuggestStartDate && (
+                            <p className="text-[11px] text-violet-500 mt-0.5 flex items-center gap-1">
+                              <CalendarIcon className="w-2.5 h-2.5 flex-shrink-0" />
+                              {format(autoSuggestStartDate, 'MMM dd')}
+                              {autoSuggestEndDate && autoSuggestEndDate.getTime() !== autoSuggestStartDate.getTime()
+                                ? ` – ${format(autoSuggestEndDate, 'MMM dd, yyyy')}`
+                                : `, ${format(autoSuggestStartDate, 'yyyy')}`}
+                              {autoSuggestStartTime && ` · ${formatTime(autoSuggestStartTime)}${autoSuggestEndTime ? ` – ${formatTime(autoSuggestEndTime)}` : ''}`}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Right indicator */}
+                        <div className="flex-shrink-0 ml-1">
+                          {sug.isBooked ? (
+                            <span className="flex items-center gap-1 text-[10px] font-medium text-red-400 bg-red-50 border border-red-100 px-2 py-0.5 rounded-full">
+                              <Ban className="w-2.5 h-2.5" /> Booked
+                            </span>
+                          ) : selectedSuggestion === sug.name ? (
+                            <div className="w-5 h-5 rounded-full bg-violet-500 flex items-center justify-center">
+                              <Check className="w-3 h-3 text-white" />
+                            </div>
+                          ) : (
+                            <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-violet-400 transition-colors" />
+                          )}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Hint */}
+                {suggestedLocations.some(s => !s.isBooked) && (
+                  <p className="text-center text-[11px] text-gray-400 pt-1">
+                    Select a venue to auto-fill your schedule
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        </DialogContent>
       </Dialog>
 
     </div>
