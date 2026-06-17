@@ -82,6 +82,20 @@ import { Label } from '@/components/ui/label';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
+
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+
 import { Skeleton } from '@/components/ui/skeleton';
 
 import {
@@ -125,6 +139,10 @@ import {
   Edit,
 
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
+  ArrowUpDown,
+  MoreHorizontal,
 
   AlertTriangle,
 
@@ -147,6 +165,15 @@ import {
   Ban
 
 } from 'lucide-react';
+
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetFooter,
+} from '@/components/ui/sheet';
 
 
 
@@ -276,6 +303,7 @@ interface AutoSuggestedLocation {
   note?: string;
   isBooked: boolean;
   bookedOnDates: string[];
+  seatsLabel?: string;
 }
 
 const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api`;
@@ -340,112 +368,45 @@ const MyEventsPage: React.FC = () => {
 
   const [sortBy, setSortBy] = useState<string>('newest');
 
-  const [visibleCount, setVisibleCount] = useState(20);
+  const [activeTab, setActiveTab] = useState<string>('All');
 
-  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
+  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
 
-  const [showEventModal, setShowEventModal] = useState(false);
+  const toggleCard = (eventId: string) => {
+    setExpandedCards(prev => {
+      const next = new Set(prev);
+      if (next.has(eventId)) next.delete(eventId);
+      else next.add(eventId);
+      return next;
+    });
+  };
 
-  const [selectedEventFiles, setSelectedEventFiles] = useState<Event | null>(null);
-
-  const [showFilesModal, setShowFilesModal] = useState(false);
-
-  const [selectedEventDepartments, setSelectedEventDepartments] = useState<Event | null>(null);
-
-  const [showDepartmentsModal, setShowDepartmentsModal] = useState(false);
-
-  const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>('all');
-
-  const [selectedEditEvent, setSelectedEditEvent] = useState<Event | null>(null);
+  const [selectedEventDepartments, setSelectedEventDepartments] = useState<any>(null);
 
   const [showEditModal, setShowEditModal] = useState(false);
-
-  const [showCancelEventModal, setShowCancelEventModal] = useState(false);
-
-  const [cancellingEvent, setCancellingEvent] = useState<Event | null>(null);
-
-  const [cancelEventReason, setCancelEventReason] = useState('');
-
-  const [isCancellingEvent, setIsCancellingEvent] = useState(false);
-
+  const [selectedEditEvent, setSelectedEditEvent] = useState<any>(null);
   const [editFormData, setEditFormData] = useState({
-
     location: '',
-
     locations: [] as string[],
-
     startDate: '',
-
     startTime: '',
-
     endDate: '',
-
     endTime: '',
-
-    dateTimeSlots: [] as Array<{
-
-      id: string;
-
-      date: Date;
-
-      startTime: string;
-
-      endTime: string;
-
-    }>
-
+    dateTimeSlots: [] as { id?: string; date: Date; startTime: string; endTime: string }[],
   });
-
-  const [availableDates, setAvailableDates] = useState<Date[]>([]);
-
-  const [showCustomLocationInput, setShowCustomLocationInput] = useState(false);
-
-  const [customLocation, setCustomLocation] = useState('');
-
-  const [conflictingEvents, setConflictingEvents] = useState<any[]>([]);
-
+  const [availableDates, setAvailableDates] = useState<string[]>([]);
   const [venueConflictingEvents, setVenueConflictingEvents] = useState<any[]>([]);
-
-  const [allEventsOnDate, setAllEventsOnDate] = useState<any[]>([]); // All events on selected date for REQ checking
-
-  // Auto Suggest states for Edit Schedule
+  const [conflictingEvents, setConflictingEvents] = useState<any[]>([]);
+  const [showCustomLocationInput, setShowCustomLocationInput] = useState(false);
+  const [customLocation, setCustomLocation] = useState('');
   const [showAutoSuggestModal, setShowAutoSuggestModal] = useState(false);
   const [autoSuggestParticipants, setAutoSuggestParticipants] = useState('');
-  const [autoSuggestStartDate, setAutoSuggestStartDate] = useState<Date | undefined>();
-  const [autoSuggestEndDate, setAutoSuggestEndDate] = useState<Date | undefined>();
+  const [autoSuggestStartDate, setAutoSuggestStartDate] = useState<Date | undefined>(undefined);
+  const [autoSuggestEndDate, setAutoSuggestEndDate] = useState<Date | undefined>(undefined);
   const [autoSuggestStartTime, setAutoSuggestStartTime] = useState('');
   const [autoSuggestEndTime, setAutoSuggestEndTime] = useState('');
-  const [suggestedLocations, setSuggestedLocations] = useState<AutoSuggestedLocation[]>([]);
+  const [suggestedLocations, setSuggestedLocations] = useState<any[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [loadingAutoSuggest, setLoadingAutoSuggest] = useState(false);
-  const [selectedSuggestion, setSelectedSuggestion] = useState<string | null>(null);
-  const [scheduleMode, setScheduleMode] = useState<'manual' | 'auto-suggest'>('manual');
-
-  
-
-  // Edit Requirement Modal State
-
-  const [showEditRequirementModal, setShowEditRequirementModal] = useState(false);
-
-  const [editingRequirement, setEditingRequirement] = useState<any>(null);
-
-  const [editRequirementData, setEditRequirementData] = useState({
-
-    quantity: 0,
-
-    notes: ''
-
-  });
-
-  
-
-  // Per-requirement reply drafts for department notes conversation
-
-  const [requirementReplyDrafts, setRequirementReplyDrafts] = useState<{ [reqId: string]: string }>({});
-
-
-
-  // Track which events have had their Tagged/Requirements badge viewed
 
   const [viewedTaggedRequirementsEvents, setViewedTaggedRequirementsEvents] = useState<Set<string>>(
 
@@ -947,7 +908,24 @@ const MyEventsPage: React.FC = () => {
 
   const [showCustomInput, setShowCustomInput] = useState(false);
 
-
+  const [visibleCount, setVisibleCount] = useState(20);
+  const [showCancelEventModal, setShowCancelEventModal] = useState(false);
+  const [showEditRequirementModal, setShowEditRequirementModal] = useState(false);
+  const [showEventModal, setShowEventModal] = useState(false);
+  const [showFilesModal, setShowFilesModal] = useState(false);
+  const [showDepartmentsModal, setShowDepartmentsModal] = useState(false);
+  const [cancelEventReason, setCancelEventReason] = useState('');
+  const [cancellingEvent, setCancellingEvent] = useState<any>(null);
+  const [isCancellingEvent, setIsCancellingEvent] = useState(false);
+  const [selectedEventFiles, setSelectedEventFiles] = useState<any>(null);
+  const [editingRequirement, setEditingRequirement] = useState<any>(null);
+  const [editRequirementData, setEditRequirementData] = useState({ quantity: 0, notes: '' });
+  const [selectedEvent, setSelectedEvent] = useState<any>(null);
+  const [requirementReplyDrafts, setRequirementReplyDrafts] = useState<{ [reqId: string]: string }>({});
+  const [loadingAutoSuggest, setLoadingAutoSuggest] = useState(false);
+  const [selectedSuggestion, setSelectedSuggestion] = useState<any>(null);
+  const [allEventsOnDate, setAllEventsOnDate] = useState<any[]>([]);
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>('all');
 
   const fetchLocationRequirementsForEvent = async (event: any) => {
 
@@ -1931,6 +1909,32 @@ const MyEventsPage: React.FC = () => {
 
 
 
+  const eventsByStatus = useMemo(() => {
+    const counts: { [key: string]: number } = {
+      All: events.length,
+      Submitted: 0,
+      Approved: 0,
+      Incoming: 0,
+      Ongoing: 0,
+      Completed: 0,
+      Rejected: 0,
+      Draft: 0,
+      Cancelled: 0,
+    };
+    events.forEach(event => {
+      const ds = getDynamicStatus(event);
+      if (ds === 'submitted') counts.Submitted++;
+      else if (ds === 'approved') counts.Approved++;
+      else if (ds === 'incoming') counts.Incoming++;
+      else if (ds === 'ongoing') counts.Ongoing++;
+      else if (ds === 'completed') counts.Completed++;
+      else if (ds === 'rejected') counts.Rejected++;
+      else if (ds === 'draft') counts.Draft++;
+      else if (ds === 'cancelled') counts.Cancelled++;
+    });
+    return counts;
+  }, [events]);
+
   // Filter and sort events
 
   const filteredAndSortedEvents = useMemo(() => {
@@ -2476,7 +2480,8 @@ const MyEventsPage: React.FC = () => {
       const results: AutoSuggestedLocation[] = [];
 
       // 1) All PGB non-conference, non-Kagitingan-section locations
-      locations.filter((l) => l !== 'Add Custom Location' && !/4th Flr\. Conference Room/.test(l)).forEach((loc) => {
+          const isBacRejected = selectedEditEvent?.bacApprovalStatus === 'rejected';
+          locations.filter((l) => l !== 'Add Custom Location' && !/4th Flr\. Conference Room/.test(l) && !(isBacRejected && l === '5th Flr. Training Room 1 (BAC)')).forEach((loc) => {
         if (/Pavilion.*Kagitingan.*Section [ABC]$/i.test(loc)) return;
         if (/Pavilion.*Kalayaan.*Section [ABC]$/i.test(loc)) return;
 
@@ -2575,16 +2580,22 @@ const MyEventsPage: React.FC = () => {
 
             if (results.some((r) => r.name === label)) continue;
 
+            const sectionCount = combo.length;
+            const seatsLabel = sectionCount === 1
+              ? 'approx 50–100 seats'
+              : sectionCount === 2
+                ? 'approx 100–200 seats'
+                : 'approx 150–300 seats';
+
             results.push({
               name: label,
               chairs: pavilionRemainingChairs,
+              seatsLabel,
               isMulti: combo.length > 1,
               rooms: combo,
               note: combo.length > 1
-                ? `${combo.map((s) => s.replace('Pavilion - Kagitingan Hall - ', '')).join(' + ')} · ${pavilionRemainingChairs} chairs available (shared pool)`
-                : pavilionRemainingChairs < pavilionPoolChairs
-                  ? `${pavilionRemainingChairs} of ${pavilionPoolChairs} chairs available (shared pool)`
-                  : undefined,
+                ? `${combo.map((s) => s.replace('Pavilion - Kagitingan Hall - ', '')).join(' + ')}`
+                : undefined,
               isBooked: allBookedDates.length > 0,
               bookedOnDates: allBookedDates,
             });
@@ -5306,1103 +5317,393 @@ const MyEventsPage: React.FC = () => {
 
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4 md:space-y-6">
 
-      {/* Header */}
+      {/* Status Tabs Filter */}
+
+      <Tabs
+        value={activeTab}
+        onValueChange={(val) => {
+          setActiveTab(val);
+          const filterMap: { [key: string]: string } = {
+            All: 'all',
+            Submitted: 'submitted',
+            Approved: 'approved',
+            Incoming: 'incoming',
+            Ongoing: 'ongoing',
+            Completed: 'completed',
+            Rejected: 'rejected',
+            Draft: 'draft',
+            Cancelled: 'cancelled',
+          };
+          setStatusFilter(filterMap[val] || 'all');
+        }}
+        className="w-full"
+      >
+        <TabsList className="w-full bg-blue-50/50 p-1 rounded-lg flex-wrap h-auto">
+          {[
+            { key: 'All', label: 'All' },
+            { key: 'Submitted', label: 'Submitted' },
+            { key: 'Approved', label: 'Approved' },
+            { key: 'Incoming', label: 'Incoming' },
+            { key: 'Ongoing', label: 'Ongoing' },
+            { key: 'Completed', label: 'Completed' },
+            { key: 'Rejected', label: 'Rejected' },
+            { key: 'Draft', label: 'Draft' },
+            { key: 'Cancelled', label: 'Cancelled' },
+          ].map((tab) => (
+            <TabsTrigger
+              key={tab.key}
+              value={tab.key}
+              className={`data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-sm text-xs md:text-sm px-3 py-1.5`}
+            >
+              {tab.label} ({eventsByStatus[tab.key]})
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
+
+      {/* Compact Header Row */}
 
       <motion.div
-
         initial={{ opacity: 0, y: -10 }}
-
         animate={{ opacity: 1, y: 0 }}
-
         className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
-
       >
-
         <div>
-
           <h1 className="text-xl md:text-2xl font-semibold">My Events</h1>
-
           <p className="text-xs md:text-sm text-muted-foreground">
-
-            View and manage your event requests
-
+            Manage and track your event requests
           </p>
-
         </div>
-
-        <div className="flex items-center gap-2 md:gap-3 w-full sm:w-auto">
-
+        <div className="flex items-center gap-2 w-full sm:w-auto">
           <Button
-
             onClick={fetchMyEvents}
-
             variant="outline"
-
             size="sm"
-
             className="gap-2 flex-1 sm:flex-none"
-
           >
-
-            <RefreshCw className="w-3 h-3 md:w-4 md:h-4" />
-
-            <span className="text-xs md:text-sm">Refresh</span>
-
+            <RefreshCw className="w-4 h-4" />
+            <span className="text-xs">Refresh</span>
           </Button>
-
           <Button
-
             onClick={() => window.location.href = '/users/request-event'}
-
             size="sm"
-
-            className="gap-2 flex-1 sm:flex-none"
-
+            className="gap-2 flex-1 sm:flex-none bg-blue-600 hover:bg-blue-700 text-white"
           >
-
-            <Plus className="w-3 h-3 md:w-4 md:h-4" />
-
-            <span className="text-xs md:text-sm">New Event</span>
-
+            <Plus className="w-4 h-4" />
+            <span className="text-xs">New Event</span>
           </Button>
-
         </div>
-
       </motion.div>
 
-
-
-      {/* Stats Cards */}
-
-      <motion.div
-
-        initial={{ opacity: 0, y: 10 }}
-
-        animate={{ opacity: 1, y: 0 }}
-
-        transition={{ delay: 0.1 }}
-
-        className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4"
-
-      >
-
-        <Card>
-
-          <CardContent className="p-3 md:p-4">
-
-            <div className="flex items-center justify-between">
-
-              <div>
-
-                <p className="text-xs md:text-sm text-muted-foreground">Total Events</p>
-
-                <p className="text-xl md:text-2xl font-bold">{events.length}</p>
-
-              </div>
-
-              <FileText className="w-6 h-6 md:w-8 md:h-8 text-blue-600" />
-
-            </div>
-
-          </CardContent>
-
-        </Card>
-
-        
-
-        <Card>
-
-          <CardContent className="p-3 md:p-4">
-
-            <div className="flex items-center justify-between">
-
-              <div>
-
-                <p className="text-xs md:text-sm text-muted-foreground">Submitted</p>
-
-                <p className="text-xl md:text-2xl font-bold text-orange-600">
-
-                  {events.filter(e => e.status === 'submitted').length}
-
-                </p>
-
-              </div>
-
-              <Clock3 className="w-6 h-6 md:w-8 md:h-8 text-orange-600" />
-
-            </div>
-
-          </CardContent>
-
-        </Card>
-
-        
-
-        <Card>
-
-          <CardContent className="p-3 md:p-4">
-
-            <div className="flex items-center justify-between">
-
-              <div>
-
-                <p className="text-xs md:text-sm text-muted-foreground">Approved</p>
-
-                <p className="text-xl md:text-2xl font-bold text-green-600">
-
-                  {events.filter(e => getDynamicStatus(e) === 'approved').length}
-
-                </p>
-
-              </div>
-
-              <CheckCircle className="w-6 h-6 md:w-8 md:h-8 text-green-600" />
-
-            </div>
-
-          </CardContent>
-
-        </Card>
-
-        
-
-        <Card>
-
-          <CardContent className="p-3 md:p-4">
-
-            <div className="flex items-center justify-between">
-
-              <div>
-
-                <p className="text-xs md:text-sm text-muted-foreground">Completed</p>
-
-                <p className="text-xl md:text-2xl font-bold text-blue-600">
-
-                  {events.filter(e => getDynamicStatus(e) === 'completed').length}
-
-                </p>
-
-              </div>
-
-              <CheckCircle className="w-6 h-6 md:w-8 md:h-8 text-blue-600" />
-
-            </div>
-
-          </CardContent>
-
-        </Card>
-
-      </motion.div>
-
-      {/* Filters */}
-
-      <motion.div
-
-        initial={{ opacity: 0, y: 10 }}
-
-        animate={{ opacity: 1, y: 0 }}
-
-        transition={{ delay: 0.2 }}
-
-      >
-
-        <Card className="bg-white border border-gray-200">
-
-          <CardContent className="p-4 md:p-6">
-
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6">
-
-              {/* Search + Legend */}
-
-              <div className="lg:col-span-5">
-
-                <div className="text-sm font-semibold text-gray-900 mb-2">Search</div>
-
-                <div className="relative">
-
-                  <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-
-                  <Input
-
-                    placeholder="Type event title, location, or requestor"
-
-                    value={searchTerm}
-
-                    onChange={(e) => setSearchTerm(e.target.value)}
-
-                    className="pl-12 pr-4 py-3 text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-
-                  />
-
-                </div>
-
-
-
-                <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-
-                  <div className="text-sm font-semibold text-gray-900">Tagged Requirements Color Guide</div>
-
-                  <div className="mt-1 text-xs text-gray-600 leading-snug">Card background is based on the status of tagged requirements.</div>
-
-                  <div className="mt-2 flex items-center gap-2 overflow-x-auto whitespace-nowrap [-ms-overflow-style:'none'] [scrollbar-width:'none'] [&::-webkit-scrollbar]:hidden">
-
-                    <div className="flex items-center gap-2 rounded-full border border-green-200 bg-green-50 px-3 py-1 text-sm text-green-900 shrink-0">
-
-                      <span className="h-2.5 w-2.5 rounded-full bg-green-500" />
-
-                      <span>All confirmed</span>
-
-                    </div>
-
-                    <div className="flex items-center gap-2 rounded-full border border-yellow-200 bg-yellow-50 px-3 py-1 text-sm text-yellow-900 shrink-0">
-
-                      <span className="h-2.5 w-2.5 rounded-full bg-yellow-500" />
-
-                      <span>Has pending</span>
-
-                    </div>
-
-                  </div>
-
-                </div>
-
-              </div>
-
-              
-
-              {/* Filter and Sort - Right Side */}
-
-              <div className="lg:col-span-7 rounded-xl border border-gray-200 bg-gray-50 p-3 md:p-4">
-
-                <div className="text-sm font-semibold text-gray-900 mb-3">Filters</div>
-
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 lg:gap-4">
-
-                {/* Status Filter */}
-
-                <div className="flex items-center gap-2 lg:gap-3">
-
-                  <Filter className="w-5 h-5 text-gray-600 flex-shrink-0 hidden sm:block" />
-
-                  <Select value={statusFilter} onValueChange={setStatusFilter}>
-
-                    <SelectTrigger className="w-full sm:w-44 text-sm border border-gray-300 rounded-lg">
-
-                      <SelectValue placeholder="Filter by status" />
-
-                    </SelectTrigger>
-
-                    <SelectContent>
-
-                      <SelectItem value="all">
-
-                        <div className="flex items-center gap-3">
-
-                          <span className="font-medium">All Status</span>
-
-                          <Badge variant="secondary" className="text-xs">{events.length}</Badge>
-
-                        </div>
-
-                      </SelectItem>
-
-                      <SelectItem value="incoming">
-
-                        <div className="flex items-center gap-3">
-
-                          <span>Incoming</span>
-
-                          <Badge variant="secondary" className="text-xs">{events.filter(e => getDynamicStatus(e) === 'incoming').length}</Badge>
-
-                        </div>
-
-                      </SelectItem>
-
-                      <SelectItem value="ongoing">
-
-                        <div className="flex items-center gap-3">
-
-                          <span>Ongoing</span>
-
-                          <Badge variant="secondary" className="text-xs">{events.filter(e => getDynamicStatus(e) === 'ongoing').length}</Badge>
-
-                        </div>
-
-                      </SelectItem>
-
-                      <SelectItem value="approved">
-
-                        <div className="flex items-center gap-3">
-
-                          <span>Approved</span>
-
-                          <Badge variant="secondary" className="text-xs">{events.filter(e => e.status === 'approved').length}</Badge>
-
-                        </div>
-
-                      </SelectItem>
-
-                      <SelectItem value="submitted">
-
-                        <div className="flex items-center gap-3">
-
-                          <span>Submitted</span>
-
-                          <Badge variant="secondary" className="text-xs">{events.filter(e => e.status === 'submitted').length}</Badge>
-
-                        </div>
-
-                      </SelectItem>
-
-                      <SelectItem value="completed">
-
-                        <div className="flex items-center gap-3">
-
-                          <span>Completed</span>
-
-                          <Badge variant="secondary" className="text-xs">{events.filter(e => getDynamicStatus(e) === 'completed').length}</Badge>
-
-                        </div>
-
-                      </SelectItem>
-
-                      <SelectItem value="draft">
-
-                        <div className="flex items-center gap-3">
-
-                          <span>Draft</span>
-
-                          <Badge variant="secondary" className="text-xs">{events.filter(e => e.status === 'draft').length}</Badge>
-
-                        </div>
-
-                      </SelectItem>
-
-                      <SelectItem value="rejected">
-
-                        <div className="flex items-center gap-3">
-
-                          <span>Rejected</span>
-
-                          <Badge variant="secondary" className="text-xs">{events.filter(e => e.status === 'rejected').length}</Badge>
-
-                        </div>
-
-                      </SelectItem>
-
-                      <SelectItem value="cancelled">
-
-                        <div className="flex items-center gap-3">
-
-                          <span>Cancelled</span>
-
-                          <Badge variant="secondary" className="text-xs">{events.filter(e => e.status === 'cancelled').length}</Badge>
-
-                        </div>
-
-                      </SelectItem>
-
-                    </SelectContent>
-
-                  </Select>
-
-                </div>
-
-                
-
-                {/* Sort By */}
-
-                <div className="flex items-center gap-2 lg:gap-3">
-
-                  <span className="text-sm font-medium text-gray-700 whitespace-nowrap hidden sm:inline">Sort:</span>
-
-                  <Select value={sortBy} onValueChange={setSortBy}>
-
-                    <SelectTrigger className="w-full sm:w-44 text-sm border border-gray-300 rounded-lg">
-
-                      <SelectValue placeholder="Sort by" />
-
-                    </SelectTrigger>
-
-                    <SelectContent>
-
-                      <SelectItem value="newest">Smart (Incoming → Ongoing → Completed)</SelectItem>
-
-                      <SelectItem value="date-asc">Event Date (Earliest First)</SelectItem>
-
-                      <SelectItem value="date-desc">Event Date (Latest First)</SelectItem>
-
-                      <SelectItem value="oldest">Created Date (Oldest First)</SelectItem>
-
-                      <SelectItem value="title">Title (A-Z)</SelectItem>
-
-                    </SelectContent>
-
-                  </Select>
-
-                </div>
-
-                </div>
-
-              </div>
-
-            </div>
-
-          </CardContent>
-
-        </Card>
-
-      </motion.div>
-
-
+      {/* Search + Sort Bar */}
+
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div className="relative w-full max-w-sm">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+          <Input
+            placeholder="Search events..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-9 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+        </div>
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <Select value={sortBy} onValueChange={setSortBy}>
+            <SelectTrigger className="w-full sm:w-[170px] text-sm border border-gray-300 rounded-lg">
+              <ArrowUpDown className="w-4 h-4 text-gray-500 mr-2" />
+              <SelectValue placeholder="Sort by" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="newest">Smart (Incoming ? Ongoing ? Completed)</SelectItem>
+              <SelectItem value="date-asc">Event Date (Earliest First)</SelectItem>
+              <SelectItem value="date-desc">Event Date (Latest First)</SelectItem>
+              <SelectItem value="oldest">Created Date (Oldest First)</SelectItem>
+              <SelectItem value="title">Title (A-Z)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
 
       {/* Events List */}
 
-      <motion.div
-
-        initial={{ opacity: 0, y: 20 }}
-
-        animate={{ opacity: 1, y: 0 }}
-
-        transition={{ delay: 0.3 }}
-
-        className="space-y-4 mt-8 max-h-[70vh] overflow-y-auto pr-2"
-
-      >
-
+      <div className="relative space-y-3 max-h-[65vh] overflow-y-auto pr-1">
         {loading ? (
-
-          <div className="grid grid-cols-1 gap-4 md:gap-5">
-
+          <div className="space-y-3">
             {Array.from({ length: 5 }).map((_, idx) => (
-
               <Card key={idx} className="border">
-
-                <CardContent className="p-4 md:p-6">
-
-                  <div className="space-y-4">
-
-                    <div className="flex items-center justify-between gap-3">
-
-                      <Skeleton className="h-6 w-28" />
-
-                      <div className="flex items-center gap-2">
-
-                        <Skeleton className="h-7 w-24" />
-
-                        <Skeleton className="h-7 w-20" />
-
-                      </div>
-
-                    </div>
-
-
-
-                    <div className="space-y-2">
-
-                      <Skeleton className="h-6 w-[60%]" />
-
-                      <Skeleton className="h-4 w-[40%]" />
-
-                    </div>
-
-
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-
-                      <Skeleton className="h-4 w-full" />
-
-                      <Skeleton className="h-4 w-full" />
-
-                      <Skeleton className="h-4 w-full" />
-
-                    </div>
-
-
-
-                    <div className="flex flex-wrap items-center gap-3">
-
-                      <Skeleton className="h-4 w-28" />
-
+                <CardContent className="p-4">
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Skeleton className="h-5 w-20" />
                       <Skeleton className="h-4 w-32" />
-
-                      <Skeleton className="h-4 w-40" />
-
                     </div>
-
-
-
-                    <div className="flex flex-wrap items-center gap-2 pt-2">
-
-                      <Skeleton className="h-7 w-20" />
-
-                      <Skeleton className="h-7 w-44" />
-
-                      <Skeleton className="h-7 w-20" />
-
-                      <Skeleton className="h-7 w-44" />
-
-                    </div>
-
+                    <Skeleton className="h-5 w-3/4" />
+                    <Skeleton className="h-3 w-1/2" />
+                    <Skeleton className="h-3 w-full" />
                   </div>
-
                 </CardContent>
-
               </Card>
-
             ))}
-
           </div>
-
         ) : filteredAndSortedEvents.length === 0 ? (
-
           <Card>
-
             <CardContent className="p-8 text-center">
-
               <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-
               <h3 className="text-lg font-medium text-gray-900 mb-2">
-
                 {searchTerm || statusFilter !== 'all' ? 'No events found' : 'No events yet'}
-
               </h3>
-
               <p className="text-gray-500 mb-4">
-
-                {searchTerm || statusFilter !== 'all' 
-
+                {searchTerm || statusFilter !== 'all'
                   ? 'Try adjusting your search or filter criteria.'
-
                   : 'You haven\'t created any event requests yet.'}
-
               </p>
-
               {!searchTerm && statusFilter === 'all' && (
-
                 <Button onClick={() => window.location.href = '/users/request-event'}>
-
                   <Plus className="w-4 h-4 mr-2" />
-
                   Create Your First Event
-
                 </Button>
-
               )}
-
             </CardContent>
-
           </Card>
-
         ) : (
+          <div className="space-y-3">
+            {visibleEvents.map((event) => {
+              const statusInfo = getStatusInfo(event.dynamicStatus);
+              const isExpanded = expandedCards.has(event._id);
 
-          <div className="grid grid-cols-1 gap-4 md:gap-5">
+              const borderColorMap: { [key: string]: string } = {
+                rejected: 'border-red-500',
+                cancelled: 'border-gray-400',
+                approved: 'border-emerald-500',
+                incoming: 'border-emerald-500',
+                submitted: 'border-amber-500',
+                draft: 'border-blue-400',
+                completed: 'border-blue-600',
+                ongoing: 'border-green-500',
+              };
+              const borderClass = borderColorMap[event.dynamicStatus] || 'border-gray-200';
 
-            {visibleEvents.map((event, index) => {
-
-            const statusInfo = getStatusInfo(event.dynamicStatus);
-
-            const taggedReqSummary = getTaggedRequirementsSummary(event);
-
-
-
-            const cardBgClass = taggedReqSummary.allConfirmed && !taggedReqSummary.anyDeclined
-
-              ? 'bg-green-50 border-green-200'
-
-              : taggedReqSummary.anyPending
-
-                ? 'bg-yellow-50 border-yellow-200'
-
-                : 'bg-white';
-
-            
-
-            return (
-
-              <motion.div
-
-                key={event._id}
-
-                initial={{ opacity: 0, y: 20 }}
-
-                animate={{ opacity: 1, y: 0 }}
-
-                transition={{ delay: index * 0.1 }}
-
-              >
-
-                <Card className={`hover:shadow-md transition-shadow border ${cardBgClass}`}>
-
-                  <CardContent className="p-4 md:p-6">
-
-                    <div className="flex items-start justify-between">
-
-                      <div className="flex-1 min-w-0 space-y-3">
-
-                        {/* Status Badge and Right Actions */}
-
-                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0">
-
-                          <div className="flex items-center gap-2 flex-wrap">
-
-                            {event.status === 'rejected' || event.status === 'cancelled' ? (
-
-                              <TooltipProvider>
-
-                                <Tooltip>
-
-                                  <TooltipTrigger asChild>
-
-                                    <Badge 
-
-                                      variant={statusInfo.variant}
-
-                                      className={`gap-1 ${statusInfo.className || ''} cursor-help`}
-
-                                    >
-
-                                      {statusInfo.icon}
-
-                                      {statusInfo.label}
-
-                                    </Badge>
-
-                                  </TooltipTrigger>
-
-                                  <TooltipContent className="max-w-xs bg-white border shadow-lg p-3">
-
-                                    <p className="font-semibold mb-1 text-gray-900">
-
-                                      {event.status === 'rejected' ? 'Rejection Reason:' : 'Cancellation Reason:'}
-
-                                    </p>
-
-                                    <p className="text-sm text-gray-700">
-
-                                      {event.reason || 'No reason provided.'}
-
-                                    </p>
-
-                                  </TooltipContent>
-
-                                </Tooltip>
-
-                              </TooltipProvider>
-
-                            ) : (
-
-                              <Badge 
-
+              return (
+                <Collapsible
+                  key={event._id}
+                  open={isExpanded}
+                  onOpenChange={() => toggleCard(event._id)}
+                >
+                  <Card className={`border-l-4 ${borderClass} hover:shadow-sm transition-shadow`}>
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between gap-2">
+                        <CollapsibleTrigger asChild>
+                          <div className="flex-1 space-y-2 cursor-pointer">
+                            {/* Status Badges Row */}
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Badge
                                 variant={statusInfo.variant}
-
-                                className={`gap-1 ${statusInfo.className || ''}`}
-
+                                className={`gap-1 text-xs ${statusInfo.className || ''}`}
                               >
-
                                 {statusInfo.icon}
-
                                 {statusInfo.label}
-
                               </Badge>
-
-                            )}
-
-                            {/* Show actual status if different from dynamic status */}
-
-                            {event.dynamicStatus !== event.status && event.status !== 'rejected' && (
-
-                              <Badge 
-
-                                variant="outline"
-
-                                className="gap-1 bg-green-100 text-green-800 border-green-200"
-
-                              >
-
-                                <CheckCircle className="w-3 h-3" />
-
-                                {event.status.charAt(0).toUpperCase() + event.status.slice(1)}
-
-                              </Badge>
-
-                            )}
-
-                          </div>
-
-                          
-
-                          {/* Right Side Actions */}
-
-                          <div className="flex items-center gap-1.5 md:gap-2 flex-wrap">
-
-                            <Button
-
-                              variant="outline"
-
-                              size="sm"
-
-                              onClick={() => handleEditEvent(event)}
-
-                              disabled={event.status === 'completed' || event.dynamicStatus === 'completed'}
-
-                              className="gap-1 h-7 px-2 text-[10px] md:text-xs whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
-
-                            >
-
-                              <Edit className="w-3 h-3" />
-
-                              <span className="hidden sm:inline">Edit Schedule</span>
-
-                              <span className="sm:hidden">Edit</span>
-
-                            </Button>
-
-                            {(event.status === 'submitted' || event.status === 'approved') && event.dynamicStatus !== 'completed' && (
-
-                              <Button
-
-                                variant="outline"
-
-                                size="sm"
-
-                                onClick={() => handleEditEventDetails(event)}
-
-                                className="gap-1 h-7 px-2 text-[10px] md:text-xs bg-blue-50 hover:bg-blue-100 whitespace-nowrap"
-
-                              >
-
-                                <Edit className="w-3 h-3" />
-
-                                <span className="hidden sm:inline">Edit Details/Files</span>
-
-                                <span className="sm:hidden">Edit</span>
-
-                              </Button>
-
-                            )}
-
-                            {(event.status === 'draft' || event.status === 'rejected') && (
-
-                              <Button
-
-                                variant="outline"
-
-                                size="sm"
-
-                                onClick={() => handleDeleteEvent(event._id)}
-
-                                className="gap-1 h-7 px-2 text-xs text-red-600 hover:text-red-700"
-
-                              >
-
-                                <Trash2 className="w-3 h-3" />
-
-                                Delete
-
-                              </Button>
-
-                            )}
-
-                            {(event.status === 'draft' || event.status === 'submitted' || event.status === 'approved') && (
-
-                              <Button
-
-                                variant="outline"
-
-                                size="sm"
-
-                                onClick={() => handleOpenCancelEvent(event)}
-
-                                className="gap-1 h-7 px-2 text-xs text-orange-700 hover:text-orange-800"
-
-                              >
-
-                                <XCircle className="w-3 h-3" />
-
-                                Cancel
-
-                              </Button>
-
-                            )}
-
-                          </div>
-
-                        </div>
-
-                        
-
-                        {/* Title */}
-
-                        <div className="min-w-0">
-
-                          <h3 className="text-base md:text-lg font-semibold text-gray-900 mb-1 truncate" title={event.eventTitle}>
-
-                            {event.eventTitle}
-
-                          </h3>
-
-                          <p className="text-xs md:text-sm text-gray-600">
-
-                            Requested by {event.requestor}
-
-                          </p>
-
-                        </div>
-
-
-
-                        {/* Event Details */}
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 md:gap-4 text-xs md:text-sm">
-
-                          <div className="flex items-center gap-2 text-gray-600">
-
-                            <CalendarIcon className="w-4 h-4" />
-
-                            <span>
-
-                              {format(new Date(event.startDate), 'MMM dd, yyyy')}
-
-                            </span>
-
-                          </div>
-
-                          <div className="flex items-center gap-2 text-gray-600">
-
-                            <Clock className="w-4 h-4" />
-
-                            <span>
-
-                              {formatTime(event.startTime)} - {formatTime(event.endTime)}
-
-                            </span>
-
-                          </div>
-
-                          <div className="flex items-center gap-2 text-gray-600">
-
-                            <MapPin className="w-4 h-4 flex-shrink-0" />
-
-                            {event.locations && event.locations.length > 1 ? (
-
-                              <div className="flex flex-col gap-0.5 min-w-0">
-
-                                {event.locations.map((loc, idx) => (
-
-                                  <span key={idx} className="text-xs truncate">
-
-                                    {loc}
-
-                                  </span>
-
-                                ))}
-
-                              </div>
-
-                            ) : (
-
-                              <span className="truncate">{event.location}</span>
-
-                            )}
-
-                          </div>
-
-                        </div>
-
-
-
-                        {/* Additional Info */}
-
-                        <div className="flex flex-wrap items-center gap-3 md:gap-6 text-xs md:text-sm text-gray-600">
-
-                          <div className="flex items-center gap-1">
-
-                            <Users className="w-4 h-4" />
-
-                            <span>{event.participants} participants</span>
-
-                          </div>
-
-                          <div className="flex items-center gap-1">
-
-                            <Building2 className="w-4 h-4" />
-
-                            <span>{event.taggedDepartments.length} departments</span>
-
-                          </div>
-
-                          <div className="text-xs text-gray-500">
-
-                            Created {format(new Date(event.createdAt), 'MMM dd, yyyy')}
-
-                          </div>
-
-                        </div>
-
-
-
-                        {/* Bottom Action Buttons */}
-
-                        <div className="flex flex-wrap items-center gap-1.5 md:gap-2 pt-2">
-
-                          <Button
-
-                            variant="outline"
-
-                            size="sm"
-
-                            onClick={() => handleViewEvent(event)}
-
-                            className="gap-1 h-7 px-2 text-[10px] md:text-xs"
-
-                          >
-
-                            <Eye className="w-3 h-3" />
-
-                            Details
-
-                          </Button>
-
-                          <TooltipProvider>
-
-                            <Tooltip>
-
-                              <TooltipTrigger asChild>
-
-                                <Button
-
+                              {event.bacApprovalStatus === 'rejected' && (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Badge variant="outline" className="gap-1 text-xs bg-amber-100 text-amber-800 border-amber-300 cursor-help">
+                                      <Info className="w-3 h-3" />
+                                      BAC
+                                    </Badge>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top" className="max-w-xs bg-white text-gray-900 border shadow-lg">
+                                    <p className="text-xs font-semibold text-amber-800">BAC Department Rejection:</p>
+                                    <p className="text-xs text-gray-700 mt-1">{event.bacNotes || 'No notes provided'}</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              )}
+                              {event.dynamicStatus !== event.status && event.status !== 'rejected' && (
+                                <Badge
                                   variant="outline"
-
-                                  size="sm"
-
-                                  onClick={() => handleShowDepartments(event)}
-
-                                  className="gap-1 h-7 px-2 text-[10px] md:text-xs whitespace-nowrap relative"
-
+                                  className="gap-1 text-xs bg-green-100 text-green-800 border-green-200"
                                 >
-
-                                  <Building2 className="w-3 h-3" />
-
-                                  <span className="hidden sm:inline">Tagged/Requirements</span>
-
-                                  <span className="sm:hidden">Tagged</span>
-
-                                  {getTaggedUpdatesCount(event) > 0 && !viewedTaggedRequirementsEvents.has(event._id) && (
-
-                                    <span className="ml-1 inline-flex items-center justify-center rounded-full bg-red-500 text-white text-[9px] min-w-[16px] h-[16px] px-1">
-
-                                      {getTaggedUpdatesCount(event) > 99 ? '99+' : getTaggedUpdatesCount(event)}
-
-                                    </span>
-
-                                  )}
-
+                                  <CheckCircle className="w-3 h-3" />
+                                  {event.status.charAt(0).toUpperCase() + event.status.slice(1)}
+                                </Badge>
+                              )}
+                              {event.status === 'rejected' && (
+                                <Button
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleEditEvent(event);
+                                  }}
+                                  className="gap-1 h-6 px-2 text-[11px] bg-violet-600 hover:bg-violet-700 text-white"
+                                >
+                                  <Sparkles className="w-3 h-3" />
+                                  Suggest Venue
                                 </Button>
+                              )}
+                            </div>
+                            {/* Title */}
+                            <h3 className="text-base font-semibold text-gray-900 truncate">
+                              {event.eventTitle}
+                            </h3>
+                            {/* Requestor */}
+                            <p className="text-xs text-gray-500">
+                              Requested by {event.requestor}
+                            </p>
+                            {/* Compact Detail Row */}
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500">
+                              <span className="flex items-center gap-1">
+                                <CalendarIcon className="w-3 h-3" />
+                                {format(new Date(event.startDate), 'MMM dd, yyyy')}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <Clock className="w-3 h-3" />
+                                {formatTime(event.startTime)} - {formatTime(event.endTime)}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <MapPin className="w-3 h-3" />
+                                {event.location}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <Users className="w-3 h-3" />
+                                {event.participants}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <Building2 className="w-3 h-3" />
+                                {event.taggedDepartments.length} dept{event.taggedDepartments.length !== 1 ? 's' : ''}
+                              </span>
+                            </div>
+                            {/* Toggle indicator */}
+                            <div className="flex items-center gap-1 text-xs text-blue-600 pt-1">
+                              {isExpanded ? (
+                                <><ChevronUp className="w-3.5 h-3.5" /> Less</>
+                              ) : (
+                                <><ChevronDown className="w-3.5 h-3.5" /> More details</>
+                              )}
+                            </div>
+                          </div>
+                        </CollapsibleTrigger>
 
-                              </TooltipTrigger>
-
-                              <TooltipContent>
-
-                                <p className="text-xs">
-
-                                  Shows how many requirements have updates (confirmed/declined or new department notes/replies).
-
-                                </p>
-
-                              </TooltipContent>
-
-                            </Tooltip>
-
-                          </TooltipProvider>
-
-                          <Button
-
-                            variant="default"
-
-                            size="sm"
-
-                            onClick={() => handleOpenAddDepartments(event)}
-
-                            disabled={event.status === 'completed' || event.dynamicStatus === 'completed'}
-
-                            className="gap-1 h-7 px-2 text-[10px] md:text-xs bg-blue-600 hover:bg-blue-700 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
-
-                          >
-
-                            <Plus className="w-3 h-3" />
-
-                            <span className="hidden sm:inline">Tag More Departments</span>
-
-                            <span className="sm:hidden">Tag More</span>
-
-                          </Button>
-
-                          <Button
-
-                            variant="outline"
-
-                            size="sm"
-
-                            onClick={() => handleShowFiles(event)}
-
-                            className="gap-1 h-7 px-2 text-[10px] md:text-xs"
-
-                          >
-
-                            <Paperclip className="w-3 h-3" />
-
-                            Files
-
-                          </Button>
-
-                        </div>
-
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="outline" size="sm" className="gap-1 h-7 text-xs shrink-0">
+                              <MoreHorizontal className="w-3.5 h-3.5" />
+                              Actions
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="text-xs">
+                            <DropdownMenuItem onClick={() => handleEditEvent(event)} disabled={event.status === 'completed' || event.dynamicStatus === 'completed'}>
+                              <Edit className="w-3.5 h-3.5 mr-2" />
+                              Edit Schedule
+                            </DropdownMenuItem>
+                            {(event.status === 'submitted' || event.status === 'approved') && event.dynamicStatus !== 'completed' && (
+                              <DropdownMenuItem onClick={() => handleEditEventDetails(event)}>
+                                <Edit className="w-3.5 h-3.5 mr-2" />
+                                Edit Details / Files
+                              </DropdownMenuItem>
+                            )}
+                            {(event.status === 'submitted' || event.status === 'approved' || event.status === 'incoming' || event.status === 'ongoing') && (
+                              <DropdownMenuItem onClick={() => handleOpenCancelEvent(event)}>
+                                <XCircle className="w-3.5 h-3.5 mr-2" />
+                                Cancel Event
+                              </DropdownMenuItem>
+                            )}
+                            {(event.status === 'draft' || event.status === 'rejected' || event.status === 'cancelled') && (
+                              <DropdownMenuItem onClick={() => handleDeleteEvent(event._id)}>
+                                <Trash2 className="w-3.5 h-3.5 mr-2" />
+                                Delete Event
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
 
+                      <CollapsibleContent className="space-y-3 pt-3">
+                        {/* Expanded Details */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-gray-600 bg-gray-50 rounded-lg p-3">
+                          <div className="flex items-center gap-2">
+                            <CalendarIcon className="w-4 h-4 text-gray-400" />
+                            <span>
+                              {format(new Date(event.startDate), 'MMM dd, yyyy')}
+                              {event.startDate !== event.endDate && ` - ${format(new Date(event.endDate), 'MMM dd, yyyy')}`}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Clock className="w-4 h-4 text-gray-400" />
+                            <span>{formatTime(event.startTime)} - {formatTime(event.endTime)}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <MapPin className="w-4 h-4 text-gray-400" />
+                            {event.locations && event.locations.length > 1 ? (
+                              <span>{event.locations.join(', ')}</span>
+                            ) : (
+                              <span>{event.location}</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Users className="w-4 h-4 text-gray-400" />
+                            <span>{event.participants} participants</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Building2 className="w-4 h-4 text-gray-400" />
+                            <span>{event.taggedDepartments.length} department{event.taggedDepartments.length !== 1 ? 's' : ''}</span>
+                          </div>
+                        </div>
 
+                        {/* Expanded Action Buttons */}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleViewEvent(event)}
+                            className="gap-1 h-8 text-xs"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            View Details / Requirements
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleShowDepartments(event)}
+                            className="gap-1 h-8 text-xs relative"
+                          >
+                            <Building2 className="w-3.5 h-3.5" />
+                            Tagged / Requirements
+                            {getTaggedUpdatesCount(event) > 0 && !viewedTaggedRequirementsEvents.has(event._id) && (
+                              <span className="ml-1 inline-flex items-center justify-center rounded-full bg-red-500 text-white text-[9px] min-w-[16px] h-[16px] px-1">
+                                {getTaggedUpdatesCount(event) > 99 ? '99+' : getTaggedUpdatesCount(event)}
+                              </span>
+                            )}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleShowFiles(event)}
+                            className="gap-1 h-8 text-xs"
+                          >
+                            <Paperclip className="w-3.5 h-3.5" />
+                            Files
+                          </Button>
+                        </div>
+                      </CollapsibleContent>
+                    </CardContent>
+                  </Card>
+                </Collapsible>
+              );
+            })}
 
-                    </div>
-
-                  </CardContent>
-
-                </Card>
-
-              </motion.div>
-
-            );
-
-          })}
-
-
-
-          {filteredAndSortedEvents.length > visibleCount && (
-
-            <div className="flex justify-center pt-2">
-
-              <Button
-
-                variant="outline"
-
-                onClick={() => setVisibleCount((c) => c + 20)}
-
-                className="w-full sm:w-auto"
-
-              >
-
-                Load more
-
-              </Button>
-
-            </div>
-
-          )}
-
+            {filteredAndSortedEvents.length > visibleCount && (
+              <div className="flex justify-center pt-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setVisibleCount((c) => c + 20)}
+                  className="w-full sm:w-auto"
+                >
+                  Load more
+                </Button>
+              </div>
+            )}
           </div>
-
         )}
-
-      </motion.div>
+      </div>
 
 
 
@@ -8372,45 +7673,37 @@ const MyEventsPage: React.FC = () => {
 
 
 
-      {/* Edit Event Modal */}
+      {/* Edit Event Sheet */}
 
-      <Dialog open={showEditModal} onOpenChange={setShowEditModal}>
+      <Sheet open={showEditModal} onOpenChange={setShowEditModal}>
 
-        <DialogContent className="!max-w-2xl !w-full max-h-[90vh] flex flex-col">
-
-          <div className="flex items-center justify-between mb-6">
-
-            <div>
-
-              <h2 className="text-xl font-semibold text-gray-900">
-
-                Schedule Event at {
-                  (editFormData.locations && editFormData.locations.length > 1)
-                    ? editFormData.locations.join(' + ')
-                    : (editFormData.location || selectedEditEvent?.location || 'Selected Location')
-                }
-
-              </h2>
-
-              <p className="text-sm text-gray-600 mt-1">
-
-                Select your preferred start and end date/time for the event.
-
-              </p>
-
-            </div>
-
-          </div>
-
-          
+        <SheetContent side="right" className="w-full sm:max-w-2xl flex flex-col p-0 gap-0">
 
           {selectedEditEvent && (
 
             <div className="flex flex-col flex-1 min-h-0">
 
-              {/* Scrollable Content */}
+              <SheetHeader className="px-6 pt-6 pb-0">
 
-              <div className="flex-1 overflow-y-auto space-y-6">
+                <SheetTitle className="text-xl">
+
+                  Schedule Event at {
+                    (editFormData.locations && editFormData.locations.length > 1)
+                      ? editFormData.locations.join(' + ')
+                      : (editFormData.location || selectedEditEvent?.location || 'Selected Location')
+                  }
+
+                </SheetTitle>
+
+                <SheetDescription>
+
+                  Use Find Venue to automatically suggest available locations.
+
+                </SheetDescription>
+
+              </SheetHeader>
+
+              <div className="flex-1 overflow-y-auto space-y-6 px-6 py-4">
 
                 {/* Event Title (Read-only) */}
 
@@ -8424,1569 +7717,67 @@ const MyEventsPage: React.FC = () => {
 
 
 
-              {/* Location Availability Info */}
-
-              {editFormData.location && availableDates.length > 0 && (
-
-                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-
-                  <p className="text-xs text-blue-600 flex items-center gap-1">
-
-                    <CalendarIcon className="w-3 h-3" />
-
-                    Only dates when {editFormData.location} is available can be selected ({availableDates.length} available date{availableDates.length !== 1 ? 's' : ''})
-
-                  </p>
-
-                </div>
-
-              )}
-
-
-
-              {/* Venue Conflict Banner (match Request Event Schedule modal) */}
-
-              {editFormData.startDate && venueConflictingEvents.length > 0 && (
-
-                <div className="mt-1 bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
-
-                  {(() => {
-
-                    const bookers = venueConflictingEvents
-
-                      .filter(e => e.location === editFormData.location)
-
-                      .map((e) => e.requestorDepartment || e.department || e.departmentName || 'Unknown Department')
-
-                      .filter(Boolean);
-
-                    const uniqueBookers = Array.from(new Set(bookers));
-
-                    return uniqueBookers.length > 0 && (
-
-                      <div className="flex items-center gap-2">
-
-                        <Badge className="bg-orange-600 text-white text-xs px-2 py-0.5 h-5 flex-shrink-0 whitespace-nowrap">
-
-                          VENUE
-
-                        </Badge>
-
-                        <p className="text-xs text-amber-900">
-
-                          <strong>{uniqueBookers.join(', ')}</strong> has booked this venue. Select a different time.
-
-                        </p>
-
-                      </div>
-
-                    );
-
-                  })()}
-
-                </div>
-
-              )}
-
-
-
               {/* Find Venue Button */}
+
               <div className="bg-gradient-to-r from-violet-50 to-purple-50 border border-violet-200 rounded-lg p-4">
+
                 <div className="flex items-center justify-between">
+
                   <div className="flex items-center gap-3">
+
                     <div className="w-10 h-10 rounded-full bg-violet-100 flex items-center justify-center">
+
                       <Wand2 className="w-5 h-5 text-violet-600" />
+
                     </div>
+
                     <div>
+
                       <h3 className="text-sm font-semibold text-gray-900">Need help finding a venue?</h3>
+
                       <p className="text-xs text-gray-600 mt-0.5">Let us suggest available locations based on your event details</p>
+
                     </div>
+
                   </div>
+
                   <Button
+
                     type="button"
+
                     onClick={() => {
+
                       if (selectedEditEvent) {
+
                         setAutoSuggestParticipants(selectedEditEvent.participants.toString());
+
                         setAutoSuggestStartDate(new Date(editFormData.startDate || selectedEditEvent.startDate));
+
                         setAutoSuggestEndDate(new Date(editFormData.endDate || selectedEditEvent.endDate));
+
                         setAutoSuggestStartTime(editFormData.startTime || selectedEditEvent.startTime);
+
                         setAutoSuggestEndTime(editFormData.endTime || selectedEditEvent.endTime);
+
                       }
+
                       setShowAutoSuggestModal(true);
+
                     }}
+
                     className="bg-violet-600 hover:bg-violet-700 text-white gap-2 whitespace-nowrap"
+
                   >
+
                     <Sparkles className="w-4 h-4" />
+
                     Find Venue
+
                   </Button>
-                </div>
-              </div>
-
-              {/* Location Section */}
-
-              <div>
-
-                <Label className="text-sm font-medium text-gray-700">Location</Label>
-
-                <div className="space-y-3 mt-1">
-
-                  <Select 
-
-                    value={editFormData.location || (showCustomLocationInput ? 'Add Custom Location' : '')} 
-
-                    onValueChange={(value) => {
-
-                      if (value === 'Add Custom Location') {
-
-                        setShowCustomLocationInput(true);
-
-                        setCustomLocation('');
-
-                        setAvailableDates([]); // Clear available dates
-
-                      } else {
-
-                        setShowCustomLocationInput(false);
-
-                        setEditFormData(prev => ({ ...prev, location: value, locations: [value] }));
-
-                        fetchAvailableDates(value); // Fetch available dates for selected location
-
-                      }
-
-                    }}
-
-                  >
-
-                    <SelectTrigger>
-
-                      <SelectValue placeholder="Select location" />
-
-                    </SelectTrigger>
-
-                    <SelectContent>
-
-                      {/* Show custom location if it exists and is not in the predefined list */}
-
-                      {editFormData.location && !locations.includes(editFormData.location) && (
-
-                        <SelectItem key={editFormData.location} value={editFormData.location}>
-
-                          <div className="flex items-center gap-2">
-
-                            <MapPin className="w-4 h-4 text-green-600" />
-
-                            <span>{editFormData.location}</span>
-
-                            <span className="text-xs text-gray-500">(Custom)</span>
-
-                          </div>
-
-                        </SelectItem>
-
-                      )}
-
-                      
-
-                      {/* Predefined locations */}
-
-                      {locations.map((location) => (
-
-                        <SelectItem 
-
-                          key={location} 
-
-                          value={location}
-
-                          className={location === 'Add Custom Location' ? 'text-blue-600 font-medium' : ''}
-
-                        >
-
-                          <div className="flex items-center gap-2">
-
-                            {location === 'Add Custom Location' && (
-
-                              <Plus className="w-4 h-4 text-blue-600" />
-
-                            )}
-
-                            <span className={location === 'Add Custom Location' ? 'text-blue-600' : ''}>
-
-                              {location}
-
-                            </span>
-
-                          </div>
-
-                        </SelectItem>
-
-                      ))}
-
-                    </SelectContent>
-
-                  </Select>
-
-                  
-
-                  {/* Custom Location Input */}
-
-                  {showCustomLocationInput && (
-
-                    <div className="flex gap-2">
-
-                      <Input
-
-                        placeholder="Enter custom location"
-
-                        value={customLocation}
-
-                        onChange={(e) => setCustomLocation(e.target.value)}
-
-                        className="flex-1"
-
-                      />
-
-                      <Button
-
-                        type="button"
-
-                        onClick={() => {
-
-                          if (customLocation.trim()) {
-
-                            setEditFormData(prev => ({ ...prev, location: customLocation.trim() }));
-
-                            setShowCustomLocationInput(false);
-
-                            setCustomLocation('');
-
-                            fetchAvailableDates(customLocation.trim()); // Fetch available dates for custom location
-
-                          }
-
-                        }}
-
-                        className="px-3"
-
-                      >
-
-                        <Plus className="w-4 h-4" />
-
-                      </Button>
-
-                    </div>
-
-                  )}
 
                 </div>
 
               </div>
-
-
-
-              {/* Date and Time Section */}
-
-              {editFormData.startDate && editFormData.endDate && editFormData.startDate !== editFormData.endDate ? (
-
-                /* Multi-Day Event - Show Day 1 in Card */
-
-                <div className="space-y-4">
-
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-
-                    <div className="flex items-center gap-2 mb-4">
-
-                      <h4 className="text-sm font-medium text-gray-900">
-
-                        Day 1: {format(new Date(editFormData.startDate), "PPPP")}
-
-                      </h4>
-
-                      <Badge variant="default" className="text-xs bg-blue-600">
-
-                        Main Day
-
-                      </Badge>
-
-                    </div>
-
-                    <div className="space-y-3">
-
-                      {/* Start Date */}
-
-                      <div>
-
-                        <Label className="text-xs text-gray-600 mb-1.5 block">Start Date (Day 1)</Label>
-
-                        <Popover>
-
-                          <PopoverTrigger asChild>
-
-                            <Button
-
-                              variant="outline"
-
-                              className="w-full justify-start text-left font-normal"
-
-                            >
-
-                              <CalendarIcon className="mr-2 h-4 w-4" />
-
-                              {editFormData.startDate ? format(new Date(editFormData.startDate), 'PPP') : 'Pick a date'}
-
-                            </Button>
-
-                          </PopoverTrigger>
-
-                          <PopoverContent className="w-auto p-0">
-
-                            <Calendar
-
-                              mode="single"
-
-                              selected={editFormData.startDate ? new Date(editFormData.startDate) : undefined}
-
-                              onSelect={(date) => {
-
-                                if (date) {
-
-                                  const year = date.getFullYear();
-
-                                  const month = String(date.getMonth() + 1).padStart(2, '0');
-
-                                  const day = String(date.getDate()).padStart(2, '0');
-
-                                  const newStartDate = `${year}-${month}-${day}`;
-
-                                  
-
-                                  // Calculate how many days the event spans
-
-                                  const oldStart = new Date(editFormData.startDate);
-
-                                  const oldEnd = new Date(editFormData.endDate);
-
-                                  const daysDifference = Math.ceil((oldEnd.getTime() - oldStart.getTime()) / (1000 * 60 * 60 * 24));
-
-                                  
-
-                                  // Calculate new end date maintaining the same span
-
-                                  const newEndDate = new Date(date);
-
-                                  newEndDate.setDate(newEndDate.getDate() + daysDifference);
-
-                                  const newEndDateString = `${newEndDate.getFullYear()}-${String(newEndDate.getMonth() + 1).padStart(2, '0')}-${String(newEndDate.getDate()).padStart(2, '0')}`;
-
-                                  
-
-                                  // Update all dateTimeSlots to shift by the same amount
-
-                                  const dayShift = Math.ceil((date.getTime() - oldStart.getTime()) / (1000 * 60 * 60 * 24));
-
-                                  const updatedSlots = editFormData.dateTimeSlots.map(slot => {
-
-                                    const newSlotDate = new Date(slot.date);
-
-                                    newSlotDate.setDate(newSlotDate.getDate() + dayShift);
-
-                                    return {
-
-                                      ...slot,
-
-                                      date: newSlotDate
-
-                                    };
-
-                                  });
-
-                                  
-
-                                  setEditFormData(prev => ({ 
-
-                                    ...prev, 
-
-                                    startDate: newStartDate,
-
-                                    endDate: newEndDateString,
-
-                                    dateTimeSlots: updatedSlots
-
-                                  }));
-
-                                }
-
-                              }}
-
-                              disabled={isDateDisabled}
-
-                              initialFocus
-
-                            />
-
-                          </PopoverContent>
-
-                        </Popover>
-
-                      </div>
-
-                      
-
-                      {/* End Date - Read only, shows same as start date */}
-
-                      <div>
-
-                        <Label className="text-xs text-gray-600 mb-1.5 block">End Date (Day 1)</Label>
-
-                        <Button
-
-                          variant="outline"
-
-                          className="w-full justify-start text-left font-normal bg-gray-100 cursor-not-allowed"
-
-                          disabled
-
-                        >
-
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-
-                          {editFormData.startDate ? format(new Date(editFormData.startDate), 'PPP') : 'Same as Start Date'}
-
-                        </Button>
-
-                        <p className="text-xs text-gray-500 mt-1">End date is automatically same as start date for Day 1</p>
-
-                      </div>
-
-                    </div>
-
-                    
-
-                    <div className="grid grid-cols-2 gap-4 mt-3">
-
-                      <div>
-
-                        <Label className="text-xs text-gray-600 mb-1.5 block">Start Time</Label>
-
-                        <Select 
-
-                          value={editFormData.startTime} 
-
-                          onValueChange={(value) => {
-
-                            setEditFormData(prev => ({ ...prev, startTime: value }));
-
-                            if (editFormData.endTime) {
-
-                              const timeToMinutes = (time: string) => {
-
-                                const [hours, minutes] = time.split(':').map(Number);
-
-                                return hours * 60 + minutes;
-
-                              };
-
-                              if (timeToMinutes(value) >= timeToMinutes(editFormData.endTime)) {
-
-                                setEditFormData(prev => ({ ...prev, endTime: '' }));
-
-                              }
-
-                            }
-
-                          }}
-
-                        >
-
-                          <SelectTrigger>
-
-                            <SelectValue placeholder="Select start time" />
-
-                          </SelectTrigger>
-
-                          <SelectContent className="max-h-80">
-
-                            {generateTimeOptions().map((timeOption) => {
-
-                              const isBooked = isTimeSlotBooked(timeOption.value);
-
-                              const hasReqConflicts = hasRequirementConflictsAtTime(timeOption.value);
-
-                              return (
-
-                                <SelectItem 
-
-                                  key={timeOption.value} 
-
-                                  value={timeOption.value}
-
-                                  disabled={isBooked}
-
-                                  className={isBooked ? 'opacity-50 cursor-not-allowed' : ''}
-
-                                >
-
-                                  <div className="flex items-center justify-between w-full gap-2">
-
-                                    <span className={isBooked ? 'text-gray-400' : ''}>
-
-                                      {timeOption.label}
-
-                                    </span>
-
-                                    <div className="flex items-center gap-1">
-
-                                      {hasReqConflicts && !isBooked && (
-
-                                        <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-300">
-
-                                          REQ
-
-                                        </Badge>
-
-                                      )}
-
-                                      {isBooked && (
-
-                                        <Badge variant="destructive" className="text-xs">
-
-                                          VENUE
-
-                                        </Badge>
-
-                                      )}
-
-                                    </div>
-
-                                  </div>
-
-                                </SelectItem>
-
-                              );
-
-                            })}
-
-                          </SelectContent>
-
-                        </Select>
-
-                      </div>
-
-                      <div>
-
-                        <Label className="text-xs text-gray-600 mb-1.5 block">End Time</Label>
-
-                        <Select 
-
-                          value={editFormData.endTime} 
-
-                          onValueChange={(value) => setEditFormData(prev => ({ ...prev, endTime: value }))}
-
-                          disabled={!editFormData.startTime}
-
-                        >
-
-                          <SelectTrigger>
-
-                            <SelectValue placeholder={editFormData.startTime ? "Select end time" : "Select start time first"} />
-
-                          </SelectTrigger>
-
-                          <SelectContent className="max-h-80">
-
-                            {getAvailableEndTimes().map((timeOption) => {
-
-                              const isBooked = isTimeSlotBooked(timeOption.value);
-
-                              const hasReqConflicts = hasRequirementConflictsAtTime(timeOption.value);
-
-                              return (
-
-                                <SelectItem 
-
-                                  key={timeOption.value} 
-
-                                  value={timeOption.value}
-
-                                  disabled={isBooked}
-
-                                  className={isBooked ? 'opacity-50 cursor-not-allowed' : ''}
-
-                                >
-
-                                  <div className="flex items-center justify-between w-full gap-2">
-
-                                    <span className={isBooked ? 'text-gray-400' : ''}>
-
-                                      {timeOption.label}
-
-                                    </span>
-
-                                    <div className="flex items-center gap-1">
-
-                                      {hasReqConflicts && !isBooked && (
-
-                                        <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-300">
-
-                                          REQ
-
-                                        </Badge>
-
-                                      )}
-
-                                      {isBooked && (
-
-                                        <Badge variant="destructive" className="text-xs">
-
-                                          VENUE
-
-                                        </Badge>
-
-                                      )}
-
-                                    </div>
-
-                                  </div>
-
-                                </SelectItem>
-
-                              );
-
-                            })}
-
-                          </SelectContent>
-
-                        </Select>
-
-                      </div>
-
-                    </div>
-
-                  </div>
-
-                </div>
-
-              ) : (
-
-                /* Single Day Event - Match Request Event Schedule modal layout */
-
-                <div className="space-y-6">
-
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-
-                    <h3 className="text-base font-semibold text-blue-900">Event Schedule Summary</h3>
-
-                    <p className="text-sm text-blue-700 mt-1 font-medium">
-
-                      Location: {
-                        (editFormData.locations && editFormData.locations.length > 1)
-                          ? editFormData.locations.join(' + ')
-                          : (editFormData.location || selectedEditEvent?.location || 'Selected Location')
-                      }
-
-                    </p>
-
-                  </div>
-
-
-
-                  {/* Start Date & Time */}
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-
-                    <div>
-
-                      <Label className="text-sm font-medium text-gray-700 mb-2 block">Start Date</Label>
-
-                      <Popover>
-
-                        <PopoverTrigger asChild>
-
-                          <Button variant="outline" className="w-full justify-start text-left font-normal">
-
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-
-                            {editFormData.startDate ? format(new Date(editFormData.startDate), 'PPP') : 'Pick a date'}
-
-                          </Button>
-
-                        </PopoverTrigger>
-
-                        <PopoverContent className="w-auto p-0">
-
-                          <Calendar
-
-                            mode="single"
-
-                            selected={editFormData.startDate ? new Date(editFormData.startDate) : undefined}
-
-                            onSelect={(date) => {
-
-                              if (date) {
-
-                                const year = date.getFullYear();
-
-                                const month = String(date.getMonth() + 1).padStart(2, '0');
-
-                                const day = String(date.getDate()).padStart(2, '0');
-
-                                const dateString = `${year}-${month}-${day}`;
-
-                                setEditFormData(prev => ({ ...prev, startDate: dateString }));
-
-                                setConflictingEvents([]);
-
-                                setVenueConflictingEvents([]);
-
-                              }
-
-                            }}
-
-                            disabled={isDateDisabled}
-
-                            initialFocus
-
-                          />
-
-                        </PopoverContent>
-
-                      </Popover>
-
-                    </div>
-
-
-
-                    <div>
-
-                      <Label htmlFor="startTime" className="text-sm font-medium text-gray-700 mb-2 block">Start Time</Label>
-
-                      <Select
-
-                        value={editFormData.startTime}
-
-                        onValueChange={(value) => {
-
-                          setEditFormData(prev => ({ ...prev, startTime: value }));
-
-                          if (editFormData.endTime) {
-
-                            const timeToMinutes = (time: string) => {
-
-                              const [hours, minutes] = time.split(':').map(Number);
-
-                              return hours * 60 + minutes;
-
-                            };
-
-                            if (timeToMinutes(value) >= timeToMinutes(editFormData.endTime)) {
-
-                              setEditFormData(prev => ({ ...prev, endTime: '' }));
-
-                            }
-
-                          }
-
-                        }}
-
-                        disabled={!editFormData.startDate}
-
-                      >
-
-                        <SelectTrigger className="w-full" disabled={!editFormData.startDate}>
-
-                          <SelectValue placeholder={!editFormData.startDate ? 'Select start date first' : 'Select start time'} />
-
-                        </SelectTrigger>
-
-                        <SelectContent className="max-h-80">
-
-                          {generateTimeOptions().map((timeOption) => {
-
-                            const isBooked = isTimeSlotBooked(timeOption.value);
-
-                            const hasReqConflicts = hasRequirementConflictsAtTime(timeOption.value);
-
-                            const isDisabled = isBooked;
-
-                            return (
-
-                              <SelectItem
-
-                                key={timeOption.value}
-
-                                value={timeOption.value}
-
-                                disabled={isDisabled}
-
-                                className={isDisabled ? 'opacity-50 cursor-not-allowed' : ''}
-
-                              >
-
-                                <div className={`flex items-center justify-between w-full ${isBooked ? 'line-through' : ''}`}>
-
-                                  <span className={isDisabled ? 'text-gray-400' : ''}>{timeOption.label}</span>
-
-                                  <div className="flex items-center gap-1">
-
-                                    {isBooked && (
-
-                                      <Badge variant="destructive" className="text-xs">VENUE</Badge>
-
-                                    )}
-
-                                    {hasReqConflicts && (
-
-                                      <Badge variant="secondary" className="text-xs bg-orange-100 text-orange-800">REQ</Badge>
-
-                                    )}
-
-                                  </div>
-
-                                </div>
-
-                              </SelectItem>
-
-                            );
-
-                          })}
-
-                        </SelectContent>
-
-                      </Select>
-
-                    </div>
-
-                  </div>
-
-
-
-                  {/* End Date & Time */}
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-
-                    <div>
-
-                      <Label className="text-sm font-medium text-gray-700 mb-2 block">End Date</Label>
-
-                      <Popover>
-
-                        <PopoverTrigger asChild>
-
-                          <Button variant="outline" className="w-full justify-start text-left font-normal">
-
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-
-                            {editFormData.endDate ? format(new Date(editFormData.endDate), 'PPP') : 'Pick a date'}
-
-                          </Button>
-
-                        </PopoverTrigger>
-
-                        <PopoverContent className="w-auto p-0">
-
-                          <Calendar
-
-                            mode="single"
-
-                            selected={editFormData.endDate ? new Date(editFormData.endDate) : undefined}
-
-                            onSelect={(date) => {
-
-                              if (date) {
-
-                                const year = date.getFullYear();
-
-                                const month = String(date.getMonth() + 1).padStart(2, '0');
-
-                                const day = String(date.getDate()).padStart(2, '0');
-
-                                const dateString = `${year}-${month}-${day}`;
-
-                                setEditFormData(prev => ({ ...prev, endDate: dateString }));
-
-                                setConflictingEvents([]);
-
-                                setVenueConflictingEvents([]);
-
-                              }
-
-                            }}
-
-                            disabled={isDateDisabled}
-
-                            initialFocus
-
-                          />
-
-                        </PopoverContent>
-
-                      </Popover>
-
-                    </div>
-
-
-
-                    <div>
-
-                      <Label htmlFor="endTime" className="text-sm font-medium text-gray-700 mb-2 block">End Time</Label>
-
-                      <Select
-
-                        value={editFormData.endTime}
-
-                        onValueChange={(value) => setEditFormData(prev => ({ ...prev, endTime: value }))}
-
-                        disabled={!editFormData.startTime}
-
-                      >
-
-                        <SelectTrigger className="w-full" disabled={!editFormData.startTime}>
-
-                          <SelectValue placeholder={editFormData.startTime ? 'Select end time' : 'Select start time first'} />
-
-                        </SelectTrigger>
-
-                        <SelectContent className="max-h-80">
-
-                          {getAvailableEndTimes().map((timeOption) => {
-
-                            const isBooked = isTimeSlotBooked(timeOption.value);
-
-                            const hasReqConflicts = hasRequirementConflictsAtTime(timeOption.value);
-
-                            const isDisabled = isBooked;
-
-                            return (
-
-                              <SelectItem
-
-                                key={timeOption.value}
-
-                                value={timeOption.value}
-
-                                disabled={isDisabled}
-
-                                className={isDisabled ? 'opacity-50 cursor-not-allowed' : ''}
-
-                              >
-
-                                <div className={`flex items-center justify-between w-full ${isBooked ? 'line-through' : ''}`}>
-
-                                  <span className={isDisabled ? 'text-gray-400' : ''}>{timeOption.label}</span>
-
-                                  <div className="flex items-center gap-1">
-
-                                    {isBooked && (
-
-                                      <Badge variant="destructive" className="text-xs">VENUE</Badge>
-
-                                    )}
-
-                                    {hasReqConflicts && (
-
-                                      <Badge variant="secondary" className="text-xs bg-orange-100 text-orange-800">REQ</Badge>
-
-                                    )}
-
-                                  </div>
-
-                                </div>
-
-                              </SelectItem>
-
-                            );
-
-                          })}
-
-                        </SelectContent>
-
-                      </Select>
-
-                    </div>
-
-                  </div>
-
-                </div>
-
-              )}
-
-
-
-              {/* Multi-Day Event - Additional Date Slots */}
-
-              {editFormData.startDate && editFormData.endDate && editFormData.startDate !== editFormData.endDate && (
-
-                <div className="border-t pt-6">
-
-                  <div className="flex items-center justify-between mb-4">
-
-                    <div>
-
-                      <h4 className="font-medium text-gray-900">Additional Days for Multi-Day Event</h4>
-
-                      <p className="text-sm text-gray-600">
-
-                        Your event spans from {format(new Date(editFormData.startDate), "MMM dd")} to {format(new Date(editFormData.endDate), "MMM dd")}. 
-
-                        Add time slots for each additional day.
-
-                      </p>
-
-                    </div>
-
-                  </div>
-
-
-
-                  {/* Generate date slots for each day between start and end */}
-
-                  {(() => {
-
-                    const days: Date[] = [];
-
-                    const currentDate = new Date(editFormData.startDate);
-
-                    const endDate = new Date(editFormData.endDate);
-
-                    
-
-                    // Skip the first day (already covered by main start/end time)
-
-                    currentDate.setDate(currentDate.getDate() + 1);
-
-                    
-
-                    while (currentDate <= endDate) {
-
-                      days.push(new Date(currentDate));
-
-                      currentDate.setDate(currentDate.getDate() + 1);
-
-                    }
-
-                    
-
-                    return (
-
-                      <div className="space-y-3">
-
-                        {days.map((date, index) => {
-
-                          const dateStr = date.toISOString();
-
-                          const existingSlot = editFormData.dateTimeSlots.find(slot => 
-
-                            slot.date.toDateString() === date.toDateString()
-
-                          );
-
-                          
-
-                          return (
-
-                            <div key={dateStr} className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-
-                              <div className="flex items-center justify-between mb-3">
-
-                                <div className="flex items-center gap-2">
-
-                                  <h5 className="text-sm font-medium text-gray-900">
-
-                                    Day {index + 2}: {format(date, "PPPP")}
-
-                                  </h5>
-
-                                  {existingSlot && existingSlot.startTime && existingSlot.endTime && (
-
-                                    <Badge variant="default" className="text-xs bg-green-600">
-
-                                      <CheckCircle className="w-3 h-3 mr-1" />
-
-                                      Configured
-
-                                    </Badge>
-
-                                  )}
-
-                                </div>
-
-                                {existingSlot && existingSlot.startTime && existingSlot.endTime && (
-
-                                  <Button
-
-                                    type="button"
-
-                                    variant="ghost"
-
-                                    size="sm"
-
-                                    onClick={() => {
-
-                                      const updatedSlots = editFormData.dateTimeSlots.filter(s => 
-
-                                        s.date.toDateString() !== date.toDateString()
-
-                                      );
-
-                                      setEditFormData(prev => ({ ...prev, dateTimeSlots: updatedSlots }));
-
-                                      toast.success(`Time slot for ${format(date, "MMM dd")} removed`);
-
-                                    }}
-
-                                    className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
-
-                                  >
-
-                                    <XCircle className="w-4 h-4" />
-
-                                  </Button>
-
-                                )}
-
-                              </div>
-
-                              
-
-                              {/* Always show editable fields */}
-
-                              <div className="space-y-3">
-
-                                {/* Start Date */}
-
-                                <div>
-
-                                  <Label className="text-xs font-medium text-gray-700 mb-1.5 block">
-
-                                    Start Date (Day {index + 2})
-
-                                  </Label>
-
-                                  <Popover>
-
-                                    <PopoverTrigger asChild>
-
-                                      <Button
-
-                                        variant="outline"
-
-                                        className="w-full justify-start text-left font-normal"
-
-                                      >
-
-                                        <CalendarIcon className="mr-2 h-4 w-4" />
-
-                                        {format(date, 'PPP')}
-
-                                      </Button>
-
-                                    </PopoverTrigger>
-
-                                    <PopoverContent className="w-auto p-0">
-
-                                      <Calendar
-
-                                        mode="single"
-
-                                        selected={date}
-
-                                        onSelect={(newDate) => {
-
-                                          if (newDate) {
-
-                                            // Update the slot's date
-
-                                            const currentSlot = editFormData.dateTimeSlots.find(s => 
-
-                                              s.date.toDateString() === date.toDateString()
-
-                                            );
-
-                                            const updatedSlots = editFormData.dateTimeSlots.filter(s => 
-
-                                              s.date.toDateString() !== date.toDateString()
-
-                                            );
-
-                                            if (currentSlot) {
-
-                                              const newSlot = {
-
-                                                ...currentSlot,
-
-                                                date: newDate
-
-                                              };
-
-                                              setEditFormData(prev => ({ 
-
-                                                ...prev, 
-
-                                                dateTimeSlots: [...updatedSlots, newSlot],
-
-                                                // Update overall endDate to the last day
-
-                                                endDate: newDate.toISOString().split('T')[0]
-
-                                              }));
-
-                                            } else {
-
-                                              // Create new slot if doesn't exist
-
-                                              const newSlot = {
-
-                                                id: `slot-${newDate.getTime()}`,
-
-                                                date: newDate,
-
-                                                startTime: '',
-
-                                                endTime: ''
-
-                                              };
-
-                                              setEditFormData(prev => ({ 
-
-                                                ...prev, 
-
-                                                dateTimeSlots: [...prev.dateTimeSlots, newSlot],
-
-                                                endDate: newDate.toISOString().split('T')[0]
-
-                                              }));
-
-                                            }
-
-                                          }
-
-                                        }}
-
-                                        disabled={isDateDisabled}
-
-                                        initialFocus
-
-                                      />
-
-                                    </PopoverContent>
-
-                                  </Popover>
-
-                                </div>
-
-                                
-
-                                {/* End Date - Read only, shows same as start date */}
-
-                                <div>
-
-                                  <Label className="text-xs font-medium text-gray-700 mb-1.5 block">
-
-                                    End Date (Day {index + 2})
-
-                                  </Label>
-
-                                  <Button
-
-                                    variant="outline"
-
-                                    className="w-full justify-start text-left font-normal bg-gray-100 cursor-not-allowed"
-
-                                    disabled
-
-                                  >
-
-                                    <CalendarIcon className="mr-2 h-4 w-4" />
-
-                                    {format(date, 'PPP')}
-
-                                  </Button>
-
-                                  <p className="text-xs text-gray-500 mt-1">End date is automatically same as start date</p>
-
-                                </div>
-
-                                
-
-                                <div className="grid grid-cols-2 gap-3">
-
-                                    <div>
-
-                                      <Label className="text-xs font-medium text-gray-700 mb-1.5 block">
-
-                                        Start Time
-
-                                      </Label>
-
-                                      <Select 
-
-                                        value={existingSlot?.startTime || ''}
-
-                                        onValueChange={(value) => {
-
-                                          const currentSlot = editFormData.dateTimeSlots.find(s => 
-
-                                            s.date.toDateString() === date.toDateString()
-
-                                          );
-
-                                          const newSlot = {
-
-                                            id: currentSlot?.id || `slot-${date.getTime()}`,
-
-                                            date: date,
-
-                                            startTime: value,
-
-                                            endTime: currentSlot?.endTime || ''
-
-                                          };
-
-                                          const updatedSlots = editFormData.dateTimeSlots.filter(s => 
-
-                                            s.date.toDateString() !== date.toDateString()
-
-                                          );
-
-                                          setEditFormData(prev => ({ ...prev, dateTimeSlots: [...updatedSlots, newSlot] }));
-
-                                        }}
-
-                                      >
-
-                                        <SelectTrigger className="w-full h-9 text-sm">
-
-                                          <SelectValue placeholder="Select start time" />
-
-                                        </SelectTrigger>
-
-                                        <SelectContent className="max-h-60">
-
-                                          {generateTimeOptions().map((timeOption) => {
-
-                                            const isBooked = isTimeSlotBooked(timeOption.value, date);
-
-                                            return (
-
-                                              <SelectItem 
-
-                                                key={timeOption.value} 
-
-                                                value={timeOption.value}
-
-                                                disabled={isBooked}
-
-                                                className={`text-sm ${isBooked ? 'opacity-50 cursor-not-allowed' : ''}`}
-
-                                              >
-
-                                                <div className="flex items-center justify-between w-full gap-2">
-
-                                                  <span className={isBooked ? 'text-gray-400' : ''}>
-
-                                                    {timeOption.label}
-
-                                                  </span>
-
-                                                  {isBooked && (
-
-                                                    <Badge variant="destructive" className="text-xs">
-
-                                                      VENUE
-
-                                                    </Badge>
-
-                                                  )}
-
-                                                </div>
-
-                                              </SelectItem>
-
-                                            );
-
-                                          })}
-
-                                        </SelectContent>
-
-                                      </Select>
-
-                                    </div>
-
-
-
-                                    <div>
-
-                                      <Label className="text-xs font-medium text-gray-700 mb-1.5 block">
-
-                                        End Time
-
-                                      </Label>
-
-                                      <Select 
-
-                                        value={existingSlot?.endTime || ''}
-
-                                        onValueChange={(value) => {
-
-                                          const currentSlot = editFormData.dateTimeSlots.find(s => 
-
-                                            s.date.toDateString() === date.toDateString()
-
-                                          );
-
-                                          const newSlot = {
-
-                                            id: currentSlot?.id || `slot-${date.getTime()}`,
-
-                                            date: date,
-
-                                            startTime: currentSlot?.startTime || '',
-
-                                            endTime: value
-
-                                          };
-
-                                          const updatedSlots = editFormData.dateTimeSlots.filter(s => 
-
-                                            s.date.toDateString() !== date.toDateString()
-
-                                          );
-
-                                          setEditFormData(prev => ({ ...prev, dateTimeSlots: [...updatedSlots, newSlot] }));
-
-                                        }}
-
-                                        disabled={!existingSlot?.startTime}
-
-                                      >
-
-                                        <SelectTrigger className="w-full h-9 text-sm">
-
-                                          <SelectValue placeholder={existingSlot?.startTime ? "Select end time" : "Select start time first"} />
-
-                                        </SelectTrigger>
-
-                                        <SelectContent className="max-h-60">
-
-                                          {generateTimeOptions()
-
-                                            .filter(opt => {
-
-                                              if (!existingSlot?.startTime) return true;
-
-                                              const timeToMinutes = (time: string) => {
-
-                                                const [hours, minutes] = time.split(':').map(Number);
-
-                                                return hours * 60 + minutes;
-
-                                              };
-
-                                              return timeToMinutes(opt.value) > timeToMinutes(existingSlot.startTime);
-
-                                            })
-
-                                            .map((timeOption) => {
-
-                                              const isBooked = isTimeSlotBooked(timeOption.value, date);
-
-                                              return (
-
-                                                <SelectItem 
-
-                                                  key={timeOption.value} 
-
-                                                  value={timeOption.value}
-
-                                                  disabled={isBooked}
-
-                                                  className={`text-sm ${isBooked ? 'opacity-50 cursor-not-allowed' : ''}`}
-
-                                                >
-
-                                                  <div className="flex items-center justify-between w-full gap-2">
-
-                                                    <span className={isBooked ? 'text-gray-400' : ''}>
-
-                                                      {timeOption.label}
-
-                                                    </span>
-
-                                                    {isBooked && (
-
-                                                      <Badge variant="destructive" className="text-xs">
-
-                                                        VENUE
-
-                                                      </Badge>
-
-                                                    )}
-
-                                                  </div>
-
-                                                </SelectItem>
-
-                                              );
-
-                                            })}
-
-                                        </SelectContent>
-
-                                      </Select>
-
-                                    </div>
-
-                                  </div>
-
-                                </div>
-
-                            </div>
-
-                          );
-
-                        })}
-
-                      </div>
-
-                    );
-
-                  })()}
-
-                </div>
-
-              )}
-
-
-
-              </div>
-
-
-
-              {/* Footer Action Buttons */}
-
-              <div className="py-4 border-t bg-gray-50 flex justify-end gap-3">
-
-                <Button 
-
-                  variant="outline" 
-
-                  onClick={() => setShowEditModal(false)}
-
-                >
-
-                  Cancel
-
-                </Button>
-
-                <Button 
-
-                  onClick={handleSaveEditedEvent}
-
-                >
-
-                  Save Changes
-
-                </Button>
 
               </div>
 
@@ -9994,9 +7785,35 @@ const MyEventsPage: React.FC = () => {
 
           )}
 
-        </DialogContent>
+          <SheetFooter className="border-t bg-gray-50 px-6 py-4">
 
-      </Dialog>
+            <Button 
+
+              variant="outline" 
+
+              onClick={() => setShowEditModal(false)}
+
+            >
+
+              Cancel
+
+            </Button>
+
+            <Button 
+
+              onClick={handleSaveEditedEvent}
+
+            >
+
+              Save Changes
+
+            </Button>
+
+          </SheetFooter>
+
+        </SheetContent>
+
+      </Sheet>
 
 
 
@@ -12181,7 +9998,7 @@ const MyEventsPage: React.FC = () => {
                           </p>
                           <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                             <span className={`text-xs ${sug.isBooked ? 'text-gray-400' : 'text-gray-500'}`}>
-                              {sug.chairs} seats
+                              {sug.seatsLabel || `${sug.chairs} seats`}
                             </span>
                             {sug.isMulti && (
                               <>

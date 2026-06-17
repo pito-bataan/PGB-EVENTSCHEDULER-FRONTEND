@@ -149,6 +149,7 @@ type AutoSuggestedLocation = {
   note?: string;
   isBooked: boolean;
   bookedOnDates: string[];
+  seatsLabel?: string;
 };
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -206,6 +207,8 @@ const RequestEventPage: React.FC = () => {
   const [showLocationRequirementsModal, setShowLocationRequirementsModal] = useState(false);
   const [locationRequirements, setLocationRequirements] = useState<Array<{ name: string; quantity: number }>>([]);
   const [showEventTypeAlert, setShowEventTypeAlert] = useState(false);
+  const [pavilionChairWarning, setPavilionChairWarning] = useState<{ available: number; requested: number } | null>(null);
+  const [pavilionZeroItems, setPavilionZeroItems] = useState<string[]>([]);
 
   // ── Auto Suggest Location state ────────────────────────────────────────────
   const [locationMode, setLocationMode] = useState<'manual' | 'auto-suggest'>('manual');
@@ -935,6 +938,123 @@ const RequestEventPage: React.FC = () => {
     }
   };
 
+  // Check Pavilion chair availability against participant count
+  // Check Pavilion item availability against conflicting bookings
+  const checkPavilionChairAvailability = async (locationName: string, participantCount: number) => {
+    setPavilionChairWarning(null);
+    setPavilionZeroItems([]);
+    try {
+      const token = localStorage.getItem('authToken');
+      if (!token) return;
+
+      const [locReqRes, eventsRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/location-requirements`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        fetch(`${API_BASE_URL}/events`, {
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        }),
+      ]);
+
+      if (!locReqRes.ok || !eventsRes.ok) return;
+
+      const allLocReqs: any[] = await locReqRes.json();
+      const eventsData = await eventsRes.json();
+      const allEvents: any[] = eventsData.data || [];
+
+      const ALL_PAVILION_LOCATIONS = [
+        'Pavilion - Kagitingan Hall - Section A',
+        'Pavilion - Kagitingan Hall - Section B',
+        'Pavilion - Kagitingan Hall - Section C',
+        'Pavilion - Kalayaan Ballroom',
+      ];
+
+      const pavilionOverallDoc = allLocReqs.find((doc: any) => {
+        if (!doc.locationNames || !Array.isArray(doc.locationNames)) return false;
+        return ALL_PAVILION_LOCATIONS.every((l) => doc.locationNames.includes(l));
+      }) || allLocReqs.find((doc: any) => {
+        if (!doc.locationNames || !Array.isArray(doc.locationNames)) return false;
+        return ALL_PAVILION_LOCATIONS.slice(0, 3).every((s) => doc.locationNames.includes(s));
+      });
+
+      if (!pavilionOverallDoc || !Array.isArray(pavilionOverallDoc.requirements)) return;
+      const allRequirements = pavilionOverallDoc.requirements;
+
+      const dates = getEventDatesInRange();
+      if (dates.length === 0) return;
+
+      const normalizeDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+      const getUsedQtyOnDate = (reqName: string, dayStr: string): number => {
+        let used = 0;
+        allEvents.forEach((ev: any) => {
+          if (ev.status !== 'approved' && ev.status !== 'submitted') return;
+          const evLocs: string[] =
+            ev.locations && Array.isArray(ev.locations) && ev.locations.length > 0
+              ? ev.locations : [ev.location || ''];
+          if (!evLocs.some((l: string) => /Pavilion/i.test(l))) return;
+
+          const mainDay = ev.startDate ? new Date(ev.startDate).toDateString() : '';
+          const onThisDay =
+            mainDay === dayStr ||
+            (Array.isArray(ev.dateTimeSlots) &&
+              ev.dateTimeSlots.some(
+                (s: any) => s.startDate && new Date(s.startDate).toDateString() === dayStr
+              ));
+          if (!onThisDay) return;
+
+          if (ev.taggedDepartments && ev.departmentRequirements) {
+            ev.taggedDepartments.forEach((dept: string) => {
+              const reqs = ev.departmentRequirements[dept];
+              if (!Array.isArray(reqs)) return;
+              reqs.forEach((req: any) => {
+                if (req.selected && typeof req.name === 'string' && req.name === reqName) {
+                  used += Number(req.quantity) || 0;
+                }
+              });
+            });
+          }
+        });
+        return used;
+      };
+
+      // Check every physical item across the date range
+      const zeroItems: string[] = [];
+      let chairTotal = 0;
+      let chairRemaining = 0;
+
+      allRequirements.forEach((req: any) => {
+        if (typeof req.name !== 'string') return;
+        const totalQty = Number(req.quantity) || 0;
+        if (totalQty <= 0) return;
+
+        const perDayAvail = dates.map((d) => {
+          const used = getUsedQtyOnDate(req.name, d.toDateString());
+          return Math.max(0, totalQty - used);
+        });
+        const minAvail = Math.min(...perDayAvail);
+
+        if (/chair/i.test(req.name)) {
+          chairTotal = totalQty;
+          chairRemaining = minAvail;
+        }
+
+        if (minAvail <= 0 && !/microphone/i.test(req.name)) {
+          zeroItems.push(req.name);
+        }
+      });
+
+      if (zeroItems.length > 0) {
+        setPavilionZeroItems(zeroItems);
+      }
+      if (chairRemaining < participantCount) {
+        setPavilionChairWarning({ available: chairRemaining, requested: participantCount });
+      }
+    } catch {
+      // Silently fail - don't block the user from proceeding
+    }
+  };
+
   const handleLocationChange = async (value: string) => {
     if (value === 'Add Custom Location') {
       setShowCustomLocation(true);
@@ -1016,6 +1136,13 @@ const RequestEventPage: React.FC = () => {
         setLocationRequirements(locationData.requirements);
         setLocationRoomTypes(locationData.roomTypes || []);
         setSelectedLocation(value);
+
+        // Pavilion chair availability check
+        if (/pavilion/i.test(value) && formData.participants) {
+          checkPavilionChairAvailability(value, parseInt(formData.participants) || 0);
+        } else {
+          setPavilionChairWarning(null);
+        }
       } else {
         // No requirements, close modal and open schedule modal directly
         setShowLocationRequirementsModal(false);
@@ -1297,16 +1424,18 @@ const RequestEventPage: React.FC = () => {
         // list directly as the PGSO defaults, bypassing the global PGSO master
         // list / availability API.
         if (isPgso && locationRequirements.length > 0) {
-          const mappedRequirements: DepartmentRequirement[] = locationRequirements.map((locReq, idx) => ({
+          // Pavilion-specific overrides: hide microphones, cap Sound System at 1
+          const pavilionFiltered = isPavilionLocation
+            ? locationRequirements.filter((r) => !/microphone/i.test(r.name))
+            : locationRequirements;
+          const mappedRequirements: DepartmentRequirement[] = pavilionFiltered.map((locReq, idx) => ({
             id: `pgso-location-${idx}-${locReq.name}`,
             name: locReq.name,
             selected: false,
             notes: '',
             type: 'physical',
             quantity: undefined,
-            totalQuantity: locReq.quantity,
-            // These are default requirements configured for the location,
-            // so treat them as normal available items (not custom/pending).
+            totalQuantity: isPavilionLocation && /sound system/i.test(locReq.name) ? 1 : locReq.quantity,
             isAvailable: true,
             // Encode the location default quantity in the same marker format
             // used elsewhere (PAVILION_DEFAULT:<qty>:<location>) so that
@@ -1348,8 +1477,12 @@ const RequestEventPage: React.FC = () => {
             return;
           }
 
+          const pavilionFilteredReqs = isPavilionLocation
+            ? locationRequirements.filter((r) => !/microphone/i.test(r.name))
+            : locationRequirements;
+
           const pavilionNames = isPgso && locationRequirements.length > 0
-            ? new Set(locationRequirements.map((lr) => lr.name))
+            ? new Set(pavilionFilteredReqs.map((lr) => lr.name))
             : null;
 
           // Only show requirements that have availability data for this specific date
@@ -1398,6 +1531,11 @@ const RequestEventPage: React.FC = () => {
                   baseRequirement.totalQuantity = matchingLocationReq.quantity;
                   baseRequirement.availabilityNotes = `PAVILION_DEFAULT:${matchingLocationReq.quantity}:${selectedLocation || formData.location || 'selected location'}`;
                 }
+              }
+
+              // Pavilion Sound System cap: max 1 per event
+              if (isPavilionLocation && /sound system/i.test(req.text)) {
+                baseRequirement.totalQuantity = 1;
               }
 
               return baseRequirement;
@@ -3366,16 +3504,26 @@ const RequestEventPage: React.FC = () => {
 
             if (results.some((r) => r.name === label)) continue;
 
+            // Approximate seat ranges for Kagitingan sections
+            const sectionCount = combo.length;
+            let seatsLabel: string;
+            if (sectionCount === 1) {
+              seatsLabel = 'approx 50–100 seats';
+            } else if (sectionCount === 2) {
+              seatsLabel = 'approx 100–200 seats';
+            } else {
+              seatsLabel = 'approx 150–300 seats';
+            }
+
             results.push({
               name: label,
               chairs: pavilionRemainingChairs,
               isMulti: combo.length > 1,
               rooms: combo,
+              seatsLabel,
               note: combo.length > 1
-                ? `${combo.map((s) => s.replace('Pavilion - Kagitingan Hall - ', '')).join(' + ')} · ${pavilionRemainingChairs} chairs available (shared pool)`
-                : pavilionRemainingChairs < pavilionPoolChairs
-                  ? `${pavilionRemainingChairs} of ${pavilionPoolChairs} chairs available (shared pool)`
-                  : undefined,
+                ? `${combo.map((s) => s.replace('Pavilion - Kagitingan Hall - ', '')).join(' + ')}`
+                : undefined,
               isBooked: allBookedDates.length > 0,
               bookedOnDates: allBookedDates,
             });
@@ -3699,7 +3847,9 @@ const RequestEventPage: React.FC = () => {
                                       <div className="px-2 py-1.5 text-xs font-semibold text-gray-500 bg-gray-50">
                                         PGB Locations
                                       </div>
-                                      {pgbLocs.map((location) => (
+                                      {pgbLocs.map((location) => {
+                                        const isKagitinganSection = /Pavilion - Kagitingan Hall - Section [ABC]$/.test(location.name);
+                                        return (
                                         <SelectItem
                                           key={location.name}
                                           value={location.name}
@@ -3707,9 +3857,13 @@ const RequestEventPage: React.FC = () => {
                                           <div className="flex items-center gap-2">
                                             <MapPin className="w-3 h-3 text-blue-500" />
                                             {location.name}
+                                            {isKagitinganSection && (
+                                              <span className="text-[10px] text-gray-400 ml-1 whitespace-nowrap">~50–100 seats</span>
+                                            )}
                                           </div>
                                         </SelectItem>
-                                      ))}
+                                        );
+                                      })}
                                     </>
                                   )}
 
@@ -7651,30 +7805,85 @@ const RequestEventPage: React.FC = () => {
               </div>
             ) : locationRequirements.length > 0 ? (
               <div className={`${locationRequirements.length > 4 ? 'grid grid-cols-2 gap-3' : 'space-y-2'}`}>
-                {locationRequirements.map((req, idx) => (
+                {(/pavilion/i.test(selectedLocation ?? '')
+                  ? locationRequirements.filter((r) => !/microphone/i.test(r.name))
+                  : locationRequirements
+                ).map((req, idx) => (
                   <div key={idx} className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border border-blue-200">
                     <div className="flex items-center gap-2">
                       <CheckSquare className="w-4 h-4 text-blue-600" />
                       <span className="text-sm font-medium text-gray-700">{req.name}</span>
                     </div>
                     <Badge variant="outline" className="bg-white text-blue-700 border-blue-300">
-                      ×{req.quantity}
+                      ×{(/pavilion/i.test(selectedLocation ?? '') && /sound system/i.test(req.name)) ? 1 : req.quantity}
                     </Badge>
                   </div>
                 ))}
               </div>
-            ) : (
-              <p className="text-sm text-gray-500 text-center py-4">No default requirements for this location</p>
-            )}
-          </div>
+              ) : (
+                <p className="text-sm text-gray-500 text-center py-4">No default requirements for this location</p>
+              )}
+            </div>
+
+          {(pavilionZeroItems.length > 0 || pavilionChairWarning) && (
+            <div className="space-y-2">
+              {pavilionZeroItems.length > 0 && (
+                <div className="px-4 py-3 rounded-lg border text-sm bg-red-50 border-red-200 text-red-700">
+                  <div className="flex items-start gap-2">
+                    <Ban className="w-4 h-4 mt-0.5 shrink-0 text-red-500" />
+                    <div>
+                      <p className="font-medium">No items available</p>
+                      <p className="text-xs mt-0.5 opacity-80">
+                        The following items are fully booked for your selected dates:
+                      </p>
+                      <ul className="text-xs mt-1 list-disc pl-4 space-y-0.5 opacity-80">
+                        {pavilionZeroItems.map((item) => (
+                          <li key={item}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {pavilionChairWarning && (
+                <div className={`px-4 py-3 rounded-lg border text-sm ${
+                  pavilionChairWarning.available === 0
+                    ? 'bg-red-50 border-red-200 text-red-700'
+                    : 'bg-amber-50 border-amber-200 text-amber-700'
+                }`}>
+                  <div className="flex items-start gap-2">
+                    {pavilionChairWarning.available === 0 ? (
+                      <Ban className="w-4 h-4 mt-0.5 shrink-0 text-red-500" />
+                    ) : (
+                      <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-amber-500" />
+                    )}
+                    <div>
+                      <p className="font-medium">
+                        {pavilionChairWarning.available === 0
+                          ? 'No chairs available'
+                          : 'Not enough chairs'}
+                      </p>
+                      <p className="text-xs mt-0.5 opacity-80">
+                        {pavilionChairWarning.available === 0
+                          ? `All chairs in the Pavilion are fully booked for your selected dates.`
+                          : `Only ${pavilionChairWarning.available.toLocaleString()} of ${pavilionChairWarning.requested.toLocaleString()} required chairs are available. You may proceed and coordinate with PGSO.`}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           <DialogFooter>
             <Button
               onClick={() => {
+                setPavilionChairWarning(null);
+                setPavilionZeroItems([]);
                 setShowLocationRequirementsModal(false);
-                // Open schedule modal after closing requirements modal
                 setShowScheduleModal(true);
               }}
+              disabled={pavilionZeroItems.length > 0 || pavilionChairWarning?.available === 0}
               className="w-full bg-blue-600 hover:bg-blue-700"
             >
               Continue to Schedule
@@ -8099,7 +8308,7 @@ const RequestEventPage: React.FC = () => {
                           </p>
                           <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                             <span className={`text-xs ${sug.isBooked ? 'text-gray-400' : 'text-gray-500'}`}>
-                              {sug.chairs} seats
+                              {sug.seatsLabel || `${sug.chairs} seats`}
                             </span>
                             {sug.isMulti && (
                               <>
