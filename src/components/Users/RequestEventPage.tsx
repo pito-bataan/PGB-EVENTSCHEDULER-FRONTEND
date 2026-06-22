@@ -209,6 +209,9 @@ const RequestEventPage: React.FC = () => {
   const [showEventTypeAlert, setShowEventTypeAlert] = useState(false);
   const [pavilionChairWarning, setPavilionChairWarning] = useState<{ available: number; requested: number } | null>(null);
   const [pavilionZeroItems, setPavilionZeroItems] = useState<string[]>([]);
+  const [showPavilionConfirm, setShowPavilionConfirm] = useState(false);
+  const [showZeroQtyAlert, setShowZeroQtyAlert] = useState(false);
+  const [zeroQtyAlertItem, setZeroQtyAlertItem] = useState('');
 
   // ── Auto Suggest Location state ────────────────────────────────────────────
   const [locationMode, setLocationMode] = useState<'manual' | 'auto-suggest'>('manual');
@@ -940,7 +943,7 @@ const RequestEventPage: React.FC = () => {
 
   // Check Pavilion chair availability against participant count
   // Check Pavilion item availability against conflicting bookings
-  const checkPavilionChairAvailability = async (locationName: string, participantCount: number) => {
+  const checkPavilionChairAvailability = async (locationName: string, participantCount: number, dateOverrideStart?: Date, dateOverrideEnd?: Date) => {
     setPavilionChairWarning(null);
     setPavilionZeroItems([]);
     try {
@@ -980,7 +983,20 @@ const RequestEventPage: React.FC = () => {
       if (!pavilionOverallDoc || !Array.isArray(pavilionOverallDoc.requirements)) return;
       const allRequirements = pavilionOverallDoc.requirements;
 
-      const dates = getEventDatesInRange();
+      const dates = dateOverrideStart
+        ? (() => {
+            const start = new Date(dateOverrideStart);
+            const end = dateOverrideEnd ? new Date(dateOverrideEnd) : new Date(dateOverrideStart);
+            const result: Date[] = [];
+            const cursor = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+            const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+            while (cursor <= endDay) {
+              result.push(new Date(cursor));
+              cursor.setDate(cursor.getDate() + 1);
+            }
+            return result;
+          })()
+        : getEventDatesInRange();
       if (dates.length === 0) return;
 
       const normalizeDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -1055,7 +1071,7 @@ const RequestEventPage: React.FC = () => {
     }
   };
 
-  const handleLocationChange = async (value: string) => {
+  const handleLocationChange = async (value: string, participantCountOverride?: number, dateOverrideStart?: Date, dateOverrideEnd?: Date) => {
     if (value === 'Add Custom Location') {
       setShowCustomLocation(true);
       handleInputChange('location', '');
@@ -1138,8 +1154,9 @@ const RequestEventPage: React.FC = () => {
         setSelectedLocation(value);
 
         // Pavilion chair availability check
-        if (/pavilion/i.test(value) && formData.participants) {
-          checkPavilionChairAvailability(value, parseInt(formData.participants) || 0);
+        const pavilionParticipantCount = participantCountOverride ?? (formData.participants ? parseInt(formData.participants) || 0 : 0);
+        if (/pavilion/i.test(value) && pavilionParticipantCount > 0) {
+          await checkPavilionChairAvailability(value, pavilionParticipantCount, dateOverrideStart, dateOverrideEnd);
         } else {
           setPavilionChairWarning(null);
         }
@@ -1597,8 +1614,27 @@ const RequestEventPage: React.FC = () => {
 
   const handleRequirementToggle = (requirementId: string) => {
     const currentReqs = formData.departmentRequirements[selectedDepartment] || [];
-    const updatedReqs = currentReqs.map(req =>
-      req.id === requirementId ? { ...req, selected: !req.selected } : req
+    const req = currentReqs.find(r => r.id === requirementId);
+    if (!req) return;
+
+    // Prevent selecting requirements with 0 total quantity
+    if (!req.selected && req.type === 'physical' && req.totalQuantity != null && req.totalQuantity <= 0) {
+      toast.error('Cannot select this item', {
+        description: `${req.name} has 0 available quantity. Please coordinate directly with ${selectedDepartment}.`,
+        duration: 4000
+      });
+      return;
+    }
+
+    // Prevent selecting requirements that are fully booked for selected dates
+    if (!req.selected && pavilionZeroItems.includes(req.name)) {
+      setZeroQtyAlertItem(req.name);
+      setShowZeroQtyAlert(true);
+      return;
+    }
+
+    const updatedReqs = currentReqs.map(r =>
+      r.id === requirementId ? { ...r, selected: !r.selected } : r
     );
 
     const newDeptReqs = { ...formData.departmentRequirements };
@@ -3575,7 +3611,12 @@ const RequestEventPage: React.FC = () => {
       handleInputChange("participants", autoSuggestParticipants);
     }
 
-    await handleLocationChange(primaryLocation);
+    await handleLocationChange(
+      primaryLocation,
+      autoSuggestParticipants ? parseInt(autoSuggestParticipants) || 0 : undefined,
+      autoSuggestStartDate ?? undefined,
+      autoSuggestEndDate ?? undefined
+    );
 
     // For partial combos (2 rooms/sections) override the locations array and fetch grouped requirements
     if (sug.isMulti && sug.rooms.length === 2) {
@@ -5009,27 +5050,29 @@ const RequestEventPage: React.FC = () => {
                     ))}
                   </div>
                 ) : (
-                  formData.departmentRequirements[selectedDepartment]?.map((requirement) => (
+                  formData.departmentRequirements[selectedDepartment]?.map((requirement) => {
+                      const isPavilionZeroItem = pavilionZeroItems.includes(requirement.name);
+                      return (
                     <div
                       key={requirement.id}
-                      className={`p-3 border rounded-lg transition-all ${!requirement.isAvailable
+                      className={`p-3 border rounded-lg transition-all ${!requirement.isAvailable || isPavilionZeroItem
                         ? 'bg-gray-50 border-gray-200 opacity-60 cursor-not-allowed'
                         : requirement.selected
                           ? 'bg-blue-50 border-blue-200 shadow-sm cursor-pointer'
                           : 'bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50 cursor-pointer'
                         }`}
-                      onClick={() => requirement.isAvailable && handleRequirementToggle(requirement.id)}
+                      onClick={() => (requirement.isAvailable || isPavilionZeroItem) && handleRequirementToggle(requirement.id)}
                     >
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-2">
                             <Checkbox
                               checked={requirement.selected}
-                              disabled={!requirement.isAvailable}
-                              onChange={() => requirement.isAvailable && handleRequirementToggle(requirement.id)}
+                              disabled={!requirement.isAvailable || isPavilionZeroItem}
+                              onChange={() => (requirement.isAvailable || isPavilionZeroItem) && handleRequirementToggle(requirement.id)}
                               className="mt-0.5"
                             />
-                            <h5 className={`font-medium text-sm ${requirement.isAvailable ? 'text-gray-900' : 'text-gray-500'
+                            <h5 className={`font-medium text-sm ${requirement.isAvailable && !isPavilionZeroItem ? 'text-gray-900' : 'text-gray-500'
                               }`}>{requirement.name}</h5>
                             <Badge
                               variant={requirement.type === 'physical' ? 'secondary' : 'outline'}
@@ -5093,7 +5136,7 @@ const RequestEventPage: React.FC = () => {
                                     {conflictingEvents.length > 0 && formData.startDate && formData.startTime &&
                                       hasRequirementConflict(requirement, selectedDepartment) ? (
                                       (() => {
-                                        const dates = getEventDatesInRange();
+                                          const dates = getEventDatesInRange();
                                         const isMultiDay = dates.length > 1;
 
                                         if (!isMultiDay) {
@@ -5171,7 +5214,8 @@ const RequestEventPage: React.FC = () => {
                         </div>
                       </div>
                     </div>
-                  ))
+                  );
+                })
                 )}
 
                 {/* Empty State Message */}
@@ -7878,16 +7922,101 @@ const RequestEventPage: React.FC = () => {
           <DialogFooter>
             <Button
               onClick={() => {
-                setPavilionChairWarning(null);
-                setPavilionZeroItems([]);
-                setShowLocationRequirementsModal(false);
-                setShowScheduleModal(true);
+                if (pavilionZeroItems.length > 0 || pavilionChairWarning?.available === 0) {
+                  setShowPavilionConfirm(true);
+                } else {
+                  setPavilionChairWarning(null);
+                  setShowLocationRequirementsModal(false);
+                  setShowScheduleModal(true);
+                }
               }}
-              disabled={pavilionZeroItems.length > 0 || pavilionChairWarning?.available === 0}
               className="w-full bg-blue-600 hover:bg-blue-700"
             >
               Continue to Schedule
               <ChevronRight className="w-4 h-4 ml-1" />
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showPavilionConfirm} onOpenChange={setShowPavilionConfirm}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-600">
+              <AlertTriangle className="w-5 h-5" />
+              Limited Items Available
+            </DialogTitle>
+            <DialogDescription className="text-sm text-gray-600 pt-2">
+              {pavilionZeroItems.length > 0 && (
+                <p>
+                  The following items are fully booked for your selected dates. You may still proceed, but PGSO will need to coordinate these items separately:
+                </p>
+              )}
+              {pavilionChairWarning && pavilionChairWarning.available === 0 && (
+                <p className="mt-1">
+                  All chairs in the Pavilion are fully booked for your selected dates.
+                </p>
+              )}
+              {pavilionChairWarning && pavilionChairWarning.available > 0 && (
+                <p className="mt-1">
+                  Only {pavilionChairWarning.available.toLocaleString()} of {pavilionChairWarning.requested.toLocaleString()} required chairs are available.
+                </p>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          {pavilionZeroItems.length > 0 && (
+            <div className="px-6">
+              <ul className="text-sm space-y-1.5">
+                {pavilionZeroItems.map((item) => (
+                  <li key={item} className="flex items-center gap-2 text-gray-700">
+                    <X className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button variant="outline" onClick={() => setShowPavilionConfirm(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                setShowPavilionConfirm(false);
+                setPavilionChairWarning(null);
+                setShowLocationRequirementsModal(false);
+                setShowScheduleModal(true);
+              }}
+              className="bg-amber-600 hover:bg-amber-700"
+            >
+              Proceed Anyway
+              <ChevronRight className="w-4 h-4 ml-1" />
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showZeroQtyAlert} onOpenChange={setShowZeroQtyAlert}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <Ban className="w-5 h-5" />
+              Item Not Available
+            </DialogTitle>
+            <DialogDescription className="text-sm text-gray-600 pt-2">
+              <p>
+                <strong>{zeroQtyAlertItem}</strong> is fully booked for your selected dates and cannot be selected.
+              </p>
+              <p className="mt-2">
+                Please coordinate directly with PGSO if you need this item.
+              </p>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button onClick={() => setShowZeroQtyAlert(false)} className="bg-blue-600 hover:bg-blue-700">
+              OK
             </Button>
           </DialogFooter>
         </DialogContent>
