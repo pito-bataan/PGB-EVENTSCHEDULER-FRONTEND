@@ -212,6 +212,8 @@ const RequestEventPage: React.FC = () => {
   const [showPavilionConfirm, setShowPavilionConfirm] = useState(false);
   const [showZeroQtyAlert, setShowZeroQtyAlert] = useState(false);
   const [zeroQtyAlertItem, setZeroQtyAlertItem] = useState('');
+  const [showPitoBlockAlert, setShowPitoBlockAlert] = useState(false);
+  const [pitoBlockMessage, setPitoBlockMessage] = useState('');
 
   // ── Auto Suggest Location state ────────────────────────────────────────────
   const [locationMode, setLocationMode] = useState<'manual' | 'auto-suggest'>('manual');
@@ -1416,6 +1418,56 @@ const RequestEventPage: React.FC = () => {
 
   const handleDepartmentToggle = async (departmentName: string) => {
     try {
+
+      // If department is being selected, check PITO restrictions first
+      if (!formData.taggedDepartments.includes(departmentName) && departmentName.toLowerCase().includes('pito')) {
+        // Lead time check: PITO needs at least 3 days preparation
+        if (formData.startDate) {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const eventDate = new Date(formData.startDate);
+          eventDate.setHours(0, 0, 0, 0);
+          const diffDays = Math.floor((eventDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+          if (diffDays < 3) {
+            setPitoBlockMessage(
+              `PITO requires at least 3 working days preparation time. The event starts on ${format(eventDate, 'MMM dd, yyyy')}, which is only ${Math.max(diffDays, 0)} day(s) away. Please reschedule the event or contact PITO directly.`
+            );
+            setShowPitoBlockAlert(true);
+            return;
+          }
+        }
+
+        // Same-day conflict check: PITO should not have another event on the same day
+        try {
+          const token = localStorage.getItem('authToken');
+          if (token && formData.startDate) {
+            const eventsRes = await fetch(`${API_BASE_URL}/events`, {
+              headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            });
+            if (eventsRes.ok) {
+              const eventsData = await eventsRes.json();
+              const allEvents: any[] = eventsData.data || [];
+              const eventDateStr = new Date(formData.startDate).toDateString();
+              const hasPitoConflict = allEvents.some((ev: any) => {
+                if (ev.status !== 'approved' && ev.status !== 'submitted') return false;
+                const evDate = ev.startDate ? new Date(ev.startDate).toDateString() : '';
+                if (evDate !== eventDateStr) return false;
+                const departments: string[] = ev.taggedDepartments || [];
+                return departments.some((d: string) => d.toLowerCase().includes('pito'));
+              });
+              if (hasPitoConflict) {
+                setPitoBlockMessage(
+                  `PITO is already tagged for an existing approved/submitted event on ${eventDateStr}. Please choose a different date or coordinate with PITO.`
+                );
+                setShowPitoBlockAlert(true);
+                return;
+              }
+            }
+          }
+        } catch {
+          // Silently fail - proceed if we can't check conflicts
+        }
+      }
 
       // If department is being selected, open requirements modal
       if (!formData.taggedDepartments.includes(departmentName)) {
@@ -8016,6 +8068,30 @@ const RequestEventPage: React.FC = () => {
           </DialogHeader>
           <DialogFooter>
             <Button onClick={() => setShowZeroQtyAlert(false)} className="bg-blue-600 hover:bg-blue-700">
+              OK
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showPitoBlockAlert} onOpenChange={setShowPitoBlockAlert}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertCircle className="w-5 h-5" />
+              PITO Unavailable
+            </DialogTitle>
+            <DialogDescription className="text-sm text-gray-600 pt-2">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0 mt-1">
+                  <AlertTriangle className="w-5 h-5 text-red-600" />
+                </div>
+                <p>{pitoBlockMessage}</p>
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button onClick={() => setShowPitoBlockAlert(false)} className="bg-blue-600 hover:bg-blue-700">
               OK
             </Button>
           </DialogFooter>
