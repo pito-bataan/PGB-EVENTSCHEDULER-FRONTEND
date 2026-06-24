@@ -1430,7 +1430,7 @@ const RequestEventPage: React.FC = () => {
           const diffDays = Math.floor((eventDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
           if (diffDays < 3) {
             setPitoBlockMessage(
-              `PITO requires at least 3 working days preparation time. The event starts on ${format(eventDate, 'MMM dd, yyyy')}, which is only ${Math.max(diffDays, 0)} day(s) away. Please reschedule the event or contact PITO directly.`
+              `PITO requires at least 3 working days preparation time. The event starts on ${format(eventDate, 'MMM dd, yyyy')}, which is only ${Math.max(diffDays, 0)} day(s) away. Please coordinate directly with PITO for assistance.`
             );
             setShowPitoBlockAlert(true);
             return;
@@ -1457,7 +1457,7 @@ const RequestEventPage: React.FC = () => {
               });
               if (hasPitoConflict) {
                 setPitoBlockMessage(
-                  `PITO is already tagged for an existing approved/submitted event on ${eventDateStr}. Please choose a different date or coordinate with PITO.`
+                  `PITO is already tagged for an existing approved/submitted event on ${eventDateStr}. Please choose a different date or coordinate directly with PITO for assistance.`
                 );
                 setShowPitoBlockAlert(true);
                 return;
@@ -8075,23 +8075,44 @@ const RequestEventPage: React.FC = () => {
       </Dialog>
 
       <Dialog open={showPitoBlockAlert} onOpenChange={setShowPitoBlockAlert}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-600">
-              <AlertCircle className="w-5 h-5" />
-              PITO Unavailable
-            </DialogTitle>
-            <DialogDescription className="text-sm text-gray-600 pt-2">
-              <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0 mt-1">
-                  <AlertTriangle className="w-5 h-5 text-red-600" />
-                </div>
-                <p>{pitoBlockMessage}</p>
+            <DialogTitle className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center">
+                <AlertCircle className="w-5 h-5 text-red-600" />
               </div>
-            </DialogDescription>
+              PITO Department Unavailable
+            </DialogTitle>
           </DialogHeader>
+
+          <div className="space-y-4 pt-2">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-full bg-red-200 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-5 h-5 text-red-700" />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-red-800">Cannot Tag PITO Department</p>
+                  <p className="text-sm text-red-700">{pitoBlockMessage}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-full bg-blue-200 flex items-center justify-center shrink-0">
+                  <User className="w-5 h-5 text-blue-700" />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-blue-800">Need Assistance?</p>
+                  <p className="text-sm text-blue-700">Please coordinate directly with the PITO department for scheduling and availability.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <DialogFooter>
-            <Button onClick={() => setShowPitoBlockAlert(false)} className="bg-blue-600 hover:bg-blue-700">
+            <Button onClick={() => setShowPitoBlockAlert(false)} className="w-full bg-blue-600 hover:bg-blue-700">
               OK
             </Button>
           </DialogFooter>
