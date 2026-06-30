@@ -151,6 +151,7 @@ const AllEventsPage: React.FC = () => {
   const [showBacReasonDialog, setShowBacReasonDialog] = useState(false);
   const [bacReasonEventTitle, setBacReasonEventTitle] = useState('');
   const [bacReasonText, setBacReasonText] = useState('');
+  const [bacRejectedAt, setBacRejectedAt] = useState('');
   const [selectedEvents, setSelectedEvents] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<string>('all');
   const [enableEventDeletion, setEnableEventDeletion] = useState(false);
@@ -442,6 +443,7 @@ const AllEventsPage: React.FC = () => {
           onClick={() => {
             setBacReasonEventTitle(String(event?.eventTitle || 'Event'));
             setBacReasonText(String(event?.bacNotes || 'No reason provided.'));
+            setBacRejectedAt(String(event?.bacApprovedAt || ''));
             setShowBacReasonDialog(true);
           }}
         >
@@ -1035,8 +1037,16 @@ const AllEventsPage: React.FC = () => {
             <DialogTitle>BAC Rejection Reason</DialogTitle>
             <DialogDescription>{bacReasonEventTitle}</DialogDescription>
           </DialogHeader>
-          <div className="rounded-md border bg-white p-3 text-sm text-gray-800 whitespace-pre-wrap">
-            {bacReasonText}
+          <div className="space-y-3">
+            {bacRejectedAt && (
+              <div className="flex items-center gap-2 text-xs text-gray-500">
+                <CalendarIcon className="w-3.5 h-3.5" />
+                Rejected on {format(new Date(bacRejectedAt), 'MMM dd, yyyy hh:mm a')}
+              </div>
+            )}
+            <div className="rounded-md border bg-white p-3 text-sm text-gray-800 whitespace-pre-wrap">
+              {bacReasonText}
+            </div>
           </div>
           <div className="flex justify-end">
             <Button type="button" variant="outline" onClick={() => setShowBacReasonDialog(false)}>
