@@ -690,10 +690,25 @@ const RequestEventPage: React.FC = () => {
 
   // For location-default pooled requirements (PAVILION_DEFAULT), treat all Pavilion locations
   // as sharing the same inventory pool.
-  const locationsSharePavilionPool = (loc1: string, loc2: string): boolean => {
+  // For Sound System, only share within the same hall (Kagitingan sections share, Kalayaan sections share).
+  const getPavilionHall = (loc: string): string | null => {
+    if (loc.includes('Kagitingan')) return 'Kagitingan';
+    if (loc.includes('Kalayaan')) return 'Kalayaan';
+    return null;
+  };
+
+  const locationsSharePavilionPool = (loc1: string, loc2: string, requirementName?: string): boolean => {
     if (!loc1 || !loc2) return false;
     const isPavilion1 = loc1.includes('Pavilion');
     const isPavilion2 = loc2.includes('Pavilion');
+
+    // Sound System is per-hall, not shared across all Pavilion locations
+    if (isPavilion1 && isPavilion2 && requirementName && /sound system/i.test(requirementName)) {
+      const hall1 = getPavilionHall(loc1);
+      const hall2 = getPavilionHall(loc2);
+      return hall1 !== null && hall1 === hall2;
+    }
+
     if (isPavilion1 && isPavilion2) return true;
     return locationsConflict(loc1, loc2);
   };
@@ -1504,7 +1519,7 @@ const RequestEventPage: React.FC = () => {
             notes: '',
             type: 'physical',
             quantity: undefined,
-            totalQuantity: isPavilionLocation && /sound system/i.test(locReq.name) ? 1 : locReq.quantity,
+            totalQuantity: locReq.quantity,
             isAvailable: true,
             // Encode the location default quantity in the same marker format
             // used elsewhere (PAVILION_DEFAULT:<qty>:<location>) so that
@@ -1600,11 +1615,6 @@ const RequestEventPage: React.FC = () => {
                   baseRequirement.totalQuantity = matchingLocationReq.quantity;
                   baseRequirement.availabilityNotes = `PAVILION_DEFAULT:${matchingLocationReq.quantity}:${selectedLocation || formData.location || 'selected location'}`;
                 }
-              }
-
-              // Pavilion Sound System cap: max 1 per event
-              if (isPavilionLocation && /sound system/i.test(req.text)) {
-                baseRequirement.totalQuantity = 1;
               }
 
               return baseRequirement;
@@ -2314,7 +2324,7 @@ const RequestEventPage: React.FC = () => {
       if (isLocationDefault) {
         const eventLoc = (event?.location || '').toString();
         if (!locationDefaultTarget || !eventLoc) return;
-        if (!locationsSharePavilionPool(locationDefaultTarget, eventLoc)) return;
+        if (!locationsSharePavilionPool(locationDefaultTarget, eventLoc, requirement.name)) return;
       }
 
       // Check ALL departments in the event, not just the current department
@@ -2369,7 +2379,7 @@ const RequestEventPage: React.FC = () => {
       if (isLocationDefault) {
         const eventLoc = (event?.location || '').toString();
         if (!locationDefaultTarget || !eventLoc) return false;
-        if (!locationsSharePavilionPool(locationDefaultTarget, eventLoc)) return false;
+        if (!locationsSharePavilionPool(locationDefaultTarget, eventLoc, requirement.name)) return false;
       }
 
       // Check ALL departments in the event, not just the current department
@@ -7911,7 +7921,7 @@ const RequestEventPage: React.FC = () => {
                       <span className="text-sm font-medium text-gray-700">{req.name}</span>
                     </div>
                     <Badge variant="outline" className="bg-white text-blue-700 border-blue-300">
-                      ×{(/pavilion/i.test(selectedLocation ?? '') && /sound system/i.test(req.name)) ? 1 : req.quantity}
+                      ×{req.quantity}
                     </Badge>
                   </div>
                 ))}
