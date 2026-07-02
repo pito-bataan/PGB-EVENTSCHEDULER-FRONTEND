@@ -342,7 +342,7 @@ const locations = [
 
   'Emiliana Hall',
 
-  'Pavillion'
+  'Pavilion - Kalayaan Ballroom'
 
 ];
 
@@ -2265,6 +2265,25 @@ const MyEventsPage: React.FC = () => {
   // Helper to check if two locations conflict (same location or overlapping conference rooms)
   const locationsConflict = (loc1: string, loc2: string): boolean => {
     if (loc1 === loc2) return true;
+
+    // Check Pavilion hierarchy
+    const isPavilion1 = loc1.includes('Pavilion');
+    const isPavilion2 = loc2.includes('Pavilion');
+    if (isPavilion1 && isPavilion2) {
+      const getHall = (loc: string) => {
+        if (loc.includes('Kagitingan')) return 'Kagitingan';
+        if (loc.includes('Kalayaan')) return 'Kalayaan';
+        return null;
+      };
+      const hall1 = getHall(loc1);
+      const hall2 = getHall(loc2);
+      if (hall1 !== hall2) return false;
+      const isEntire1 = loc1.includes('(Entire)');
+      const isEntire2 = loc2.includes('(Entire)');
+      if (isEntire1 || isEntire2) return true;
+      return loc1 === loc2;
+    }
+
     // Conference room logic
     const isCR1 = /4th Flr\. Conference Room/.test(loc1);
     const isCR2 = /4th Flr\. Conference Room/.test(loc2);
@@ -2630,8 +2649,17 @@ const MyEventsPage: React.FC = () => {
     setSelectedSuggestion(sug.name);
     setShowAutoSuggestModal(false);
 
-    const primaryLocation = sug.isMulti && sug.rooms.length === 3
-      ? '4th Flr. Conference Room (Entire)' : sug.rooms[0];
+    const isKagitinganCombo = sug.rooms.every((r: string) => /Pavilion.*Kagitingan.*Section [ABC]$/i.test(r));
+
+    let primaryLocation: string;
+    if (isKagitinganCombo) {
+      primaryLocation = sug.rooms.length === 3
+        ? 'Pavilion - Kagitingan Hall (Entire)'
+        : sug.rooms[0];
+    } else {
+      primaryLocation = sug.isMulti && sug.rooms.length === 3
+        ? '4th Flr. Conference Room (Entire)' : sug.rooms[0];
+    }
 
     const allLocations = sug.isMulti && sug.rooms.length > 1 ? sug.rooms : [primaryLocation];
 
