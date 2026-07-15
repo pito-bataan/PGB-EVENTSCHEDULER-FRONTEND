@@ -2315,6 +2315,8 @@ const MyEventsPage: React.FC = () => {
         const dayStr = d.toDateString();
         return allEvents.some((ev) => {
           if (ev.status !== 'approved' && ev.status !== 'submitted') return false;
+          // Skip the current event being edited so the owner can re-select their own venue
+          if (selectedEditEvent && ev._id === selectedEditEvent._id) return false;
 
           const evLocs =
             ev.locations && Array.isArray(ev.locations) && ev.locations.length > 0
