@@ -2515,12 +2515,18 @@ const MyEventsPage: React.FC = () => {
             : '';
         } else {
           const extracted = extractChairs(loc);
-          chairs = extracted.capacity;
-          breakdown = extracted.capacity > extracted.total && extracted.total > 0
-            ? `${extracted.total} default chairs · up to ${extracted.capacity.toLocaleString()} pax capacity`
-            : extracted.capacity > extracted.total && extracted.total === 0
-              ? `up to ${extracted.capacity.toLocaleString()} pax capacity`
-              : extracted.breakdown;
+          // Fallback: if no chair data found, use a default capacity so venue isn't hidden
+          if (extracted.total === 0 && extracted.capacity === 0) {
+            chairs = count;
+            breakdown = '';
+          } else {
+            chairs = extracted.capacity;
+            breakdown = extracted.capacity > extracted.total && extracted.total > 0
+              ? `${extracted.total} default chairs · up to ${extracted.capacity.toLocaleString()} pax capacity`
+              : extracted.capacity > extracted.total && extracted.total === 0
+                ? `up to ${extracted.capacity.toLocaleString()} pax capacity`
+                : extracted.breakdown;
+          }
         }
 
         if (chairs <= 0) return;
