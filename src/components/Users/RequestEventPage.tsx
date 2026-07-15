@@ -3509,18 +3509,14 @@ const RequestEventPage: React.FC = () => {
             : '';
         } else {
           const extracted = extractChairs(loc.name);
-          // Fallback: if no chair data found, use a default capacity so venue isn't hidden
-          if (extracted.total === 0 && extracted.capacity === 0) {
-            chairs = count;
-            breakdown = '';
-          } else {
-            chairs = extracted.capacity;
-            breakdown = extracted.capacity > extracted.total && extracted.total > 0
-              ? `${extracted.total} default chairs · up to ${extracted.capacity.toLocaleString()} pax capacity`
-              : extracted.capacity > extracted.total && extracted.total === 0
-                ? `up to ${extracted.capacity.toLocaleString()} pax capacity`
-                : extracted.breakdown;
-          }
+          // Use capacity (may be higher than total due to venue override e.g. BPC = 5000)
+          // for filtering, but show total chairs + a capacity note on the card.
+          chairs = extracted.capacity;
+          breakdown = extracted.capacity > extracted.total && extracted.total > 0
+            ? `${extracted.total} default chairs · up to ${extracted.capacity.toLocaleString()} pax capacity`
+            : extracted.capacity > extracted.total && extracted.total === 0
+              ? `up to ${extracted.capacity.toLocaleString()} pax capacity`
+              : extracted.breakdown;
         }
 
         if (chairs <= 0) return;
