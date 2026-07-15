@@ -7779,9 +7779,9 @@ const MyEventsPage: React.FC = () => {
 
                         setAutoSuggestParticipants(selectedEditEvent.participants.toString());
 
-                        setAutoSuggestStartDate(new Date(editFormData.startDate || selectedEditEvent.startDate));
+                        setAutoSuggestStartDate((() => { const d = new Date(editFormData.startDate || selectedEditEvent.startDate); return new Date(d.getFullYear(), d.getMonth(), d.getDate()); })());
 
-                        setAutoSuggestEndDate(new Date(editFormData.endDate || selectedEditEvent.endDate));
+                        setAutoSuggestEndDate((() => { const d = new Date(editFormData.endDate || selectedEditEvent.endDate); return new Date(d.getFullYear(), d.getMonth(), d.getDate()); })());
 
                         setAutoSuggestStartTime(editFormData.startTime || selectedEditEvent.startTime);
 
