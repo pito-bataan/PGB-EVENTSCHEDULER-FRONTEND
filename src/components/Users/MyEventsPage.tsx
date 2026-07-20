@@ -5628,6 +5628,12 @@ const MyEventsPage: React.FC = () => {
                                 Edit Details / Files
                               </DropdownMenuItem>
                             )}
+                            {(event.status === 'submitted' || event.status === 'approved') && (
+                              <DropdownMenuItem onClick={() => handleOpenAddDepartments(event)}>
+                                <Plus className="w-3.5 h-3.5 mr-2" />
+                                Add More Departments
+                              </DropdownMenuItem>
+                            )}
                             {(event.status === 'submitted' || event.status === 'approved' || event.status === 'incoming' || event.status === 'ongoing') && (
                               <DropdownMenuItem onClick={() => handleOpenCancelEvent(event)}>
                                 <XCircle className="w-3.5 h-3.5 mr-2" />
