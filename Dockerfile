@@ -36,7 +36,7 @@ RUN npm run build -- --logLevel=warn
 # Production stage — lightweight Nginx image
 FROM nginx:alpine
 
-# curl needed for HEALTHCHECK
+# Install curl for healthcheck
 RUN apk add --no-cache curl
 
 # Copy built files from builder stage
