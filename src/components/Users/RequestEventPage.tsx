@@ -1453,6 +1453,8 @@ const RequestEventPage: React.FC = () => {
         }
 
         // Same-day conflict check: PITO should not have another event on the same day
+        // COMMENTED OUT: Temporarily disabled PITO same-day blocking
+        /*
         try {
           const token = localStorage.getItem('authToken');
           if (token && formData.startDate) {
@@ -1482,6 +1484,7 @@ const RequestEventPage: React.FC = () => {
         } catch {
           // Silently fail - proceed if we can't check conflicts
         }
+        */
       }
 
       // If department is being selected, open requirements modal
