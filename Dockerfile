@@ -39,12 +39,23 @@ FROM nginx:alpine
 # Install curl for healthcheck
 RUN apk add --no-cache curl
 
+# Create nginx user directories with proper permissions
+RUN mkdir -p /var/cache/nginx /var/run /var/log/nginx && \
+    chown -R nginx:nginx /var/cache/nginx /var/run /var/log/nginx && \
+    chmod -R 755 /var/cache/nginx /var/run /var/log/nginx
+
 # Copy built files from builder stage
 COPY --from=builder /app/dist /usr/share/nginx/html
 
 # Copy custom nginx configuration
 COPY nginx.conf /etc/nginx/nginx.conf
 
+# Ensure nginx user owns html directory
+RUN chown -R nginx:nginx /usr/share/nginx/html
+
 EXPOSE 6010
+
+# Run as non-root user
+USER nginx
 
 CMD ["nginx", "-g", "daemon off;"]
