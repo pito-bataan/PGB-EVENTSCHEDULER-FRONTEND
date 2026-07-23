@@ -36,9 +36,6 @@ RUN npm run build -- --logLevel=warn
 # Production stage — lightweight Nginx image
 FROM nginx:alpine
 
-# Create writable directory for nginx PID file
-RUN mkdir -p /var/run && chmod 777 /var/run
-
 # Copy built files from builder stage
 COPY --from=builder /app/dist /usr/share/nginx/html
 
