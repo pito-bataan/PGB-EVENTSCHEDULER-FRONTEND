@@ -1,14 +1,11 @@
 #!/bin/sh
 set -e
 
-# Ensure /run/nginx is writable
-mkdir -p /run/nginx
-chmod 755 /run/nginx
-chown -R nginx:nginx /run/nginx
+# Use /tmp - always writable in Traefik/Coolify environments
+mkdir -p /tmp/nginx
+chmod 777 /tmp/nginx
 
-# Ensure /var/cache/nginx and /var/log/nginx exist
 mkdir -p /var/cache/nginx /var/log/nginx
 chown -R nginx:nginx /var/cache/nginx /var/log/nginx
 
-# Start nginx
 exec nginx -g "daemon off;"
