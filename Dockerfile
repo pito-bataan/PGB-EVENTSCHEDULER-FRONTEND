@@ -27,10 +27,6 @@ RUN npm run build -- --logLevel=warn
 # Production stage
 FROM nginx:alpine
 
-# Copy custom entrypoint script
-COPY docker-entrypoint.sh /docker-entrypoint.sh
-RUN chmod +x /docker-entrypoint.sh
-
 # Copy built files
 COPY --from=builder /app/dist /usr/share/nginx/html
 
@@ -39,5 +35,5 @@ COPY nginx.conf /etc/nginx/nginx.conf
 
 EXPOSE 6010
 
-# Use custom entrypoint
-ENTRYPOINT ["/docker-entrypoint.sh"]
+# Use CMD instead of ENTRYPOINT - avoids alpine conflicts
+CMD ["sh", "-c", "nginx -g 'daemon off;'"]
