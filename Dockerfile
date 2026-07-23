@@ -24,11 +24,16 @@ COPY . .
 
 RUN npm run build -- --logLevel=warn
 
-# Production stage - use unprivileged nginx (works in restricted environments)
-FROM nginx:unprivileged
+# Production stage
+FROM nginx:alpine
 
 COPY --from=builder /app/dist /usr/share/nginx/html
 
 COPY nginx.conf /etc/nginx/nginx.conf
 
 EXPOSE 8080
+
+# Use sed to disable PID file attempts on startup
+RUN sed -i 's/pid \/run\/nginx.pid;/pid \/dev\/null;/g' /etc/nginx/nginx.conf || true
+
+CMD ["nginx", "-g", "daemon off;"]
