@@ -34,6 +34,5 @@ COPY nginx.conf /etc/nginx/nginx.conf
 EXPOSE 8080
 
 # Use sed to disable PID file attempts on startup
-RUN sed -i 's/pid \/run\/nginx.pid;/pid \/dev\/null;/g' /etc/nginx/nginx.conf || true
 
 CMD ["nginx", "-g", "daemon off;"]
