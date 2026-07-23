@@ -24,16 +24,11 @@ COPY . .
 
 RUN npm run build -- --logLevel=warn
 
-# Production stage
-FROM nginx:alpine
+# Production stage - use unprivileged nginx (no PID file issues)
+FROM nginx:alpine-unprivileged
 
-# Copy built files
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Copy custom nginx configuration
 COPY nginx.conf /etc/nginx/nginx.conf
 
-EXPOSE 6010
-
-# Use CMD instead of ENTRYPOINT - avoids alpine conflicts
-CMD ["sh", "-c", "nginx -g 'daemon off;'"]
+EXPOSE 8080
