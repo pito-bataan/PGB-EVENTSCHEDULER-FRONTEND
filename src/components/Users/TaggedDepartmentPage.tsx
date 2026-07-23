@@ -1627,6 +1627,10 @@ const TaggedDepartmentPage: React.FC = () => {
                                           <>
                                             (Quantity: <span className="font-bold text-lg">{req.quantity || 'N/A'}</span>)
                                           </>
+                                        ) : req.quantity ? (
+                                          <>
+                                            (Users: <span className="font-bold text-lg">{req.quantity}</span>)
+                                          </>
                                         ) : req.notes ? (
                                           <>
                                             Notes: <span className="font-medium">{req.notes}</span>
@@ -1984,6 +1988,10 @@ const TaggedDepartmentPage: React.FC = () => {
                                                   req.type === 'physical' ? (
                                                     <>
                                                       (Quantity: <span className="font-bold text-lg">{req.quantity || 'N/A'}</span>)
+                                                    </>
+                                                  ) : req.quantity ? (
+                                                    <>
+                                                      (Users: <span className="font-bold text-lg">{req.quantity}</span>)
                                                     </>
                                                   ) : req.notes ? (
                                                     <>

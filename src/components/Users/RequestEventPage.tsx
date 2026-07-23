@@ -1452,39 +1452,109 @@ const RequestEventPage: React.FC = () => {
           }
         }
 
-        // Same-day conflict check: PITO should not have another event on the same day
-        // COMMENTED OUT: Temporarily disabled PITO same-day blocking
-        /*
-        try {
-          const token = localStorage.getItem('authToken');
-          if (token && formData.startDate) {
-            const eventsRes = await fetch(`${API_BASE_URL}/events`, {
-              headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-            });
-            if (eventsRes.ok) {
-              const eventsData = await eventsRes.json();
-              const allEvents: any[] = eventsData.data || [];
-              const eventDateStr = new Date(formData.startDate).toDateString();
-              const hasPitoConflict = allEvents.some((ev: any) => {
-                if (ev.status !== 'approved' && ev.status !== 'submitted') return false;
-                const evDate = ev.startDate ? new Date(ev.startDate).toDateString() : '';
-                if (evDate !== eventDateStr) return false;
-                const departments: string[] = ev.taggedDepartments || [];
-                return departments.some((d: string) => d.toLowerCase().includes('pito'));
-              });
-              if (hasPitoConflict) {
-                setPitoBlockMessage(
-                  `PITO is already tagged for an existing approved/submitted event on ${eventDateStr}. Please choose a different date or coordinate directly with PITO for assistance.`
-                );
-                setShowPitoBlockAlert(true);
-                return;
-              }
-            }
-          }
-        } catch {
-          // Silently fail - proceed if we can't check conflicts
+        // **PITO Default Requirements Auto-Population**
+        // When PITO is selected, auto-populate default requirements
+        setSelectedDepartment(departmentName);
+        setLoadingDepartmentRequirements(true);
+        setShowRequirementsModal(true);
+
+        // Reset conflicts
+        setConflictingEvents([]);
+
+        // Fetch conflicting events if date and time are set
+        if (formData.startDate && formData.startTime && formData.endTime) {
+          await fetchConflictingEvents(formData.startDate, formData.startTime, formData.endTime, formData.location);
         }
-        */
+
+        // Check if location is ANY Kagitingan Hall variant
+        const isKagitingan = typeof formData.location === 'string' && 
+          formData.location.toLowerCase().includes('kagitingan');
+
+        // Define PITO default requirements
+        const pitoDefaultRequirements: DepartmentRequirement[] = [
+          {
+            id: `pito-led-wall-operator-${Date.now()}`,
+            name: 'LED Wall with Operator',
+            selected: false,
+            notes: '',
+            availabilityNotes: isKagitingan 
+              ? 'LED Wall is not possible for Kagitingan Hall due to ceiling height.'
+              : 'If used outside PGB, this needs dismantling — please coordinate with PGSO for transportation.',
+            type: 'service',
+            quantity: undefined,
+            totalQuantity: undefined,
+            isAvailable: !isKagitingan, // Disabled for ANY Kagitingan Hall location
+            isCustom: true
+          },
+          {
+            id: `pito-led-wall-${Date.now()}`,
+            name: 'LED Wall',
+            selected: false,
+            notes: '',
+            availabilityNotes: isKagitingan 
+              ? 'LED Wall is not possible for Kagitingan Hall due to ceiling height.' 
+              : 'If used outside PGB, this needs dismantling — please coordinate with PGSO for transportation.',
+            type: 'service',
+            quantity: undefined,
+            totalQuantity: undefined,
+            isAvailable: !isKagitingan, // Disabled for ANY Kagitingan Hall location
+            isCustom: true
+          },
+          {
+            id: `pito-projector-${Date.now()}`,
+            name: 'Projector with HDMI',
+            selected: false,
+            notes: '',
+            type: 'service',
+            quantity: undefined,
+            totalQuantity: undefined,
+            isAvailable: true,
+            isCustom: true
+          },
+          {
+            id: `pito-internet-${Date.now()}`,
+            name: 'Internet Connection',
+            selected: false,
+            notes: '',
+            type: 'service',
+            quantity: undefined,
+            totalQuantity: undefined,
+            isAvailable: true,
+            isCustom: true,
+            serviceType: 'yesno' // Special type to trigger input field for number of users
+          },
+          {
+            id: `pito-tv-${Date.now()}`,
+            name: 'TV',
+            selected: false,
+            notes: '',
+            availabilityNotes: 'If used outside PGB, this needs dismantling — please coordinate with PGSO for transportation.',
+            type: 'service',
+            quantity: undefined,
+            totalQuantity: undefined,
+            isAvailable: true,
+            isCustom: true
+          },
+          {
+            id: `pito-hdmi-cable-${Date.now()}`,
+            name: '10-meter HDMI Cable',
+            selected: false,
+            notes: '',
+            type: 'service',
+            quantity: undefined,
+            totalQuantity: undefined,
+            isAvailable: true,
+            isCustom: true
+          }
+        ];
+
+        // Initialize requirements for PITO department
+        const newRequirements = { ...formData.departmentRequirements };
+        newRequirements[departmentName] = pitoDefaultRequirements;
+        handleInputChange('departmentRequirements', newRequirements);
+
+        setLoadingDepartmentRequirements(false);
+        return;
       }
 
       // If department is being selected, open requirements modal
@@ -5489,12 +5559,31 @@ const RequestEventPage: React.FC = () => {
               {activeRequirement ? `Set Details - ${activeRequirement.name}` : 'Set Requirement Details'}
             </DialogTitle>
             <DialogDescription>
-              Specify quantity and notes for this requirement.
+              {activeRequirement?.availabilityNotes 
+                ? 'Please review the important notes below.' 
+                : 'Specify quantity and notes for this requirement.'}
             </DialogDescription>
           </DialogHeader>
 
           {activeRequirement && (
             <div className="space-y-4 pt-2">
+              {/* Display availability notes as prominent alert if they exist */}
+              {activeRequirement.availabilityNotes && (
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="flex items-start gap-2">
+                    <Info className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                    <div className="text-sm text-blue-900">
+                      <span className="font-medium">Important:</span>{' '}
+                      {activeRequirement.availabilityNotes.startsWith('PAVILION_DEFAULT:') ? (() => {
+                        const parts = activeRequirement.availabilityNotes.split(':');
+                        const pavilionLocation = parts.slice(2).join(':') || 'this location';
+                        return `Default requirement for ${pavilionLocation}`;
+                      })() : activeRequirement.availabilityNotes}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Show availability context */}
               {activeRequirement.type === 'physical' && (
                 <div className="text-xs text-gray-700 bg-gray-50 border border-gray-200 rounded p-2">
@@ -5640,20 +5729,47 @@ const RequestEventPage: React.FC = () => {
               {/* Notes only for custom, non-physical requirements */}
               {activeRequirement.type !== 'physical' && activeRequirement.isCustom && (
                 <div className="space-y-2">
-                  <Label className="text-xs font-medium text-gray-900">Notes / Special Instructions</Label>
-                  {(() => {
-                    const currentReqs = formData.departmentRequirements[selectedDepartment] || [];
-                    const current = currentReqs.find(r => r.id === activeRequirement.id) || activeRequirement;
-                    const value = current.notes || '';
-                    return (
-                      <Textarea
-                        placeholder="Add specific notes or requirements..."
-                        value={value}
-                        onChange={(e) => handleRequirementNotes(activeRequirement.id, e.target.value)}
-                        className="min-h-20 text-sm"
-                      />
-                    );
-                  })()}
+                  {/* Special handling for Internet Connection - show number input for user count */}
+                  {activeRequirement.name === 'Internet Connection' ? (
+                    <>
+                      <Label className="text-xs font-medium text-gray-900">Number of Users</Label>
+                      {(() => {
+                        const currentReqs = formData.departmentRequirements[selectedDepartment] || [];
+                        const current = currentReqs.find(r => r.id === activeRequirement.id) || activeRequirement;
+                        const value = current.quantity ?? '';
+                        return (
+                          <Input
+                            type="number"
+                            placeholder="Enter number of users..."
+                            value={value}
+                            onChange={(e) => {
+                              const qty = parseInt(e.target.value) || 0;
+                              handleRequirementQuantity(activeRequirement.id, qty);
+                            }}
+                            className="text-sm"
+                            min={1}
+                          />
+                        );
+                      })()}
+                    </>
+                  ) : (
+                    <>
+                      <Label className="text-xs font-medium text-gray-900">Notes / Special Instructions</Label>
+                      {(() => {
+                        const currentReqs = formData.departmentRequirements[selectedDepartment] || [];
+                        const current = currentReqs.find(r => r.id === activeRequirement.id) || activeRequirement;
+                        const value = current.notes || '';
+                        return (
+                          <Textarea
+                            placeholder="Add specific notes or requirements..."
+                            value={value}
+                            onChange={(e) => handleRequirementNotes(activeRequirement.id, e.target.value)}
+                            className="min-h-20 text-sm"
+                          />
+                        );
+                      })()}
+                    </>
+                  )}
                 </div>
               )}
             </div>
