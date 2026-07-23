@@ -55,7 +55,4 @@ RUN chown -R nginx:nginx /usr/share/nginx/html
 
 EXPOSE 6010
 
-# Run as non-root user
-USER nginx
-
 CMD ["nginx", "-g", "daemon off;"]
