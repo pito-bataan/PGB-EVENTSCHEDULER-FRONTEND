@@ -24,8 +24,8 @@ COPY . .
 
 RUN npm run build -- --logLevel=warn
 
-# Production stage - use unprivileged nginx (no PID file issues)
-FROM nginx:alpine-unprivileged
+# Production stage - use unprivileged nginx (works in restricted environments)
+FROM nginx:unprivileged
 
 COPY --from=builder /app/dist /usr/share/nginx/html
 
