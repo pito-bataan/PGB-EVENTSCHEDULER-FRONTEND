@@ -536,6 +536,51 @@ const RequestEventPage: React.FC = () => {
     setCurrentStep(3);
   };
 
+  // Function to validate and clean up requirements before proceeding to schedule
+  const handleContinueToSchedule = () => {
+    // Check for any selected requirements with 0 availability and auto-remove them
+    const updatedDeptReqs = { ...formData.departmentRequirements };
+    const removedRequirements: string[] = [];
+    
+    Object.keys(updatedDeptReqs).forEach(deptName => {
+      const requirements = updatedDeptReqs[deptName];
+      const validRequirements = requirements.filter(req => {
+        // Keep requirement if:
+        // 1. It's not selected (so we don't lose unselected items)
+        // 2. It's selected AND (is custom OR has availability OR has quantity > 0)
+        if (!req.selected) return true;
+        
+        const hasZeroQuantity = req.type === 'physical' && 
+                               req.totalQuantity != null && 
+                               req.totalQuantity <= 0;
+        const isUnavailable = !req.isAvailable;
+        
+        // If requirement has issues, record it and remove
+        if ((hasZeroQuantity || isUnavailable) && !req.isCustom) {
+          removedRequirements.push(`${req.name} (${deptName})`);
+          return false; // Remove this requirement
+        }
+        
+        return true; // Keep this requirement
+      });
+      
+      updatedDeptReqs[deptName] = validRequirements;
+    });
+    
+    // If we removed any requirements, update the form data and notify user
+    if (removedRequirements.length > 0) {
+      handleInputChange('departmentRequirements', updatedDeptReqs);
+      
+      toast.warning('Requirements with 0 availability removed', {
+        description: `The following items were removed because they have 0 available quantity: ${removedRequirements.join(', ')}. Please coordinate directly with the respective departments if you need these items.`,
+        duration: 8000
+      });
+    }
+    
+    // Proceed to schedule step
+    setCurrentStep(5);
+  };
+
   const handleNoDepartmentsNeededChange = async (checked: boolean) => {
     setNoDepartmentsNeeded(checked);
 
@@ -1765,6 +1810,16 @@ const RequestEventPage: React.FC = () => {
     if (!req.selected && pavilionZeroItems.includes(req.name)) {
       setZeroQtyAlertItem(req.name);
       setShowZeroQtyAlert(true);
+      return;
+    }
+
+    // If trying to deselect a requirement with 0 availability, allow it (so users can remove it)
+    // But if trying to select and it has 0 availability, block it
+    if (!req.selected && !req.isAvailable) {
+      toast.error('Cannot select this item', {
+        description: `${req.name} is currently unavailable. Please coordinate directly with ${selectedDepartment}.`,
+        duration: 4000
+      });
       return;
     }
 
@@ -4563,6 +4618,9 @@ const RequestEventPage: React.FC = () => {
                     {formData.taggedDepartments.map((dept) => {
                       const deptRequirements = formData.departmentRequirements[dept]?.filter(req => req.selected) || [];
                       const notesCount = deptRequirements.filter(req => req.notes && req.notes.trim()).length;
+                      const zeroAvailabilityCount = deptRequirements.filter(req => 
+                        req.type === 'physical' && req.totalQuantity != null && req.totalQuantity <= 0
+                      ).length;
 
                       return (
                         <motion.div
@@ -4595,16 +4653,36 @@ const RequestEventPage: React.FC = () => {
                                     {notesCount > 0 && (
                                       <span className="text-gray-500">• {notesCount} with notes</span>
                                     )}
+                                    {zeroAvailabilityCount > 0 && (
+                                      <span className="text-red-600 font-medium flex items-center gap-1">
+                                        • <AlertTriangle className="w-3 h-3" /> {zeroAvailabilityCount} with 0 qty
+                                      </span>
+                                    )}
                                   </div>
                                   <div className="space-y-1">
-                                    {deptRequirements.slice(0, 3).map((req) => (
+                                    {deptRequirements.slice(0, 3).map((req) => {
+                                      const hasZeroQuantity = req.type === 'physical' && 
+                                                             req.totalQuantity != null && 
+                                                             req.totalQuantity <= 0;
+                                      
+                                      return (
                                       <div
                                         key={req.id}
-                                        className="text-xs bg-gray-50 text-gray-800 p-2 rounded-md border border-gray-200"
+                                        className={`text-xs p-2 rounded-md border ${
+                                          hasZeroQuantity 
+                                            ? 'bg-red-50 text-red-900 border-red-300' 
+                                            : 'bg-gray-50 text-gray-800 border-gray-200'
+                                        }`}
                                       >
                                         <div className="flex items-center justify-between mb-1">
-                                          <span className="font-medium text-gray-900">{req.name}</span>
+                                          <span className="font-medium">{req.name}</span>
                                           <div className="flex items-center gap-1">
+                                            {hasZeroQuantity && (
+                                              <span className="text-[10px] bg-red-600 text-white px-1.5 py-0.5 rounded-full flex items-center gap-1">
+                                                <Ban className="w-2.5 h-2.5" />
+                                                0 Available
+                                              </span>
+                                            )}
                                             {req.type && (
                                               <span className="text-[10px] bg-gray-200 text-gray-700 px-1.5 py-0.5 rounded-full flex items-center gap-1">
                                                 {req.type === 'physical' ? (
@@ -4641,27 +4719,37 @@ const RequestEventPage: React.FC = () => {
                                             <>
                                               <span>
                                                 {req.type === 'physical' && req.quantity
-                                                  ? `Requested: ${req.quantity}${req.totalQuantity ? ` of ${req.totalQuantity}` : ''}`
+                                                  ? `Requested: ${req.quantity}${req.totalQuantity !== undefined ? ` of ${req.totalQuantity}` : ''}`
                                                   : req.type === 'yesno' && req.yesNoAnswer
                                                     ? `Answer: ${req.yesNoAnswer === 'yes' ? '✓ Yes' : '✗ No'}`
-                                                    : `Available: ${req.totalQuantity || 'N/A'}`}
+                                                    : `Available: ${req.totalQuantity !== undefined ? req.totalQuantity : 'N/A'}`}
                                               </span>
-                                              <span className={`flex items-center gap-1 ${req.isAvailable ? 'text-emerald-700' : 'text-red-700'
-                                                }`}>
-                                                <div className={`w-1.5 h-1.5 rounded-full ${req.isAvailable ? 'bg-emerald-500' : 'bg-red-500'
-                                                  }`}></div>
-                                                {req.isAvailable ? 'Available' : 'Unavailable'}
+                                              <span className={`flex items-center gap-1 ${
+                                                hasZeroQuantity ? 'text-red-700 font-bold' :
+                                                req.isAvailable ? 'text-emerald-700' : 'text-red-700'
+                                              }`}>
+                                                <div className={`w-1.5 h-1.5 rounded-full ${
+                                                  hasZeroQuantity ? 'bg-red-600' :
+                                                  req.isAvailable ? 'bg-emerald-500' : 'bg-red-500'
+                                                }`}></div>
+                                                {hasZeroQuantity ? '0 Qty' : req.isAvailable ? 'Available' : 'Unavailable'}
                                               </span>
                                             </>
                                           )}
                                         </div>
+                                        {hasZeroQuantity && (
+                                          <div className="text-[10px] text-red-700 mt-1 font-medium">
+                                            ⚠️ This item will be removed when you continue to schedule
+                                          </div>
+                                        )}
                                         {req.responsiblePerson && (
                                           <div className="text-[11px] text-gray-500 mt-1">
                                             Contact: {req.responsiblePerson}
                                           </div>
                                         )}
                                       </div>
-                                    ))}
+                                    );
+                                    })}
                                     {deptRequirements.length > 3 && (
                                       <div className="text-[11px] text-gray-500 text-center py-1">
                                         +{deptRequirements.length - 3} more requirement(s)
@@ -4960,7 +5048,7 @@ const RequestEventPage: React.FC = () => {
             Previous
           </Button>
           <Button
-            onClick={() => setCurrentStep(5)}
+            onClick={handleContinueToSchedule}
             disabled={
               // For custom locations: checkbox acknowledgment is the only gate.
               isCustomLocationSelected
@@ -5187,27 +5275,33 @@ const RequestEventPage: React.FC = () => {
                 ) : (
                   formData.departmentRequirements[selectedDepartment]?.map((requirement) => {
                       const isPavilionZeroItem = pavilionZeroItems.includes(requirement.name);
+                      // Check if requirement has 0 availability
+                      const hasZeroQuantity = requirement.type === 'physical' && 
+                                             requirement.totalQuantity != null && 
+                                             requirement.totalQuantity <= 0;
+                      const isDisabled = !requirement.isAvailable || isPavilionZeroItem || hasZeroQuantity;
+                      
                       return (
                     <div
                       key={requirement.id}
-                      className={`p-3 border rounded-lg transition-all ${!requirement.isAvailable || isPavilionZeroItem
-                        ? 'bg-gray-50 border-gray-200 opacity-60 cursor-not-allowed'
+                      className={`p-3 border rounded-lg transition-all ${isDisabled
+                        ? 'bg-gray-100 border-gray-300 opacity-50 cursor-not-allowed'
                         : requirement.selected
                           ? 'bg-blue-50 border-blue-200 shadow-sm cursor-pointer'
                           : 'bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50 cursor-pointer'
                         }`}
-                      onClick={() => (requirement.isAvailable || isPavilionZeroItem) && handleRequirementToggle(requirement.id)}
+                      onClick={() => !isDisabled && handleRequirementToggle(requirement.id)}
                     >
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-2">
                             <Checkbox
                               checked={requirement.selected}
-                              disabled={!requirement.isAvailable || isPavilionZeroItem}
-                              onChange={() => (requirement.isAvailable || isPavilionZeroItem) && handleRequirementToggle(requirement.id)}
+                              disabled={isDisabled}
+                              onChange={() => !isDisabled && handleRequirementToggle(requirement.id)}
                               className="mt-0.5"
                             />
-                            <h5 className={`font-medium text-sm ${requirement.isAvailable && !isPavilionZeroItem ? 'text-gray-900' : 'text-gray-500'
+                            <h5 className={`font-medium text-sm ${!isDisabled ? 'text-gray-900' : 'text-gray-400'
                               }`}>{requirement.name}</h5>
                             <Badge
                               variant={requirement.type === 'physical' ? 'secondary' : 'outline'}
@@ -5233,6 +5327,14 @@ const RequestEventPage: React.FC = () => {
                                 ) : (
                                   <><X className="w-3 h-3 mr-1" /> No</>
                                 )}
+                              </Badge>
+                            )}
+                            {/* Show a badge if requirement has 0 quantity */}
+                            {hasZeroQuantity && (
+                              <Badge variant="destructive" className="text-xs">
+                                <div className="flex items-center gap-1">
+                                  <Ban className="w-3 h-3" /> 0 Available
+                                </div>
                               </Badge>
                             )}
                           </div>
