@@ -216,7 +216,7 @@ const RequestEventPage: React.FC = () => {
   const [pitoBlockMessage, setPitoBlockMessage] = useState('');
 
   // ── Auto Suggest Location state ────────────────────────────────────────────
-  const [locationMode, setLocationMode] = useState<'manual' | 'auto-suggest'>('manual');
+  const [locationMode, setLocationMode] = useState<'manual' | 'auto-suggest'>('auto-suggest');
   const [showAutoSuggestModal, setShowAutoSuggestModal] = useState(false);
   const [autoSuggestParticipants, setAutoSuggestParticipants] = useState('');
   const [autoSuggestStartDate, setAutoSuggestStartDate] = useState<Date | undefined>(undefined);
@@ -4038,8 +4038,8 @@ const RequestEventPage: React.FC = () => {
                       Location <span className="text-red-500">*</span>
                     </Label>
 
-                    {/* Custom location match hint */}
-                    {showCustomLocation && formData.location.trim() && locations.filter(loc =>
+                    {/* Custom location match hint - COMMENTED OUT */}
+                    {/* {showCustomLocation && formData.location.trim() && locations.filter(loc =>
                         loc.toLowerCase().includes(formData.location.trim().toLowerCase()) &&
                         loc !== 'Add Custom Location'
                       ).length > 0 && (
@@ -4050,11 +4050,13 @@ const RequestEventPage: React.FC = () => {
                             loc !== 'Add Custom Location'
                           ).length} matching location(s). Click to select:</span>
                         </div>
-                      )}
+                      )} */}
 
-                    {!showCustomLocation ? (
+                    {/* Custom location input - COMMENTED OUT to force Auto Suggest */}
+                    {/* {!showCustomLocation ? ( */}
                       <div className="flex gap-2">
-                        <Select
+                        {/* Location dropdown - COMMENTED OUT, replaced with Auto Suggest button */}
+                        {/* <Select
                           value={formData.location}
                           onValueChange={handleLocationChange}
                         >
@@ -4064,15 +4066,12 @@ const RequestEventPage: React.FC = () => {
                             </div>
                           </SelectTrigger>
                           <SelectContent className="max-h-80">
-                            {/* PGB Locations Section */}
                             {(() => {
-                              // Use actual location data with isCustom field
                               const pgbLocs = locationData.filter(loc => !loc.isCustom);
                               const customLocs = locationData.filter(loc => loc.isCustom);
 
                               return (
                                 <>
-                                  {/* PGB Locations */}
                                   {pgbLocs.length > 0 && (
                                     <>
                                       <div className="px-2 py-1.5 text-xs font-semibold text-gray-500 bg-gray-50">
@@ -4098,7 +4097,6 @@ const RequestEventPage: React.FC = () => {
                                     </>
                                   )}
 
-                                  {/* Custom Locations */}
                                   {customLocs.length > 0 && (
                                     <>
                                       <div className="px-2 py-1.5 text-xs font-semibold text-gray-500 bg-gray-50 mt-1">
@@ -4118,7 +4116,6 @@ const RequestEventPage: React.FC = () => {
                                     </>
                                   )}
 
-                                  {/* Add Custom Location Button */}
                                   <SelectItem
                                     value="Add Custom Location"
                                     className="text-blue-600 font-medium mt-1 border-t"
@@ -4132,7 +4129,32 @@ const RequestEventPage: React.FC = () => {
                               );
                             })()}
                           </SelectContent>
-                        </Select>
+                        </Select> */}
+                        
+                        {/* Auto Suggest Button - Replaces the dropdown */}
+                        <Button
+                          type="button"
+                          onClick={() => {
+                            if (!checkEventTypeSelected()) return;
+                            setLocationMode('auto-suggest');
+                            setShowAutoSuggestModal(true);
+                          }}
+                          variant="outline"
+                          className="mt-1 h-9 flex-1 justify-start text-left font-normal"
+                        >
+                          {formData.location ? (
+                            <div className="flex items-center gap-2 truncate w-full">
+                              <MapPin className="w-4 h-4 text-violet-500 shrink-0" />
+                              <span className="truncate">{formData.location}</span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2 text-gray-500">
+                              <Wand2 className="w-4 h-4 shrink-0" />
+                              <span>Click to use Auto Suggest</span>
+                            </div>
+                          )}
+                        </Button>
+                        
                         {formData.location && formData.location !== 'Add Custom Location' && (
                           <Button
                             type="button"
@@ -4149,15 +4171,15 @@ const RequestEventPage: React.FC = () => {
                           </Button>
                         )}
                       </div>
-                    ) : (
-                      <div className="relative">
+                    {/* ) : ( */}
+                      {/* Custom location input section - COMMENTED OUT */}
+                      {/* <div className="relative">
                         <Input
                           placeholder="Enter custom location"
                           value={formData.location}
                           onChange={(e) => handleInputChange('location', e.target.value)}
                           className="mt-1"
                         />
-                        {/* Show matching locations in real-time as user types - floating dropdown */}
                         {formData.location.trim() && locations.filter(loc =>
                           loc.toLowerCase().includes(formData.location.trim().toLowerCase()) &&
                           loc !== 'Add Custom Location'
@@ -4174,7 +4196,6 @@ const RequestEventPage: React.FC = () => {
                                       key={location}
                                       type="button"
                                       onClick={async () => {
-                                        // Use the existing handleLocationChange function that has all the logic
                                         await handleLocationChange(location);
                                         setShowCustomLocation(false);
                                         toast.success(`Selected: ${location}`);
@@ -4208,7 +4229,6 @@ const RequestEventPage: React.FC = () => {
                             onClick={() => {
                               const trimmedLocation = formData.location.trim();
 
-                              // Check if location already exists (case-insensitive)
                               const locationExists = locations.some(loc =>
                                 loc.toLowerCase() === trimmedLocation.toLowerCase() &&
                                 loc !== 'Add Custom Location'
@@ -4231,14 +4251,14 @@ const RequestEventPage: React.FC = () => {
                             Save & Check Schedule
                           </Button>
                         </div>
-                      </div>
-                    )}
+                      </div> */}
+                    {/* )} */}
 
                     {/* ── Manual / Auto Suggest toggle — below the dropdown ── */}
                     <div className="mt-2 space-y-2">
                       <div className="flex items-center gap-2">
-                        {/* Manual button */}
-                        <button
+                        {/* Manual button - COMMENTED OUT to force users to use Auto Suggest */}
+                        {/* <button
                           type="button"
                           onClick={() => {
                             setLocationMode('manual');
@@ -4254,16 +4274,16 @@ const RequestEventPage: React.FC = () => {
                         >
                           <MapPin className="w-3 h-3" />
                           Manual
-                        </button>
+                        </button> */}
 
-                        {/* OR divider */}
-                        <div className="flex items-center gap-1.5">
+                        {/* OR divider - COMMENTED OUT since Manual button is hidden */}
+                        {/* <div className="flex items-center gap-1.5">
                           <div className="h-px w-4 bg-gray-200" />
                           <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">or</span>
                           <div className="h-px w-4 bg-gray-200" />
-                        </div>
+                        </div> */}
 
-                        {/* Auto Suggest button */}
+                        {/* Auto Suggest button - Now the only option */}
                         <button
                           type="button"
                           onClick={() => {
