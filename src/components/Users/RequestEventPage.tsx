@@ -2054,9 +2054,10 @@ const RequestEventPage: React.FC = () => {
       return;
     }
 
-    // Check for quantity over-requests (considering conflicts)
+    // Check for quantity over-requests (considering conflicts) - SKIP custom requirements
     const overRequests = selectedReqs.filter((req) => {
       if (req.type !== 'physical') return false;
+      if (req.isCustom) return false; // Skip validation for custom requirements - PGSO will verify
 
       if (!isMultiDay) {
         if (!req.quantity) return false;
@@ -2144,13 +2145,14 @@ const RequestEventPage: React.FC = () => {
     });
   };
 
-  // Check if any physical requirements exceed available quantity
+  // Check if any physical requirements exceed available quantity - SKIP custom requirements
   const hasQuantityOverRequests = () => {
     return formData.taggedDepartments.some(dept => {
       const deptReqs = formData.departmentRequirements[dept];
       return deptReqs && deptReqs.some(req =>
         req.selected &&
         req.type === 'physical' &&
+        !req.isCustom && // Skip custom requirements - PGSO will verify
         req.quantity &&
         req.totalQuantity &&
         req.quantity > req.totalQuantity
@@ -4346,7 +4348,7 @@ const RequestEventPage: React.FC = () => {
                             Enter location outside Bataan
                           </div>
                           <Input
-                            placeholder="Enter location (e.g., Manila Hotel, Quezon City Hall)"
+                            placeholder="Enter location (e.g., SM City Bataan, Limay Municipal Hall)"
                             value={formData.location}
                             onChange={(e) => handleInputChange('location', e.target.value)}
                             className="bg-white"
@@ -5427,8 +5429,8 @@ const RequestEventPage: React.FC = () => {
                             )}
                           </div>
 
-                          {/* Conflict Warning - Only show if THIS requirement has conflicts */}
-                          {conflictingEvents.length > 0 && formData.startDate && formData.startTime &&
+                          {/* Conflict Warning - Only show if THIS requirement has conflicts AND it's NOT a custom requirement */}
+                          {!requirement.isCustom && conflictingEvents.length > 0 && formData.startDate && formData.startTime &&
                             hasRequirementConflict(requirement, selectedDepartment) && (
                               <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 mb-3">
                                 <div className="flex items-center gap-2 text-orange-800 text-xs font-medium mb-1">
