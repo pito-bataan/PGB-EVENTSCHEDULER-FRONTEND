@@ -4636,7 +4636,7 @@ const RequestEventPage: React.FC = () => {
                           ✓ Custom location acknowledged
                         </Label>
                         <p className="text-xs text-green-700 mt-1">
-                          Since you selected a custom location (Outside Bataan), please contact PGSO directly for any requirements needed at this venue.
+                          Since you selected a custom location (Outside PGB), please contact PGSO directly for any requirements needed at this venue.
                         </p>
                       </div>
                     </div>
