@@ -4300,10 +4300,31 @@ const RequestEventPage: React.FC = () => {
                           <Wand2 className="w-3 h-3" />
                           Auto Suggest
                         </button>
+                        
+                        {/* OR divider */}
+                        <div className="flex items-center gap-1.5">
+                          <div className="h-px w-4 bg-gray-200" />
+                          <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">or</span>
+                          <div className="h-px w-4 bg-gray-200" />
+                        </div>
+                        
+                        {/* Outside Bataan button */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowCustomLocation(true);
+                            handleInputChange('location', '');
+                            handleInputChange('locations', []);
+                          }}
+                          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-all select-none font-medium bg-white text-gray-500 border-gray-200 hover:border-orange-300 hover:text-orange-600"
+                        >
+                          <MapPin className="w-3 h-3" />
+                          Outside Bataan
+                        </button>
                       </div>
 
                       {/* Auto-suggest selected badge */}
-                      {locationMode === 'auto-suggest' && selectedSuggestion && (
+                      {locationMode === 'auto-suggest' && selectedSuggestion && !showCustomLocation && (
                         <div className="flex items-center gap-1 bg-violet-50 border border-violet-200 rounded-lg px-2.5 py-1.5 w-fit max-w-full">
                           <Sparkles className="w-3 h-3 text-violet-500 shrink-0" />
                           <span className="text-xs text-violet-800 font-medium truncate">{selectedSuggestion}</span>
@@ -4314,6 +4335,53 @@ const RequestEventPage: React.FC = () => {
                           >
                             Change
                           </button>
+                        </div>
+                      )}
+                      
+                      {/* Outside Bataan input */}
+                      {showCustomLocation && (
+                        <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 space-y-2">
+                          <div className="flex items-center gap-2 text-orange-800 text-xs font-medium">
+                            <MapPin className="w-4 h-4" />
+                            Enter location outside Bataan
+                          </div>
+                          <Input
+                            placeholder="Enter location (e.g., Manila Hotel, Quezon City Hall)"
+                            value={formData.location}
+                            onChange={(e) => handleInputChange('location', e.target.value)}
+                            className="bg-white"
+                          />
+                          <div className="flex gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setShowCustomLocation(false);
+                                handleInputChange('location', '');
+                              }}
+                              className="text-xs"
+                            >
+                              Cancel
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="default"
+                              size="sm"
+                              onClick={() => {
+                                const trimmedLocation = formData.location.trim();
+                                if (!trimmedLocation) {
+                                  toast.error('Please enter a location first');
+                                } else {
+                                  setShowScheduleModal(true);
+                                }
+                              }}
+                              className="text-xs bg-orange-600 hover:bg-orange-700"
+                              disabled={!formData.location.trim()}
+                            >
+                              Save & Continue
+                            </Button>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -5527,8 +5595,9 @@ const RequestEventPage: React.FC = () => {
                 )}
 
                 {/* Add Custom Requirement Button */}
-                {/* PGSO: hide "Add Custom Requirement" UI. (Keep code for future re-enable.) */}
-                {!selectedDepartment?.toLowerCase().includes('pgso') && (
+                {/* Only show for PGSO and PITO when location is outside PGB (custom location) */}
+                {(selectedDepartment?.toLowerCase().includes('pgso') || selectedDepartment?.toLowerCase().includes('pito')) && 
+                 isCustomLocationSelected && (
                   <div
                     className={`p-3 border-2 border-dashed rounded-lg cursor-pointer transition-all ${showCustomInput
                       ? 'bg-blue-50 border-blue-300'
@@ -5538,7 +5607,7 @@ const RequestEventPage: React.FC = () => {
                   >
                     <div className="flex items-center justify-center gap-2 text-sm text-gray-600">
                       <Plus className="w-4 h-4" />
-                      Add Custom Requirement
+                      Add Custom Requirement (Outside PGB)
                     </div>
                   </div>
                 )}
@@ -5546,8 +5615,9 @@ const RequestEventPage: React.FC = () => {
             </div>
           </div>
           {/* Custom Requirement Modal (name, type, and quantity/notes in one place) */}
-          {/* PGSO: hide the modal as well (code preserved for future re-enable). */}
-          {!selectedDepartment?.toLowerCase().includes('pgso') && (
+          {/* Only enable for PGSO and PITO when location is outside PGB */}
+          {(selectedDepartment?.toLowerCase().includes('pgso') || selectedDepartment?.toLowerCase().includes('pito')) && 
+           isCustomLocationSelected && (
             <Dialog open={showCustomInput} onOpenChange={setShowCustomInput}>
               <DialogContent className="sm:max-w-md">
                 <DialogHeader>
