@@ -4314,7 +4314,7 @@ const RequestEventPage: React.FC = () => {
                           <div className="h-px w-4 bg-gray-200" />
                         </div>
                         
-                        {/* Outside Bataan button */}
+                        {/* Outside PGB button */}
                         <button
                           type="button"
                           onClick={() => {
@@ -4325,7 +4325,7 @@ const RequestEventPage: React.FC = () => {
                           className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-all select-none font-medium bg-white text-gray-500 border-gray-200 hover:border-orange-300 hover:text-orange-600"
                         >
                           <MapPin className="w-3 h-3" />
-                          Outside Bataan
+                          Outside PGB
                         </button>
                       </div>
 
@@ -4344,12 +4344,12 @@ const RequestEventPage: React.FC = () => {
                         </div>
                       )}
                       
-                      {/* Outside Bataan input */}
+                      {/* Outside PGB input */}
                       {showCustomLocation && (
                         <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 space-y-2">
                           <div className="flex items-center gap-2 text-orange-800 text-xs font-medium">
                             <MapPin className="w-4 h-4" />
-                            Enter location outside Bataan
+                            Enter location outside PGB
                           </div>
                           <Input
                             placeholder="Enter location (e.g., SM City Bataan, Limay Municipal Hall)"
