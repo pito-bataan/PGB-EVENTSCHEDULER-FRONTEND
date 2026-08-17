@@ -301,6 +301,10 @@ const RequestEventPage: React.FC = () => {
     if (!isCustomLocationSelected && pgsoCustomLocationAck) {
       setPgsoCustomLocationAck(false);
     }
+    // Auto-check the acknowledgment when custom location is selected
+    if (isCustomLocationSelected && !pgsoCustomLocationAck) {
+      setPgsoCustomLocationAck(true);
+    }
   }, [isCustomLocationSelected, pgsoCustomLocationAck]);
 
 
@@ -4617,23 +4621,22 @@ const RequestEventPage: React.FC = () => {
                   </div>
                 )}
 
-                {/* Custom Location PGSO Acknowledgment */}
+                {/* Custom Location PGSO Acknowledgment - Auto-checked */}
                 {isCustomLocationSelected && (
-                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                     <div className="flex items-start gap-3">
                       <Checkbox
                         id="pgsoCustomLocationAck"
-                        checked={pgsoCustomLocationAck}
-                        onCheckedChange={(checked) => setPgsoCustomLocationAck(checked as boolean)}
+                        checked={true}
+                        disabled={true}
                         className="mt-0.5"
                       />
                       <div className="flex-1">
-                        <Label htmlFor="pgsoCustomLocationAck" className="text-sm font-medium text-amber-900 cursor-pointer">
-                          Custom location: requirements must be coordinated manually with PGSO
+                        <Label htmlFor="pgsoCustomLocationAck" className="text-sm font-medium text-green-900">
+                          ✓ Custom location acknowledged
                         </Label>
-                        <p className="text-xs text-amber-700 mt-1">
-                          Since you selected a custom location, please contact PGSO directly for any requirements needed at this venue.
-                          You must acknowledge this before continuing to schedule.
+                        <p className="text-xs text-green-700 mt-1">
+                          Since you selected a custom location (Outside Bataan), please contact PGSO directly for any requirements needed at this venue.
                         </p>
                       </div>
                     </div>
