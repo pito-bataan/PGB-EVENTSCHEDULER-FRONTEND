@@ -314,7 +314,7 @@ const AllEventsPage: React.FC = () => {
   const hasCheckedRef = useRef(false);
 
   useEffect(() => {
-    fetchAllEvents();
+    fetchAllEvents(true);
 
     // Set up interval for checking expired events every minute
     const intervalId = setInterval(() => {
@@ -1997,20 +1997,20 @@ const AllEventsPage: React.FC = () => {
             {/* Summary Stats - Full Width */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-6 text-sm text-gray-600">
               <div className="font-medium">
-                Showing {startIndex + 1}-{Math.min(endIndex, filteredEvents.length)} of {filteredEvents.length} events
+                Showing {startIndex + 1}-{Math.min(endIndex, tabFilteredEvents.length)} of {tabFilteredEvents.length} events
               </div>
               <div className="flex flex-wrap items-center gap-3 sm:gap-4">
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                  <span className="text-xs sm:text-sm">Submitted: {(events || []).filter(e => e.status === 'submitted').length}</span>
+                  <span className="text-xs sm:text-sm">Submitted: {filteredEvents.filter(e => e.status === 'submitted').length}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                  <span className="text-xs sm:text-sm">Approved: {(events || []).filter(e => e.status === 'approved').length}</span>
+                  <span className="text-xs sm:text-sm">Approved: {filteredEvents.filter(e => e.status === 'approved').length}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                  <span className="text-xs sm:text-sm">Rejected: {(events || []).filter(e => e.status === 'rejected').length}</span>
+                  <span className="text-xs sm:text-sm">Rejected: {filteredEvents.filter(e => e.status === 'rejected').length}</span>
                 </div>
               </div>
             </div>

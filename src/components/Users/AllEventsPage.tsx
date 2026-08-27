@@ -41,7 +41,7 @@ const AllEventsPage: React.FC = () => {
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string>('');
   const [pdfEvent, setPdfEvent] = useState<any>(null);
 
-  useEffect(() => { fetchAllEvents(); }, [fetchAllEvents]);
+  useEffect(() => { fetchAllEvents(true); }, [fetchAllEvents]);
 
   const filteredEvents = getFilteredEvents();
   const uniqueLocations = getUniqueLocations();

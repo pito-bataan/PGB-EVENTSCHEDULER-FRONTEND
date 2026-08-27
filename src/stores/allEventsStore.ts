@@ -301,10 +301,12 @@ export const useAllEventsStore = create<AllEventsState>()(
         const state = get();
         let filtered = state.events.filter(event => {
           // Hide BAC-pending events from the Admin views
+          // Only hide if BAC location AND bac decision is still pending AND event itself is still in submitted state
           const isBACLocation = event.location === '5th Flr. Training Room 1 (BAC)';
           const isPendingBAC = !event.bacApprovalStatus || event.bacApprovalStatus === 'pending';
+          const isStillSubmitted = event.status === 'submitted';
           
-          if (isBACLocation && isPendingBAC) {
+          if (isBACLocation && isPendingBAC && isStillSubmitted) {
             return false;
           }
           return true;
