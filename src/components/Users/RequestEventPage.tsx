@@ -922,17 +922,97 @@ const RequestEventPage: React.FC = () => {
       if (response.ok) {
         const allRequirements = await response.json();
 
-        // Specific per-location doc (Kagitingan Hall A/B/C/Entire, etc.)
+        const selectedLocs = locationName
+          .split('+')
+          .map((s) => s.trim())
+          .filter(Boolean);
+
+        // If multiple locations are selected (separated by +), check for exact group or aggregate
+        if (selectedLocs.length > 1) {
+          // 1. Check for exact full group match
+          const exactGroupMatch = allRequirements.find((req: any) => {
+            if (!req.locationNames || !Array.isArray(req.locationNames)) return false;
+            const sortedReqLocs = [...req.locationNames].sort();
+            const sortedSelectedLocs = [...selectedLocs].sort();
+            return (
+              sortedReqLocs.length === sortedSelectedLocs.length &&
+              sortedReqLocs.every((loc, idx) => loc === sortedSelectedLocs[idx])
+            );
+          });
+
+          if (exactGroupMatch && Array.isArray(exactGroupMatch.requirements) && exactGroupMatch.requirements.length > 0) {
+            return {
+              requirements: exactGroupMatch.requirements,
+              roomTypes: exactGroupMatch.roomTypes || []
+            };
+          }
+
+          // 2. If no exact full group match exists, aggregate/sum requirements dynamically
+          const aggregatedMap: Map<string, number> = new Map();
+          const roomTypesSet = new Set<string>();
+          const processedLocations = new Set<string>();
+
+          // Sort group docs by locationNames.length descending to prioritize larger sub-group matches first
+          const groupDocsDesc = [...allRequirements]
+            .filter((doc: any) => doc.locationNames && Array.isArray(doc.locationNames) && doc.locationNames.length > 1)
+            .sort((a, b) => (b.locationNames?.length || 0) - (a.locationNames?.length || 0));
+
+          for (const doc of groupDocsDesc) {
+            const isSubset = doc.locationNames.every((loc: string) => selectedLocs.includes(loc));
+            const notProcessed = doc.locationNames.every((loc: string) => !processedLocations.has(loc));
+            if (isSubset && notProcessed && Array.isArray(doc.requirements)) {
+              doc.requirements.forEach((req: any) => {
+                const key = req.name.trim();
+                const currentQty = aggregatedMap.get(key) || 0;
+                aggregatedMap.set(key, currentQty + (req.quantity || 0));
+              });
+              if (Array.isArray(doc.roomTypes)) {
+                doc.roomTypes.forEach((rt: string) => roomTypesSet.add(rt));
+              }
+              doc.locationNames.forEach((loc: string) => processedLocations.add(loc));
+            }
+          }
+
+          // For remaining unprocessed locations, find their single-location requirement doc
+          for (const loc of selectedLocs) {
+            if (!processedLocations.has(loc)) {
+              const singleDoc = allRequirements.find((doc: any) => {
+                if (doc.locationNames && Array.isArray(doc.locationNames)) {
+                  return doc.locationNames.length === 1 && doc.locationNames[0] === loc;
+                }
+                return doc.locationName === loc;
+              });
+
+              if (singleDoc && Array.isArray(singleDoc.requirements)) {
+                singleDoc.requirements.forEach((req: any) => {
+                  const key = req.name.trim();
+                  const currentQty = aggregatedMap.get(key) || 0;
+                  aggregatedMap.set(key, currentQty + (req.quantity || 0));
+                });
+                if (Array.isArray(singleDoc.roomTypes)) {
+                  singleDoc.roomTypes.forEach((rt: string) => roomTypesSet.add(rt));
+                }
+              }
+            }
+          }
+
+          if (aggregatedMap.size > 0) {
+            const finalReqs = Array.from(aggregatedMap.entries()).map(([name, quantity]) => ({ name, quantity }));
+            return {
+              requirements: finalReqs,
+              roomTypes: Array.from(roomTypesSet)
+            };
+          }
+        }
+
+        // Single location resolution logic (exact match or group candidate fallback)
         const exactMatch = allRequirements.find((req: any) => {
-          // New format: locationNames array with only 1 item that matches
           if (req.locationNames && Array.isArray(req.locationNames)) {
             return req.locationNames.length === 1 && req.locationNames[0] === locationName;
           }
-          // Old format: single locationName field
           return req.locationName === locationName;
         });
 
-        // All group / hierarchy docs that include this location (Pavilion Overall, Kalayaan-only, etc.)
         const groupMatches = allRequirements.filter((req: any) => {
           if (req.locationNames && Array.isArray(req.locationNames)) {
             return req.locationNames.length > 1 && req.locationNames.includes(locationName);
@@ -964,7 +1044,6 @@ const RequestEventPage: React.FC = () => {
           }, null as any);
         };
 
-        // Decide which doc provides requirements (can come from Pavilion Overall)
         const requirementDocs = candidateDocs.filter(
           (doc) => Array.isArray(doc.requirements) && doc.requirements.length > 0
         );
@@ -973,7 +1052,6 @@ const RequestEventPage: React.FC = () => {
             ? pickMostSpecific(requirementDocs)
             : exactMatch || groupMatches[0] || null;
 
-        // Decide which doc provides room types (prefer the most specific override doc)
         const roomTypeDocs = candidateDocs.filter(
           (doc) => Array.isArray(doc.roomTypes) && doc.roomTypes.length > 0
         );
@@ -1258,41 +1336,23 @@ const RequestEventPage: React.FC = () => {
     handleInputChange('locations', updatedLocations);
     handleInputChange('multipleLocations', true);
 
-    // Check if these multiple locations are grouped together with shared requirements
+    // Check if these multiple locations are grouped together or need aggregated requirements
     try {
       setLoadingLocationRequirements(true);
       setShowLocationRequirementsModal(true);
 
-      const token = localStorage.getItem('authToken');
-      if (token) {
-        const response = await fetch(`${API_BASE_URL}/location-requirements`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
+      const combinedLocationStr = updatedLocations.join(' + ');
+      const locationData = await fetchLocationRequirements(combinedLocationStr);
+      setLoadingLocationRequirements(false);
 
-        if (response.ok) {
-          const allRequirements = await response.json();
-          // Find a requirement group that contains ALL the selected locations
-          const groupedRequirement = allRequirements.find((req: any) => {
-            if (!req.locationNames || !Array.isArray(req.locationNames)) return false;
-            // Check if all updatedLocations are in this group
-            return updatedLocations.every(loc => req.locationNames.includes(loc));
-          });
-
-          setLoadingLocationRequirements(false);
-
-          if (groupedRequirement && groupedRequirement.requirements.length > 0) {
-            // Show grouped requirements modal
-            setLocationRequirements(groupedRequirement.requirements);
-            setSelectedLocation(updatedLocations.join(' + '));
-            toast.success(`${roomName} added - viewing shared requirements`);
-          } else {
-            setShowLocationRequirementsModal(false);
-            toast.success(`${roomName} added to your booking`);
-          }
-        } else {
-          setLoadingLocationRequirements(false);
-          setShowLocationRequirementsModal(false);
-        }
+      if (locationData && locationData.requirements && locationData.requirements.length > 0) {
+        setLocationRequirements(locationData.requirements);
+        setLocationRoomTypes(locationData.roomTypes || []);
+        setSelectedLocation(combinedLocationStr);
+        toast.success(`${roomName} added - viewing requirements`);
+      } else {
+        setShowLocationRequirementsModal(false);
+        toast.success(`${roomName} added to your booking`);
       }
     } catch (error) {
       console.error('Error checking grouped requirements:', error);
@@ -1300,16 +1360,23 @@ const RequestEventPage: React.FC = () => {
       setShowLocationRequirementsModal(false);
       toast.success(`${roomName} added to your booking`);
     }
-
-    // Note: All conference rooms share the same availability since they're in the same building
   };
 
   // Remove conference room from locations array
-  const handleRemoveConferenceRoom = (roomName: string) => {
+  const handleRemoveConferenceRoom = async (roomName: string) => {
     const updatedLocations = formData.locations.filter(loc => loc !== roomName);
     handleInputChange('locations', updatedLocations);
     if (updatedLocations.length <= 1) {
       handleInputChange('multipleLocations', false);
+    }
+
+    if (updatedLocations.length > 0) {
+      const combinedLocationStr = updatedLocations.join(' + ');
+      const locationData = await fetchLocationRequirements(combinedLocationStr);
+      if (locationData && locationData.requirements) {
+        setLocationRequirements(locationData.requirements);
+        setSelectedLocation(combinedLocationStr);
+      }
     }
     toast.success(`${roomName} removed from your booking`);
   };
