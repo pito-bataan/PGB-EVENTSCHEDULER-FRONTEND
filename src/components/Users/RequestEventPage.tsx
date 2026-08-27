@@ -3881,28 +3881,17 @@ const RequestEventPage: React.FC = () => {
       autoSuggestEndDate ?? undefined
     );
 
-    // For partial combos (2 rooms/sections) override the locations array and fetch grouped requirements
-    if (sug.isMulti && sug.rooms.length === 2) {
+    // For multi-room combos (2 or more rooms) override the locations array and fetch requirements dynamically
+    if (sug.isMulti && sug.rooms.length >= 2) {
       setTimeout(async () => {
+        const combinedLocStr = sug.rooms.join(' + ');
         handleInputChange('locations', sug.rooms);
         handleInputChange('multipleLocations', true);
         try {
-          const token = localStorage.getItem('authToken');
-          if (token) {
-            const response = await fetch(`${API_BASE_URL}/location-requirements`, {
-              headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (response.ok) {
-              const allRequirements = await response.json();
-              const groupedRequirement = allRequirements.find((req: any) => {
-                if (!req.locationNames || !Array.isArray(req.locationNames)) return false;
-                return sug.rooms.every(loc => req.locationNames.includes(loc));
-              });
-              if (groupedRequirement && groupedRequirement.requirements.length > 0) {
-                setLocationRequirements(groupedRequirement.requirements);
-                setSelectedLocation(sug.rooms.join(' + '));
-              }
-            }
+          const locationData = await fetchLocationRequirements(combinedLocStr);
+          if (locationData && locationData.requirements && locationData.requirements.length > 0) {
+            setLocationRequirements(locationData.requirements);
+            setSelectedLocation(combinedLocStr);
           }
         } catch (error) {
           console.error('Error fetching combined requirements for auto-suggest:', error);
