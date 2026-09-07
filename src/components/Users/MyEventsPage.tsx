@@ -78,6 +78,8 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
+
 import { Label } from '@/components/ui/label';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -286,6 +288,23 @@ interface Event {
   status: 'draft' | 'submitted' | 'approved' | 'rejected' | 'completed' | 'cancelled' | 'ongoing';
 
   reason?: string;
+
+  cancelledBy?: {
+    userId?: string;
+    name: string;
+    email: string;
+    role: string;
+  };
+
+  cancelledAt?: string;
+
+  bacApprovalStatus?: 'pending' | 'approved' | 'rejected';
+
+  bacApprovedAt?: string;
+
+  bacApprovedBy?: string;
+
+  bacNotes?: string;
 
   submittedAt?: string;
 
@@ -5524,13 +5543,101 @@ const MyEventsPage: React.FC = () => {
                           <div className="flex-1 space-y-2 cursor-pointer">
                             {/* Status Badges Row */}
                             <div className="flex items-center gap-2 flex-wrap">
-                              <Badge
-                                variant={statusInfo.variant}
-                                className={`gap-1 text-xs ${statusInfo.className || ''}`}
-                              >
-                                {statusInfo.icon}
-                                {statusInfo.label}
-                              </Badge>
+                              {event.status === 'rejected' || event.dynamicStatus === 'rejected' ? (
+                                <HoverCard openDelay={150}>
+                                  <HoverCardTrigger asChild>
+                                    <div 
+                                      className="inline-block"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <Badge
+                                        variant={statusInfo.variant}
+                                        className={`gap-1 text-xs cursor-help ${statusInfo.className || ''}`}
+                                      >
+                                        {statusInfo.icon}
+                                        {statusInfo.label}
+                                      </Badge>
+                                    </div>
+                                  </HoverCardTrigger>
+                                  <HoverCardContent 
+                                    className="w-80 bg-white text-gray-900 border shadow-lg z-50" 
+                                    side="top" 
+                                    align="start" 
+                                    sideOffset={5}
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <div className="space-y-2 text-left">
+                                      <h4 className="text-xs font-semibold text-red-600 flex items-center gap-1.5">
+                                        <XCircle className="w-3.5 h-3.5 text-red-600" />
+                                        Rejection Details
+                                      </h4>
+                                      <div className="bg-red-50/70 rounded-md p-2.5 border border-red-100">
+                                        <p className="text-xs text-red-950 font-medium">
+                                          <span className="text-red-700 font-semibold">Reason: </span>
+                                          {event.reason || (event.bacApprovalStatus === 'rejected' && event.bacNotes ? event.bacNotes : 'No reason provided.')}
+                                        </p>
+                                      </div>
+                                      {event.bacApprovalStatus === 'rejected' && event.bacNotes && event.reason && (
+                                        <p className="text-[11px] text-amber-800">
+                                          <span className="font-semibold">BAC Department Note: </span>
+                                          {event.bacNotes}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </HoverCardContent>
+                                </HoverCard>
+                              ) : (event.status === 'cancelled' || event.dynamicStatus === 'cancelled') ? (
+                                <HoverCard openDelay={150}>
+                                  <HoverCardTrigger asChild>
+                                    <div 
+                                      className="inline-block"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <Badge
+                                        variant={statusInfo.variant}
+                                        className={`gap-1 text-xs cursor-help ${statusInfo.className || ''}`}
+                                      >
+                                        {statusInfo.icon}
+                                        {statusInfo.label}
+                                      </Badge>
+                                    </div>
+                                  </HoverCardTrigger>
+                                  <HoverCardContent 
+                                    className="w-80 bg-white text-gray-900 border shadow-lg z-50" 
+                                    side="top" 
+                                    align="start" 
+                                    sideOffset={5}
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <div className="space-y-2 text-left">
+                                      <h4 className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
+                                        <XCircle className="w-3.5 h-3.5 text-slate-600" />
+                                        Cancellation Details
+                                      </h4>
+                                      <div className="bg-slate-50 rounded-md p-2.5 border border-slate-200">
+                                        <p className="text-xs text-slate-800">
+                                          <span className="font-semibold text-slate-700">Reason: </span>
+                                          {event.reason || 'No reason provided.'}
+                                        </p>
+                                      </div>
+                                      {event.cancelledAt && (
+                                        <p className="text-[11px] text-slate-500">
+                                          <span className="font-medium">Date: </span>
+                                          {new Date(event.cancelledAt).toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </HoverCardContent>
+                                </HoverCard>
+                              ) : (
+                                <Badge
+                                  variant={statusInfo.variant}
+                                  className={`gap-1 text-xs ${statusInfo.className || ''}`}
+                                >
+                                  {statusInfo.icon}
+                                  {statusInfo.label}
+                                </Badge>
+                              )}
                               {event.bacApprovalStatus === 'rejected' && (
                                 <Tooltip>
                                   <TooltipTrigger asChild>
@@ -5843,50 +5950,71 @@ const MyEventsPage: React.FC = () => {
 
                     <div className="mt-1">
 
-                      {selectedEvent.status === 'cancelled' && selectedEvent.reason ? (
-
+                      {selectedEvent.status === 'cancelled' ? (
                         <Popover>
-
                           <PopoverTrigger asChild>
-
                             <div className="inline-block cursor-help">
-
                               <Badge 
-
                                 variant={getStatusInfo(selectedEvent.status).variant}
-
                                 className={`gap-1 ${getStatusInfo(selectedEvent.status).className || ''}`}
-
                               >
-
                                 {getStatusInfo(selectedEvent.status).icon}
-
                                 {getStatusInfo(selectedEvent.status).label}
-
                               </Badge>
-
                             </div>
-
                           </PopoverTrigger>
-
-                          <PopoverContent className="w-80">
-
+                          <PopoverContent className="w-80 bg-white text-gray-900 border shadow-lg">
                             <div className="space-y-2">
-
-                              <h4 className="font-semibold text-sm">Cancellation Reason</h4>
-
-                              <p className="text-sm text-gray-600">{selectedEvent.reason}</p>
-
+                              <h4 className="font-semibold text-sm text-slate-800 flex items-center gap-1.5">
+                                <XCircle className="w-4 h-4 text-slate-600" />
+                                Cancellation Details
+                              </h4>
+                              <p className="text-sm text-gray-700">
+                                <span className="font-medium">Reason: </span>
+                                {selectedEvent.reason || 'No reason provided.'}
+                              </p>
+                              {selectedEvent.cancelledAt && (
+                                <p className="text-xs text-gray-500">
+                                  Date: {new Date(selectedEvent.cancelledAt).toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                </p>
+                              )}
                             </div>
-
                           </PopoverContent>
-
                         </Popover>
-
+                      ) : selectedEvent.status === 'rejected' ? (
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <div className="inline-block cursor-help">
+                              <Badge 
+                                variant={getStatusInfo(selectedEvent.status).variant}
+                                className={`gap-1 ${getStatusInfo(selectedEvent.status).className || ''}`}
+                              >
+                                {getStatusInfo(selectedEvent.status).icon}
+                                {getStatusInfo(selectedEvent.status).label}
+                              </Badge>
+                            </div>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-80 bg-white text-gray-900 border shadow-lg">
+                            <div className="space-y-2">
+                              <h4 className="font-semibold text-sm text-red-600 flex items-center gap-1.5">
+                                <XCircle className="w-4 h-4 text-red-600" />
+                                Rejection Reason
+                              </h4>
+                              <p className="text-sm text-gray-700">
+                                <span className="font-medium text-gray-900">Reason: </span>
+                                {selectedEvent.reason || (selectedEvent.bacApprovalStatus === 'rejected' && selectedEvent.bacNotes ? selectedEvent.bacNotes : 'No reason provided.')}
+                              </p>
+                              {selectedEvent.bacApprovalStatus === 'rejected' && selectedEvent.bacNotes && selectedEvent.reason && (
+                                <p className="text-xs text-amber-800 pt-1">
+                                  <span className="font-semibold">BAC Department Note: </span>
+                                  {selectedEvent.bacNotes}
+                                </p>
+                              )}
+                            </div>
+                          </PopoverContent>
+                        </Popover>
                       ) : (
-
                         <Badge 
-
                           variant={getStatusInfo(selectedEvent.status).variant}
 
                           className={`gap-1 ${getStatusInfo(selectedEvent.status).className || ''}`}
@@ -5955,7 +6083,47 @@ const MyEventsPage: React.FC = () => {
 
               </div>
 
+              {/* Rejection Details Callout for Rejected Event */}
+              {(selectedEvent.status === 'rejected' || (selectedEvent as any).dynamicStatus === 'rejected') && (
+                <div className="rounded-xl border border-red-200 bg-red-50/80 p-4 space-y-2">
+                  <div className="flex items-center gap-2 text-red-800 font-semibold text-sm">
+                    <XCircle className="w-4 h-4 text-red-600" />
+                    <span>Reason for Rejection</span>
+                  </div>
+                  <div className="bg-white/90 rounded-lg p-3 border border-red-100 shadow-xs">
+                    <p className="text-sm text-red-950 leading-relaxed font-medium">
+                      {selectedEvent.reason || (selectedEvent.bacApprovalStatus === 'rejected' && selectedEvent.bacNotes ? selectedEvent.bacNotes : 'No specific reason provided.')}
+                    </p>
+                  </div>
+                  {selectedEvent.bacApprovalStatus === 'rejected' && selectedEvent.bacNotes && selectedEvent.reason && (
+                    <div className="text-xs text-amber-800 pt-1">
+                      <span className="font-semibold">BAC Department Note: </span>
+                      {selectedEvent.bacNotes}
+                    </div>
+                  )}
+                </div>
+              )}
 
+              {/* Cancellation Details Callout for Cancelled Event */}
+              {(selectedEvent.status === 'cancelled' || (selectedEvent as any).dynamicStatus === 'cancelled') && (
+                <div className="rounded-xl border border-slate-200 bg-slate-50/90 p-4 space-y-2">
+                  <div className="flex items-center gap-2 text-slate-800 font-semibold text-sm">
+                    <XCircle className="w-4 h-4 text-slate-600" />
+                    <span>Cancellation Details</span>
+                  </div>
+                  <div className="bg-white/90 rounded-lg p-3 border border-slate-200 shadow-xs">
+                    <p className="text-sm text-slate-800 leading-relaxed">
+                      <span className="font-semibold text-slate-700">Reason: </span>
+                      {selectedEvent.reason || 'No specific reason provided.'}
+                    </p>
+                  </div>
+                  {selectedEvent.cancelledAt && (
+                    <p className="text-xs text-slate-500">
+                      Cancelled on: {new Date(selectedEvent.cancelledAt).toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  )}
+                </div>
+              )}
 
               <Separator />
 
