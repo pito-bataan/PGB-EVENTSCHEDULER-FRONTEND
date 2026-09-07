@@ -461,7 +461,7 @@ const MyEventsPage: React.FC = () => {
 
       localStorage.setItem('myEventsBadgeViewed', 'true');
 
-      
+
 
       // Dispatch custom event to notify sidebar to hide badge
 
@@ -553,7 +553,7 @@ const MyEventsPage: React.FC = () => {
 
           // Update main events list with new object reference
 
-          setEvents(prev => prev.map(ev => (ev._id === updatedEvent._id ? {...updatedEvent} : ev)));
+          setEvents(prev => prev.map(ev => (ev._id === updatedEvent._id ? { ...updatedEvent } : ev)));
 
 
 
@@ -619,7 +619,7 @@ const MyEventsPage: React.FC = () => {
 
           // Update main events list with new object reference - this will trigger re-render and update badge
 
-          setEvents(prev => prev.map(ev => (ev._id === updatedEvent._id ? {...updatedEvent} : ev)));
+          setEvents(prev => prev.map(ev => (ev._id === updatedEvent._id ? { ...updatedEvent } : ev)));
 
 
 
@@ -627,7 +627,7 @@ const MyEventsPage: React.FC = () => {
 
           // This ensures the modal shows the latest department notes in real-time
 
-          setSelectedEventDepartments(prev => (prev && prev._id === updatedEvent._id ? {...updatedEvent} : prev));
+          setSelectedEventDepartments(prev => (prev && prev._id === updatedEvent._id ? { ...updatedEvent } : prev));
 
         }
 
@@ -723,7 +723,7 @@ const MyEventsPage: React.FC = () => {
 
           setSelectedEventDepartments(prev => (prev && prev._id === updatedEvent._id ? updatedEvent : prev));
 
-          
+
 
           // Reset viewed flag for this event's badge if there are new updates
 
@@ -765,7 +765,7 @@ const MyEventsPage: React.FC = () => {
 
   }, [onStatusUpdate, offStatusUpdate]);
 
-  
+
 
   // Edit Event Details Modal State (for on-hold events)
 
@@ -791,7 +791,7 @@ const MyEventsPage: React.FC = () => {
 
   });
 
-  
+
 
   // File upload state for edit details modal
 
@@ -887,7 +887,7 @@ const MyEventsPage: React.FC = () => {
 
   };
 
-  
+
 
   // Change Department Modal State
 
@@ -901,7 +901,7 @@ const MyEventsPage: React.FC = () => {
 
   const [departmentSearchQuery, setDepartmentSearchQuery] = useState('');
 
-  
+
 
   // Add More Departments Modal State
 
@@ -1298,7 +1298,7 @@ const MyEventsPage: React.FC = () => {
 
       const response = await axios.get(`${API_BASE_URL}/location-availability`, { headers });
 
-      
+
 
       if (response.data.success) {
 
@@ -1310,7 +1310,7 @@ const MyEventsPage: React.FC = () => {
 
         );
 
-        
+
 
         // Convert date strings to Date objects (timezone-safe)
 
@@ -1356,7 +1356,7 @@ const MyEventsPage: React.FC = () => {
 
     const current = new Date(startDate);
 
-    
+
 
     while (current <= endDate) {
 
@@ -1372,7 +1372,7 @@ const MyEventsPage: React.FC = () => {
 
     }
 
-    
+
 
     return count;
 
@@ -1388,7 +1388,7 @@ const MyEventsPage: React.FC = () => {
 
     today.setHours(0, 0, 0, 0);
 
-    
+
 
     // Disable past dates
 
@@ -1398,13 +1398,13 @@ const MyEventsPage: React.FC = () => {
 
     }
 
-    
+
 
     // Get event type from selectedEditEvent
 
     const eventType = selectedEditEvent?.eventType;
 
-    
+
 
     // Simple Meeting: NO restrictions - allow ALL future dates
 
@@ -1414,7 +1414,7 @@ const MyEventsPage: React.FC = () => {
 
     }
 
-    
+
 
     // For Simple Event (7 days) and Complex Event (30 days)
 
@@ -1426,7 +1426,7 @@ const MyEventsPage: React.FC = () => {
 
       const days = calculateWorkingDays(today, date);
 
-      
+
 
       // Only check if date meets minimum lead time requirement
 
@@ -1434,7 +1434,7 @@ const MyEventsPage: React.FC = () => {
 
     }
 
-    
+
 
     // If no event type specified (old events), use old logic
 
@@ -1444,7 +1444,7 @@ const MyEventsPage: React.FC = () => {
 
     }
 
-    
+
 
     // Use timezone-safe date comparison by comparing year, month, day only
 
@@ -1454,7 +1454,7 @@ const MyEventsPage: React.FC = () => {
 
     const clickedDay = date.getDate();
 
-    
+
 
     const matchFound = availableDates.some(availableDate => {
 
@@ -1464,17 +1464,17 @@ const MyEventsPage: React.FC = () => {
 
       const availableDay = availableDate.getDate();
 
-      
 
-      return clickedYear === availableYear && 
 
-             clickedMonth === availableMonth && 
+      return clickedYear === availableYear &&
 
-             clickedDay === availableDay;
+        clickedMonth === availableMonth &&
+
+        clickedDay === availableDay;
 
     });
 
-    
+
 
     return !matchFound;
 
@@ -1516,7 +1516,7 @@ const MyEventsPage: React.FC = () => {
 
         });
 
-        
+
 
         if (response.ok) {
 
@@ -1524,7 +1524,7 @@ const MyEventsPage: React.FC = () => {
 
           const events = eventsData.data || [];
 
-          
+
 
           // Collect all dates we need to check (Day 1 + all additional days)
 
@@ -1536,7 +1536,7 @@ const MyEventsPage: React.FC = () => {
 
           });
 
-          
+
 
           // Store ALL events on ANY of the dates (for REQ label checking)
 
@@ -1548,15 +1548,15 @@ const MyEventsPage: React.FC = () => {
 
             if (event.status !== 'submitted' && event.status !== 'approved') return false;
 
-            
+
 
             const eventStartDate = new Date(event.startDate);
 
-            
+
 
             // Check if event is on any of our dates
 
-            return datesToCheck.some(checkDate => 
+            return datesToCheck.some(checkDate =>
 
               eventStartDate.toDateString() === checkDate.toDateString()
 
@@ -1566,7 +1566,7 @@ const MyEventsPage: React.FC = () => {
 
           setAllEventsOnDate(eventsOnDate);
 
-          
+
 
           // Filter events that are on the same location, excluding the current event being edited
 
@@ -1580,7 +1580,7 @@ const MyEventsPage: React.FC = () => {
 
           });
 
-          
+
 
           setConflictingEvents(conflicts);
 
@@ -1676,7 +1676,7 @@ const MyEventsPage: React.FC = () => {
 
       });
 
-      
+
 
       if (response.data.success && Array.isArray(response.data.data)) {
 
@@ -1690,9 +1690,9 @@ const MyEventsPage: React.FC = () => {
 
           .sort(); // Sort alphabetically
 
-        
 
-        
+
+
 
         if (deptNames.length > 0) {
 
@@ -1708,13 +1708,13 @@ const MyEventsPage: React.FC = () => {
 
     }
 
-    
+
 
     // Fallback to hardcoded departments
 
     setAllDepartments([
 
-      'PGSO', 'ODH', 'PTO', 'PACCO', 'PESO', 'PSWDO', 
+      'PGSO', 'ODH', 'PTO', 'PACCO', 'PESO', 'PSWDO',
 
       'DILG', 'HRMO', 'ACCOUNTING', 'BUDGET', 'TREASURY',
 
@@ -1798,7 +1798,7 @@ const MyEventsPage: React.FC = () => {
 
     const socket = getGlobalSocket();
 
-    
+
 
     if (!socket) {
 
@@ -1812,7 +1812,7 @@ const MyEventsPage: React.FC = () => {
 
     const handleEventStatusUpdated = (data: any) => {
 
-      
+
 
       // Check if this is an automatic completion
 
@@ -1822,7 +1822,7 @@ const MyEventsPage: React.FC = () => {
 
       }
 
-      
+
 
       // Refresh events list to show updated status
 
@@ -1880,19 +1880,19 @@ const MyEventsPage: React.FC = () => {
 
     currentDate.setHours(0, 0, 0, 0); // Reset to start of day for accurate comparison
 
-    
+
 
     const endDate = new Date(event.endDate);
 
     endDate.setHours(23, 59, 59, 999); // Set to end of day
 
-    
+
 
     const startDate = new Date(event.startDate);
 
     startDate.setHours(0, 0, 0, 0); // Set to start of day
 
-    
+
 
     // If event has ended, mark as completed (unless it's rejected or cancelled)
 
@@ -1902,7 +1902,7 @@ const MyEventsPage: React.FC = () => {
 
     }
 
-    
+
 
     // If event is approved/submitted and starts in the future, mark as incoming
 
@@ -1912,7 +1912,7 @@ const MyEventsPage: React.FC = () => {
 
     }
 
-    
+
 
     // If event is happening today or ongoing (approved/submitted), mark as ongoing
 
@@ -1980,17 +1980,17 @@ const MyEventsPage: React.FC = () => {
 
           event.requestor.toLowerCase().includes(q);
 
-        
+
 
         // Match by either dynamic status OR actual status
 
-        const matchesStatus = statusFilter === 'all' || 
+        const matchesStatus = statusFilter === 'all' ||
 
-          event.dynamicStatus === statusFilter || 
+          event.dynamicStatus === statusFilter ||
 
           event.status === statusFilter;
 
-        
+
 
         return matchesSearch && matchesStatus;
 
@@ -2024,13 +2024,13 @@ const MyEventsPage: React.FC = () => {
 
           };
 
-          
+
 
           const priorityA = statusPriority[a.dynamicStatus] ?? 99;
 
           const priorityB = statusPriority[b.dynamicStatus] ?? 99;
 
-          
+
 
           if (priorityA !== priorityB) {
 
@@ -2038,7 +2038,7 @@ const MyEventsPage: React.FC = () => {
 
           }
 
-          
+
 
           // Then sort by date (earliest first for incoming/ongoing, latest first for completed)
 
@@ -2052,7 +2052,7 @@ const MyEventsPage: React.FC = () => {
 
         }
 
-        
+
 
         switch (sortBy) {
 
@@ -2104,9 +2104,9 @@ const MyEventsPage: React.FC = () => {
 
       case 'draft':
 
-        return { 
+        return {
 
-          variant: 'secondary' as const, 
+          variant: 'secondary' as const,
 
           icon: <FileText className="w-3 h-3" />,
 
@@ -2116,9 +2116,9 @@ const MyEventsPage: React.FC = () => {
 
       case 'submitted':
 
-        return { 
+        return {
 
-          variant: 'default' as const, 
+          variant: 'default' as const,
 
           icon: <Clock3 className="w-3 h-3" />,
 
@@ -2128,9 +2128,9 @@ const MyEventsPage: React.FC = () => {
 
       case 'approved':
 
-        return { 
+        return {
 
-          variant: 'default' as const, 
+          variant: 'default' as const,
 
           icon: <CheckCircle className="w-3 h-3" />,
 
@@ -2142,9 +2142,9 @@ const MyEventsPage: React.FC = () => {
 
       case 'rejected':
 
-        return { 
+        return {
 
-          variant: 'destructive' as const, 
+          variant: 'destructive' as const,
 
           icon: <XCircle className="w-3 h-3" />,
 
@@ -2154,9 +2154,9 @@ const MyEventsPage: React.FC = () => {
 
       case 'completed':
 
-        return { 
+        return {
 
-          variant: 'default' as const, 
+          variant: 'default' as const,
 
           icon: <CheckCircle className="w-3 h-3" />,
 
@@ -2168,9 +2168,9 @@ const MyEventsPage: React.FC = () => {
 
       case 'incoming':
 
-        return { 
+        return {
 
-          variant: 'default' as const, 
+          variant: 'default' as const,
 
           icon: <CalendarIcon className="w-3 h-3" />,
 
@@ -2182,9 +2182,9 @@ const MyEventsPage: React.FC = () => {
 
       case 'cancelled':
 
-        return { 
+        return {
 
-          variant: 'destructive' as const, 
+          variant: 'destructive' as const,
 
           icon: <XCircle className="w-3 h-3" />,
 
@@ -2194,9 +2194,9 @@ const MyEventsPage: React.FC = () => {
 
       case 'ongoing':
 
-        return { 
+        return {
 
-          variant: 'default' as const, 
+          variant: 'default' as const,
 
           icon: <Clock className="w-3 h-3" />,
 
@@ -2208,9 +2208,9 @@ const MyEventsPage: React.FC = () => {
 
       default:
 
-        return { 
+        return {
 
-          variant: 'secondary' as const, 
+          variant: 'secondary' as const,
 
           icon: <AlertCircle className="w-3 h-3" />,
 
@@ -2276,7 +2276,7 @@ const MyEventsPage: React.FC = () => {
   const buildDateRange = (start: Date, end: Date): Date[] => {
     const result: Date[] = [];
     const cur = new Date(start); cur.setHours(0, 0, 0, 0);
-    const fin = new Date(end);   fin.setHours(0, 0, 0, 0);
+    const fin = new Date(end); fin.setHours(0, 0, 0, 0);
     while (cur <= fin) { result.push(new Date(cur)); cur.setDate(cur.getDate() + 1); }
     return result;
   };
@@ -2327,7 +2327,7 @@ const MyEventsPage: React.FC = () => {
       return h * 60 + m;
     };
     const selStart = selStartTime ? toMin(selStartTime) : null;
-    const selEnd   = selEndTime   ? toMin(selEndTime)   : null;
+    const selEnd = selEndTime ? toMin(selEndTime) : null;
 
     return datesToCheck
       .filter((d) => {
@@ -2343,11 +2343,11 @@ const MyEventsPage: React.FC = () => {
           if (!evLocs.some((l: string) => locationsConflict(l, locationName))) return false;
 
           let evStart: string | null = null;
-          let evEnd:   string | null = null;
+          let evEnd: string | null = null;
           const mainDay = ev.startDate ? new Date(ev.startDate).toDateString() : '';
           if (mainDay === dayStr) {
             evStart = ev.startTime || null;
-            evEnd   = ev.endTime   || null;
+            evEnd = ev.endTime || null;
           } else if (Array.isArray(ev.dateTimeSlots)) {
             const slot = ev.dateTimeSlots.find(
               (s: any) => s.startDate && new Date(s.startDate).toDateString() === dayStr
@@ -2518,8 +2518,8 @@ const MyEventsPage: React.FC = () => {
       const results: AutoSuggestedLocation[] = [];
 
       // 1) All PGB non-conference, non-Kagitingan-section locations
-          const isBacRejected = selectedEditEvent?.bacApprovalStatus === 'rejected';
-          locations.filter((l) => l !== 'Add Custom Location' && !/4th Flr\. Conference Room/.test(l) && !(isBacRejected && l === '5th Flr. Training Room 1 (BAC)')).forEach((loc) => {
+      const isBacRejected = selectedEditEvent?.bacApprovalStatus === 'rejected';
+      locations.filter((l) => l !== 'Add Custom Location' && !/4th Flr\. Conference Room/.test(l) && !(isBacRejected && l === '5th Flr. Training Room 1 (BAC)')).forEach((loc) => {
         if (/Pavilion.*Kagitingan.*Section [ABC]$/i.test(loc)) return;
         if (/Pavilion.*Kalayaan.*Section [ABC]$/i.test(loc)) return;
 
@@ -2824,7 +2824,7 @@ const MyEventsPage: React.FC = () => {
 
     const dateToCheck = checkDate || (editFormData.startDate ? new Date(editFormData.startDate) : null);
 
-    
+
 
     if (!dateToCheck || !editFormData.location || venueConflictingEvents.length === 0) {
 
@@ -2838,7 +2838,7 @@ const MyEventsPage: React.FC = () => {
 
       if (event.location !== editFormData.location) return false;
 
-      
+
 
       // Check if event is on the same date
 
@@ -2850,13 +2850,13 @@ const MyEventsPage: React.FC = () => {
 
       }
 
-      
+
 
       const eventStartTime = event.startTime;
 
       const eventEndTime = event.endTime;
 
-      
+
 
       // Convert times to minutes for easier comparison
 
@@ -2868,7 +2868,7 @@ const MyEventsPage: React.FC = () => {
 
       };
 
-      
+
 
       const slotMinutes = timeToMinutes(timeSlot);
 
@@ -2876,7 +2876,7 @@ const MyEventsPage: React.FC = () => {
 
       const eventEndMinutes = timeToMinutes(eventEndTime);
 
-      
+
 
       // For both start and end time: check if slot falls within existing event time range
 
@@ -2904,7 +2904,7 @@ const MyEventsPage: React.FC = () => {
 
     const dateToCheck = editFormData.startDate ? new Date(editFormData.startDate) : undefined;
 
-    
+
 
     return generateTimeOptions().filter(timeOption => {
 
@@ -2930,7 +2930,7 @@ const MyEventsPage: React.FC = () => {
 
     if (!mimetype) return '';
 
-    
+
 
     // Common MIME type mappings for better display
 
@@ -2998,7 +2998,7 @@ const MyEventsPage: React.FC = () => {
 
     if (!fileName) return '';
 
-    
+
 
     // If file name is longer than maxLength, truncate with ellipsis
 
@@ -3132,7 +3132,7 @@ const MyEventsPage: React.FC = () => {
 
       await axios.delete(`${API_BASE_URL}/events/${eventId}`, { headers });
 
-      
+
 
       toast.success('Event deleted successfully');
 
@@ -3260,7 +3260,7 @@ const MyEventsPage: React.FC = () => {
 
     setShowDepartmentsModal(true);
 
-    
+
 
     // Mark this event's Tagged/Requirements badge as viewed
 
@@ -3374,7 +3374,7 @@ const MyEventsPage: React.FC = () => {
 
     if (!editFormData.startDate || !selectedEditEvent || allEventsOnDate.length === 0) return false;
 
-    
+
 
     // Parse the time to check
 
@@ -3384,7 +3384,7 @@ const MyEventsPage: React.FC = () => {
 
     checkTime.setHours(hours, minutes, 0, 0);
 
-    
+
 
     // Check if this time falls within any event that has shared departments
 
@@ -3392,11 +3392,11 @@ const MyEventsPage: React.FC = () => {
 
       if (!event.startTime || !event.endTime || !event.taggedDepartments) return false;
 
-      
+
 
       // Check if events share any departments
 
-      const hasSharedDepts = event.taggedDepartments.some((dept: string) => 
+      const hasSharedDepts = event.taggedDepartments.some((dept: string) =>
 
         selectedEditEvent.taggedDepartments?.includes(dept)
 
@@ -3404,7 +3404,7 @@ const MyEventsPage: React.FC = () => {
 
       if (!hasSharedDepts) return false;
 
-      
+
 
       // Parse event times
 
@@ -3414,19 +3414,19 @@ const MyEventsPage: React.FC = () => {
 
       const [eventEndHours, eventEndMinutes] = event.endTime.split(':').map(Number);
 
-      
+
 
       const eventStart = new Date(eventStartDate);
 
       eventStart.setHours(eventStartHours, eventStartMinutes, 0, 0);
 
-      
+
 
       const eventEnd = new Date(eventStartDate);
 
       eventEnd.setHours(eventEndHours, eventEndMinutes, 0, 0);
 
-      
+
 
       // Check if this time falls within the event's time range
 
@@ -3444,7 +3444,7 @@ const MyEventsPage: React.FC = () => {
 
     setSelectedEditEvent(event);
 
-    
+
 
     // Convert dateTimeSlots from event to editFormData format
 
@@ -3458,7 +3458,7 @@ const MyEventsPage: React.FC = () => {
 
     endDateObj.setHours(0, 0, 0, 0);
 
-    
+
 
     const convertedSlots = (event.dateTimeSlots || [])
 
@@ -3486,7 +3486,7 @@ const MyEventsPage: React.FC = () => {
 
       }));
 
-    
+
 
     setEditFormData({
 
@@ -3628,7 +3628,7 @@ const MyEventsPage: React.FC = () => {
 
       const token = localStorage.getItem('authToken');
 
-      
+
 
       // Create FormData for file uploads
 
@@ -3650,7 +3650,7 @@ const MyEventsPage: React.FC = () => {
 
       formData.append('description', editDetailsData.description);
 
-      
+
 
       // Add attachments
 
@@ -3660,7 +3660,7 @@ const MyEventsPage: React.FC = () => {
 
       });
 
-      
+
 
       // Add government files
 
@@ -3684,7 +3684,7 @@ const MyEventsPage: React.FC = () => {
 
       }
 
-      
+
 
       const response = await axios.patch(
 
@@ -3842,7 +3842,7 @@ const MyEventsPage: React.FC = () => {
 
       const token = localStorage.getItem('authToken');
 
-      
+
 
       // First, get the current event data
 
@@ -3852,7 +3852,7 @@ const MyEventsPage: React.FC = () => {
 
       });
 
-      
+
 
       if (!eventResponse.data.success) {
 
@@ -3862,13 +3862,13 @@ const MyEventsPage: React.FC = () => {
 
       }
 
-      
+
 
       const event = eventResponse.data.data;
 
       const updatedDepartmentRequirements = { ...event.departmentRequirements };
 
-      
+
 
       // Find and update the specific requirement
 
@@ -3878,7 +3878,7 @@ const MyEventsPage: React.FC = () => {
 
         const reqIndex = deptReqs.findIndex((r: any) => r.id === editingRequirement.id);
 
-        
+
 
         if (reqIndex !== -1) {
 
@@ -3898,7 +3898,7 @@ const MyEventsPage: React.FC = () => {
 
       }
 
-      
+
 
       // Update the event with the modified departmentRequirements
 
@@ -3936,13 +3936,13 @@ const MyEventsPage: React.FC = () => {
 
         setEditingRequirement(null);
 
-        
+
 
         // Refresh events to show updated data
 
         fetchMyEvents();
 
-        
+
 
         // If the departments modal is open, refresh that event too
 
@@ -4044,13 +4044,13 @@ const MyEventsPage: React.FC = () => {
 
         setSelectedDepartments([]);
 
-        
+
 
         // Refresh events
 
         fetchMyEvents();
 
-        
+
 
         // Refresh departments modal if open
 
@@ -4110,7 +4110,7 @@ const MyEventsPage: React.FC = () => {
 
     const availableDepts = allDepartments.filter(dept => !event.taggedDepartments?.includes(dept));
 
-    
+
 
     setAddingToEvent(event);
 
@@ -4136,7 +4136,7 @@ const MyEventsPage: React.FC = () => {
 
       });
 
-      
+
 
       if (response.data.success) {
 
@@ -4406,7 +4406,7 @@ const MyEventsPage: React.FC = () => {
 
           }
 
-          
+
 
           // Fetch availability for the event date
 
@@ -4420,9 +4420,9 @@ const MyEventsPage: React.FC = () => {
 
           const dateStr = `${year}-${month}-${day}`;
 
-          
 
-          
+
+
 
           // Fetch resource availability for this department and date
 
@@ -4434,7 +4434,7 @@ const MyEventsPage: React.FC = () => {
 
           );
 
-          
+
 
           const availabilities = Array.isArray(availResponse.data)
 
@@ -4446,7 +4446,7 @@ const MyEventsPage: React.FC = () => {
 
               : [];
 
-          
+
 
           // Fetch conflicting events to calculate actual available quantity
 
@@ -4456,7 +4456,7 @@ const MyEventsPage: React.FC = () => {
 
           });
 
-          
+
 
           const allEvents = Array.isArray(eventsResponse.data)
 
@@ -4468,9 +4468,9 @@ const MyEventsPage: React.FC = () => {
 
               : [];
 
-          
 
-          
+
+
 
           const normalizeLocation = (s: any) =>
 
@@ -4520,19 +4520,19 @@ const MyEventsPage: React.FC = () => {
 
             if (!event.startDate || !event.startTime || !event.endTime) return false;
 
-            
+
 
             const eventStartDate = new Date(event.startDate);
 
             const isSameDate = eventStartDate.toDateString() === eventDate.toDateString();
 
-            
 
-            
+
+
 
             if (!isSameDate) return false;
 
-            
+
 
             // Check time overlap
 
@@ -4546,7 +4546,7 @@ const MyEventsPage: React.FC = () => {
 
             );
 
-            
+
 
             const eventLocationsRaw: string[] = Array.isArray(event?.locations) && event.locations.length > 0
 
@@ -4574,9 +4574,9 @@ const MyEventsPage: React.FC = () => {
 
           });
 
-          
 
-          
+
+
 
           // Map department default requirements (do NOT require availability records to exist).
 
@@ -4584,121 +4584,121 @@ const MyEventsPage: React.FC = () => {
 
           const reqs = (dept.requirements || []).map((req: any) => {
 
-              const avail = availabilities.find((a: any) => a.requirementId === req._id);
+            const avail = availabilities.find((a: any) => a.requirementId === req._id);
 
 
 
-              // Determine base quantity.
+            // Determine base quantity.
 
-              let baseQuantity: number = 0;
+            let baseQuantity: number = 0;
 
-              if (dept.name === 'PGSO' && avail?.notes && typeof avail.notes === 'string' && avail.notes.startsWith('PAVILION_DEFAULT:')) {
+            if (dept.name === 'PGSO' && avail?.notes && typeof avail.notes === 'string' && avail.notes.startsWith('PAVILION_DEFAULT:')) {
 
-                const parts = avail.notes.split(':');
+              const parts = avail.notes.split(':');
 
-                const pavilionQty = parseInt(parts[1] || '0', 10);
+              const pavilionQty = parseInt(parts[1] || '0', 10);
 
-                if (!isNaN(pavilionQty) && pavilionQty > 0) {
+              if (!isNaN(pavilionQty) && pavilionQty > 0) {
 
-                  baseQuantity = pavilionQty;
-
-                } else {
-
-                  baseQuantity = (avail?.quantity || req.totalQuantity || 0);
-
-                }
+                baseQuantity = pavilionQty;
 
               } else {
 
-                baseQuantity = (avail?.quantity ?? req.totalQuantity ?? 0);
+                baseQuantity = (avail?.quantity || req.totalQuantity || 0);
 
               }
 
-              
+            } else {
 
-              // Calculate how much is already booked by conflicting events AND current event
+              baseQuantity = (avail?.quantity ?? req.totalQuantity ?? 0);
 
-              let bookedQuantity = 0;
+            }
 
-              
 
-              // First, check what THIS event has already booked
 
-              if (addingToEvent.departmentRequirements && addingToEvent.departmentRequirements[deptName]) {
+            // Calculate how much is already booked by conflicting events AND current event
 
-                const currentEventReqs = addingToEvent.departmentRequirements[deptName];
+            let bookedQuantity = 0;
 
-                const alreadyBooked = currentEventReqs.find((r: any) => r.name === req.text);
 
-                if (alreadyBooked && alreadyBooked.quantity) {
 
-                  bookedQuantity += alreadyBooked.quantity;
+            // First, check what THIS event has already booked
+
+            if (addingToEvent.departmentRequirements && addingToEvent.departmentRequirements[deptName]) {
+
+              const currentEventReqs = addingToEvent.departmentRequirements[deptName];
+
+              const alreadyBooked = currentEventReqs.find((r: any) => r.name === req.text);
+
+              if (alreadyBooked && alreadyBooked.quantity) {
+
+                bookedQuantity += alreadyBooked.quantity;
+
+              }
+
+            }
+
+
+
+            // Then add what other conflicting events have booked
+
+            conflictingEvents.forEach((event: any) => {
+
+              if (event.departmentRequirements && event.departmentRequirements[deptName]) {
+
+                const deptReqs = event.departmentRequirements[deptName];
+
+                const matchingReq = deptReqs.find((r: any) => r.name === req.text);
+
+                if (matchingReq && matchingReq.quantity) {
+
+                  bookedQuantity += matchingReq.quantity;
 
                 }
 
               }
-
-              
-
-              // Then add what other conflicting events have booked
-
-              conflictingEvents.forEach((event: any) => {
-
-                if (event.departmentRequirements && event.departmentRequirements[deptName]) {
-
-                  const deptReqs = event.departmentRequirements[deptName];
-
-                  const matchingReq = deptReqs.find((r: any) => r.name === req.text);
-
-                  if (matchingReq && matchingReq.quantity) {
-
-                    bookedQuantity += matchingReq.quantity;
-
-                  }
-
-                }
-
-              });
-
-              
-
-              const actualAvailable = Math.max(0, baseQuantity - bookedQuantity);
-
-              
-
-              
-
-              return {
-
-                id: req._id,
-
-                name: req.text,
-
-                type: req.type,
-
-                selected: false,
-
-                quantity: req.type === 'physical' ? 1 : undefined,
-
-                notes: '',
-
-                totalQuantity: actualAvailable, // Use actual available quantity
-
-                baseQuantity: baseQuantity, // Keep base for reference
-
-                bookedQuantity: bookedQuantity,
-
-                // If no availability record exists, still show as available based on remaining qty.
-
-                isAvailable: (avail?.isAvailable ?? true) && actualAvailable > 0,
-
-                availabilityNotes: avail?.notes || ''
-
-              };
 
             });
 
-          
+
+
+            const actualAvailable = Math.max(0, baseQuantity - bookedQuantity);
+
+
+
+
+
+            return {
+
+              id: req._id,
+
+              name: req.text,
+
+              type: req.type,
+
+              selected: false,
+
+              quantity: req.type === 'physical' ? 1 : undefined,
+
+              notes: '',
+
+              totalQuantity: actualAvailable, // Use actual available quantity
+
+              baseQuantity: baseQuantity, // Keep base for reference
+
+              bookedQuantity: bookedQuantity,
+
+              // If no availability record exists, still show as available based on remaining qty.
+
+              isAvailable: (avail?.isAvailable ?? true) && actualAvailable > 0,
+
+              availabilityNotes: avail?.notes || ''
+
+            };
+
+          });
+
+
 
           setDepartmentRequirements(reqs);
 
@@ -4864,7 +4864,7 @@ const MyEventsPage: React.FC = () => {
 
     const selectedReqs = departmentRequirements.filter(r => r.selected);
 
-    
+
 
     if (selectedReqs.length === 0) {
 
@@ -5130,7 +5130,7 @@ const MyEventsPage: React.FC = () => {
 
         if (event.location !== editFormData.location) return false;
 
-        
+
 
         // Convert times to minutes for easier comparison
 
@@ -5142,7 +5142,7 @@ const MyEventsPage: React.FC = () => {
 
         };
 
-        
+
 
         const newStartMinutes = timeToMinutes(editFormData.startTime);
 
@@ -5152,7 +5152,7 @@ const MyEventsPage: React.FC = () => {
 
         const eventEndMinutes = timeToMinutes(event.endTime);
 
-        
+
 
         // Check if the new time range overlaps with existing event
 
@@ -5170,7 +5170,7 @@ const MyEventsPage: React.FC = () => {
 
             if (event.location !== editFormData.location) return false;
 
-            
+
 
             const timeToMinutes = (time: string) => {
 
@@ -5180,7 +5180,7 @@ const MyEventsPage: React.FC = () => {
 
             };
 
-            
+
 
             const newStartMinutes = timeToMinutes(editFormData.startTime);
 
@@ -5190,19 +5190,19 @@ const MyEventsPage: React.FC = () => {
 
             const eventEndMinutes = timeToMinutes(event.endTime);
 
-            
+
 
             return (newStartMinutes < eventEndMinutes && newEndMinutes > eventStartMinutes);
 
           })
 
-          .map((event: any) => 
+          .map((event: any) =>
 
             `"${event.eventTitle}" (${formatTime(event.startTime)}-${formatTime(event.endTime)})`
 
           ).join(', ');
 
-        
+
 
         toast.error(`Cannot save! Time conflict detected at ${editFormData.location}`, {
 
@@ -5226,91 +5226,91 @@ const MyEventsPage: React.FC = () => {
 
 
 
-    // Convert dateTimeSlots back to API format (only include slots with both start and end times)
+      // Convert dateTimeSlots back to API format (only include slots with both start and end times)
 
-    // AND only include slots that are between startDate and endDate (exclude old/invalid dates)
+      // AND only include slots that are between startDate and endDate (exclude old/invalid dates)
 
-    const convertedSlots = editFormData.dateTimeSlots
+      const convertedSlots = editFormData.dateTimeSlots
 
-      .filter(slot => {
+        .filter(slot => {
 
-        // Must have both times
+          // Must have both times
 
-        if (!slot.startTime || !slot.endTime) return false;
+          if (!slot.startTime || !slot.endTime) return false;
 
-        
 
-        // Must be between startDate and endDate (not before startDate, not after endDate)
 
-        // Create fresh date objects for comparison to avoid mutation issues
+          // Must be between startDate and endDate (not before startDate, not after endDate)
 
-        const slotDate = new Date(slot.date);
+          // Create fresh date objects for comparison to avoid mutation issues
 
-        const startDateObj = new Date(editFormData.startDate);
+          const slotDate = new Date(slot.date);
 
-        const endDateObj = new Date(editFormData.endDate);
+          const startDateObj = new Date(editFormData.startDate);
 
-        
+          const endDateObj = new Date(editFormData.endDate);
 
-        // Normalize to midnight for date-only comparison
 
-        slotDate.setHours(0, 0, 0, 0);
 
-        startDateObj.setHours(0, 0, 0, 0);
+          // Normalize to midnight for date-only comparison
 
-        endDateObj.setHours(0, 0, 0, 0);
+          slotDate.setHours(0, 0, 0, 0);
 
-        
+          startDateObj.setHours(0, 0, 0, 0);
 
-        // Slot must be AFTER startDate (Day 2+, not Day 1)
+          endDateObj.setHours(0, 0, 0, 0);
 
-        return slotDate > startDateObj && slotDate <= endDateObj;
 
-      })
 
-      .map(slot => ({
+          // Slot must be AFTER startDate (Day 2+, not Day 1)
 
-        startDate: slot.date.toISOString().split('T')[0],
+          return slotDate > startDateObj && slotDate <= endDateObj;
 
-        startTime: slot.startTime,
+        })
 
-        endDate: slot.date.toISOString().split('T')[0],
+        .map(slot => ({
 
-        endTime: slot.endTime
+          startDate: slot.date.toISOString().split('T')[0],
 
-      }));
+          startTime: slot.startTime,
 
-    console.log('[handleSaveEditedEvent] editFormData.location:', editFormData.location, '| editFormData.locations:', editFormData.locations);
+          endDate: slot.date.toISOString().split('T')[0],
 
-    const updateData = {
+          endTime: slot.endTime
 
-      location: editFormData.location,
+        }));
 
-      locations: editFormData.locations && editFormData.locations.length > 1 ? editFormData.locations : undefined,
+      console.log('[handleSaveEditedEvent] editFormData.location:', editFormData.location, '| editFormData.locations:', editFormData.locations);
 
-      multipleLocations: editFormData.locations && editFormData.locations.length > 1,
+      const updateData = {
 
-      startDate: editFormData.startDate,
+        location: editFormData.location,
 
-      startTime: editFormData.startTime,
+        locations: editFormData.locations && editFormData.locations.length > 1 ? editFormData.locations : undefined,
 
-      endDate: editFormData.endDate,
+        multipleLocations: editFormData.locations && editFormData.locations.length > 1,
 
-      endTime: editFormData.endTime,
+        startDate: editFormData.startDate,
 
-      dateTimeSlots: convertedSlots, // Include multi-day slots
+        startTime: editFormData.startTime,
 
-      previousLocation: selectedEditEvent.location, // Store previous location for reschedule log
+        endDate: editFormData.endDate,
 
-      previousStartDate: selectedEditEvent.startDate,
+        endTime: editFormData.endTime,
 
-      previousStartTime: selectedEditEvent.startTime,
+        dateTimeSlots: convertedSlots, // Include multi-day slots
 
-      previousEndDate: selectedEditEvent.endDate,
+        previousLocation: selectedEditEvent.location, // Store previous location for reschedule log
 
-      previousEndTime: selectedEditEvent.endTime
+        previousStartDate: selectedEditEvent.startDate,
 
-    };
+        previousStartTime: selectedEditEvent.startTime,
+
+        previousEndDate: selectedEditEvent.endDate,
+
+        previousEndTime: selectedEditEvent.endTime
+
+      };
 
 
 
@@ -5326,9 +5326,9 @@ const MyEventsPage: React.FC = () => {
 
       const response = await axios.put(
 
-        `${API_BASE_URL}/events/${selectedEditEvent._id}`, 
+        `${API_BASE_URL}/events/${selectedEditEvent._id}`,
 
-        updateData, 
+        updateData,
 
         { headers }
 
@@ -5940,7 +5940,7 @@ const MyEventsPage: React.FC = () => {
 
                 </div>
 
-                
+
 
                 <div className="space-y-4">
 
@@ -6483,7 +6483,7 @@ const MyEventsPage: React.FC = () => {
 
             </div>
 
-            
+
 
             {/* Scrollable Content */}
 
@@ -6527,7 +6527,7 @@ const MyEventsPage: React.FC = () => {
 
                       };
 
-                      
+
 
                       allRequirements.forEach((req: any) => {
 
@@ -6551,15 +6551,13 @@ const MyEventsPage: React.FC = () => {
 
                             onClick={() => setSelectedStatusFilter('all')}
 
-                            className={`text-center p-2 md:p-3 lg:p-4 rounded-lg border transition-all hover:shadow-md ${
+                            className={`text-center p-2 md:p-3 lg:p-4 rounded-lg border transition-all hover:shadow-md ${selectedStatusFilter === 'all'
 
-                              selectedStatusFilter === 'all' 
-
-                                ? 'bg-gray-100 border-gray-400 ring-2 ring-gray-300' 
+                                ? 'bg-gray-100 border-gray-400 ring-2 ring-gray-300'
 
                                 : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
 
-                            }`}
+                              }`}
 
                           >
 
@@ -6573,15 +6571,13 @@ const MyEventsPage: React.FC = () => {
 
                             onClick={() => setSelectedStatusFilter('confirmed')}
 
-                            className={`text-center p-4 rounded-lg border transition-all hover:shadow-md ${
+                            className={`text-center p-4 rounded-lg border transition-all hover:shadow-md ${selectedStatusFilter === 'confirmed'
 
-                              selectedStatusFilter === 'confirmed' 
-
-                                ? 'bg-green-100 border-green-400 ring-2 ring-green-300' 
+                                ? 'bg-green-100 border-green-400 ring-2 ring-green-300'
 
                                 : 'bg-green-50 border-green-200 hover:bg-green-100'
 
-                            }`}
+                              }`}
 
                           >
 
@@ -6595,15 +6591,13 @@ const MyEventsPage: React.FC = () => {
 
                             onClick={() => setSelectedStatusFilter('pending')}
 
-                            className={`text-center p-4 rounded-lg border transition-all hover:shadow-md ${
+                            className={`text-center p-4 rounded-lg border transition-all hover:shadow-md ${selectedStatusFilter === 'pending'
 
-                              selectedStatusFilter === 'pending' 
-
-                                ? 'bg-yellow-100 border-yellow-400 ring-2 ring-yellow-300' 
+                                ? 'bg-yellow-100 border-yellow-400 ring-2 ring-yellow-300'
 
                                 : 'bg-yellow-50 border-yellow-200 hover:bg-yellow-100'
 
-                            }`}
+                              }`}
 
                           >
 
@@ -6617,15 +6611,13 @@ const MyEventsPage: React.FC = () => {
 
                             onClick={() => setSelectedStatusFilter('declined')}
 
-                            className={`text-center p-4 rounded-lg border transition-all hover:shadow-md ${
+                            className={`text-center p-4 rounded-lg border transition-all hover:shadow-md ${selectedStatusFilter === 'declined'
 
-                              selectedStatusFilter === 'declined' 
-
-                                ? 'bg-red-100 border-red-400 ring-2 ring-red-300' 
+                                ? 'bg-red-100 border-red-400 ring-2 ring-red-300'
 
                                 : 'bg-red-50 border-red-200 hover:bg-red-100'
 
-                            }`}
+                              }`}
 
                           >
 
@@ -7011,15 +7003,13 @@ const MyEventsPage: React.FC = () => {
 
                                                               <div
 
-                                                                className={`max-w-[80%] rounded-lg px-2 py-1.5 shadow-sm border text-[11px] whitespace-pre-wrap ${
-
-                                                                  reply.role === 'requestor'
+                                                                className={`max-w-[80%] rounded-lg px-2 py-1.5 shadow-sm border text-[11px] whitespace-pre-wrap ${reply.role === 'requestor'
 
                                                                     ? 'bg-blue-600 text-white border-blue-700'
 
                                                                     : 'bg-gray-100 text-gray-900 border-gray-200'
 
-                                                                }`}
+                                                                  }`}
 
                                                               >
 
@@ -7219,87 +7209,87 @@ const MyEventsPage: React.FC = () => {
 
 
 
-                                          {/* Decline Reason */}
+                                              {/* Decline Reason */}
 
-                                          {req.status?.toLowerCase() === 'declined' && req.declineReason && (
+                                              {req.status?.toLowerCase() === 'declined' && req.declineReason && (
 
-                                            <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                                                <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
 
-                                              <div className="flex items-start gap-2">
+                                                  <div className="flex items-start gap-2">
 
-                                                <AlertTriangle className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
+                                                    <AlertTriangle className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
 
-                                                <div className="flex-1">
+                                                    <div className="flex-1">
 
-                                                  <p className="text-xs font-medium text-red-900 mb-1">Decline Reason:</p>
+                                                      <p className="text-xs font-medium text-red-900 mb-1">Decline Reason:</p>
 
-                                                  <p className="text-sm text-red-800">{req.declineReason}</p>
+                                                      <p className="text-sm text-red-800">{req.declineReason}</p>
+
+                                                    </div>
+
+                                                  </div>
 
                                                 </div>
 
-                                              </div>
-
-                                            </div>
-
-                                          )}
+                                              )}
 
 
 
-                                          {/* Availability & Updates */}
+                                              {/* Availability & Updates */}
 
-                                          <div className="flex items-center justify-between text-xs text-gray-500 mt-3">
+                                              <div className="flex items-center justify-between text-xs text-gray-500 mt-3">
 
-                                            {req.isAvailable !== undefined && (
+                                                {req.isAvailable !== undefined && (
 
-                                              <div className="flex items-center gap-1">
+                                                  <div className="flex items-center gap-1">
 
-                                                {req.isAvailable ? (
+                                                    {req.isAvailable ? (
 
-                                                  <>
+                                                      <>
 
-                                                    <CheckCircle className="w-3 h-3 text-green-500" />
+                                                        <CheckCircle className="w-3 h-3 text-green-500" />
 
-                                                    <span className="text-green-600">Available</span>
+                                                        <span className="text-green-600">Available</span>
 
-                                                  </>
+                                                      </>
 
-                                                ) : (
+                                                    ) : (
 
-                                                  <>
+                                                      <>
 
-                                                    <XCircle className="w-3 h-3 text-red-500" />
+                                                        <XCircle className="w-3 h-3 text-red-500" />
 
-                                                    <span className="text-red-600">Not Available</span>
+                                                        <span className="text-red-600">Not Available</span>
 
-                                                  </>
+                                                      </>
+
+                                                    )}
+
+                                                  </div>
+
+                                                )}
+
+                                                {req.lastUpdated && (
+
+                                                  <div className="flex items-center gap-1">
+
+                                                    <Clock className="w-3 h-3" />
+
+                                                    <span>Updated: {new Date(req.lastUpdated).toLocaleDateString()}</span>
+
+                                                  </div>
 
                                                 )}
 
                                               </div>
 
-                                            )}
-
-                                            {req.lastUpdated && (
-
-                                              <div className="flex items-center gap-1">
-
-                                                <Clock className="w-3 h-3" />
-
-                                                <span>Updated: {new Date(req.lastUpdated).toLocaleDateString()}</span>
-
-                                              </div>
-
-                                            )}
+                                            </div>
 
                                           </div>
 
-                                        </div>
+                                        );
 
-                                      </div>
-
-                                    );
-
-                                  })}
+                                      })}
 
                                     </div>
 
@@ -7311,7 +7301,7 @@ const MyEventsPage: React.FC = () => {
 
                                       <p>No requirements found for "{selectedStatusFilter === 'all' ? 'all statuses' : selectedStatusFilter}" status</p>
 
-                                      <button 
+                                      <button
 
                                         onClick={() => setSelectedStatusFilter('all')}
 
@@ -7385,7 +7375,7 @@ const MyEventsPage: React.FC = () => {
 
               <div className="flex justify-end">
 
-                <Button 
+                <Button
 
                   onClick={() => setShowDepartmentsModal(false)}
 
@@ -7433,7 +7423,7 @@ const MyEventsPage: React.FC = () => {
 
           </DialogHeader>
 
-          
+
 
           {selectedEventFiles && (
 
@@ -7555,305 +7545,305 @@ const MyEventsPage: React.FC = () => {
 
               {selectedEventFiles.govFiles && (
 
-                selectedEventFiles.govFiles.brieferTemplate || 
+                selectedEventFiles.govFiles.brieferTemplate ||
 
                 selectedEventFiles.govFiles.programme
 
               ) && (
 
-                <div>
+                  <div>
 
-                  <h4 className="text-base font-medium text-gray-800 mb-3 flex items-center gap-2">
+                    <h4 className="text-base font-medium text-gray-800 mb-3 flex items-center gap-2">
 
-                    <Building2 className="w-4 h-4" />
+                      <Building2 className="w-4 h-4" />
 
-                    Government Files
+                      Government Files
 
-                  </h4>
+                    </h4>
 
-                  <div className="grid grid-cols-1 gap-3">
+                    <div className="grid grid-cols-1 gap-3">
 
-                    {/* Briefer Template */}
+                      {/* Briefer Template */}
 
-                    {selectedEventFiles.govFiles.brieferTemplate && (
+                      {selectedEventFiles.govFiles.brieferTemplate && (
 
-                      <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg border border-green-200">
+                        <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg border border-green-200">
 
-                        <div className="flex items-center gap-3 min-w-0 pr-4">
+                          <div className="flex items-center gap-3 min-w-0 pr-4">
 
-                          <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                            <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
 
-                            <FileText className="w-5 h-5 text-green-600" />
+                              <FileText className="w-5 h-5 text-green-600" />
+
+                            </div>
+
+                            <div className="flex-1 min-w-0">
+
+                              <p
+
+                                className="text-sm font-medium text-gray-900 truncate max-w-[190px] sm:max-w-[220px] lg:max-w-[260px]"
+
+                                title={selectedEventFiles.govFiles.brieferTemplate.originalName}
+
+                              >
+
+                                {selectedEventFiles.govFiles.brieferTemplate.originalName}
+
+                              </p>
+
+                              <p className="text-xs text-gray-500">
+
+                                {formatMimeType(selectedEventFiles.govFiles.brieferTemplate.mimetype)}  {(selectedEventFiles.govFiles.brieferTemplate.size / 1024).toFixed(1)} KB
+
+                              </p>
+
+                              <p className="text-xs text-green-600 font-medium">Event Briefer</p>
+
+                            </div>
 
                           </div>
 
-                          <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
 
-                            <p
+                            <Button
 
-                              className="text-sm font-medium text-gray-900 truncate max-w-[190px] sm:max-w-[220px] lg:max-w-[260px]"
+                              variant="outline"
 
-                              title={selectedEventFiles.govFiles.brieferTemplate.originalName}
+                              size="sm"
 
-                            >
+                              onClick={async () => {
 
-                              {selectedEventFiles.govFiles.brieferTemplate.originalName}
+                                try {
 
-                            </p>
+                                  const url = `${API_BASE_URL}/events/govfile/${selectedEventFiles.govFiles!.brieferTemplate!.filename}`;
 
-                            <p className="text-xs text-gray-500">
+                                  const response = await fetch(url, { method: 'HEAD' });
 
-                              {formatMimeType(selectedEventFiles.govFiles.brieferTemplate.mimetype)}  {(selectedEventFiles.govFiles.brieferTemplate.size / 1024).toFixed(1)} KB
+                                  if (response.ok) {
 
-                            </p>
+                                    window.open(url, '_blank');
 
-                            <p className="text-xs text-green-600 font-medium">Event Briefer</p>
+                                  } else {
 
-                          </div>
+                                    toast.error('File not available', {
 
-                        </div>
+                                      description: 'This file may not exist in your local environment. It works in production.'
 
-                        <div className="flex items-center gap-2">
+                                    });
 
-                          <Button
+                                  }
 
-                            variant="outline"
+                                } catch (error) {
 
-                            size="sm"
+                                  toast.error('Cannot access file', {
 
-                            onClick={async () => {
-
-                              try {
-
-                                const url = `${API_BASE_URL}/events/govfile/${selectedEventFiles.govFiles!.brieferTemplate!.filename}`;
-
-                                const response = await fetch(url, { method: 'HEAD' });
-
-                                if (response.ok) {
-
-                                  window.open(url, '_blank');
-
-                                } else {
-
-                                  toast.error('File not available', {
-
-                                    description: 'This file may not exist in your local environment. It works in production.'
+                                    description: 'File may not exist in localhost. Check production or upload files to test.'
 
                                   });
 
                                 }
 
-                              } catch (error) {
+                              }}
 
-                                toast.error('Cannot access file', {
+                              className="gap-1"
 
-                                  description: 'File may not exist in localhost. Check production or upload files to test.'
+                            >
 
-                                });
+                              <Eye className="w-3 h-3" />
 
-                              }
+                              View
 
-                            }}
+                            </Button>
 
-                            className="gap-1"
+                            <Button
 
-                          >
+                              variant="outline"
 
-                            <Eye className="w-3 h-3" />
+                              size="sm"
 
-                            View
+                              onClick={async () => {
 
-                          </Button>
+                                try {
 
-                          <Button
+                                  const url = `${API_BASE_URL}/events/govfile/${selectedEventFiles.govFiles!.brieferTemplate!.filename}`;
 
-                            variant="outline"
+                                  const response = await fetch(url, { method: 'HEAD' });
 
-                            size="sm"
+                                  if (response.ok) {
 
-                            onClick={async () => {
+                                    window.open(`${url}?download=true`, '_blank');
 
-                              try {
+                                  } else {
 
-                                const url = `${API_BASE_URL}/events/govfile/${selectedEventFiles.govFiles!.brieferTemplate!.filename}`;
+                                    toast.error('File not available', {
 
-                                const response = await fetch(url, { method: 'HEAD' });
+                                      description: 'This file may not exist in your local environment. It works in production.'
 
-                                if (response.ok) {
+                                    });
 
-                                  window.open(`${url}?download=true`, '_blank');
+                                  }
 
-                                } else {
+                                } catch (error) {
 
-                                  toast.error('File not available', {
+                                  toast.error('Cannot download file', {
 
-                                    description: 'This file may not exist in your local environment. It works in production.'
+                                    description: 'File may not exist in localhost. Check production or upload files to test.'
 
                                   });
 
                                 }
 
-                              } catch (error) {
+                              }}
 
-                                toast.error('Cannot download file', {
-
-                                  description: 'File may not exist in localhost. Check production or upload files to test.'
-
-                                });
-
-                              }
-
-                            }}
-
-                            className="gap-1"
-
-                          >
-
-                            <Download className="w-3 h-3" />
-
-                            Download
-
-                          </Button>
-
-                        </div>
-
-                      </div>
-
-                    )}
-
-
-
-                    {/* Programme */}
-
-                    {selectedEventFiles.govFiles.programme && (
-
-                      <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg border border-green-200">
-
-                        <div className="flex items-center gap-3 min-w-0">
-
-                          <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-
-                            <FileText className="w-5 h-5 text-green-600" />
-
-                          </div>
-
-                          <div className="flex-1 min-w-0">
-
-                            <p
-
-                              className="text-sm font-medium text-gray-900 truncate max-w-[190px] sm:max-w-[220px] lg:max-w-[260px]"
-
-                              title={selectedEventFiles.govFiles.programme.originalName}
+                              className="gap-1"
 
                             >
 
-                              {selectedEventFiles.govFiles.programme.originalName}
+                              <Download className="w-3 h-3" />
 
-                            </p>
+                              Download
 
-                            <p className="text-xs text-gray-500">
-
-                              {formatMimeType(selectedEventFiles.govFiles.programme.mimetype)}  {(selectedEventFiles.govFiles.programme.size / 1024).toFixed(1)} KB
-
-                            </p>
-
-                            <p className="text-xs text-green-600 font-medium">Program Flow</p>
+                            </Button>
 
                           </div>
 
                         </div>
 
-                        <div className="flex items-center gap-2">
+                      )}
 
-                          <Button
 
-                            variant="outline"
 
-                            size="sm"
+                      {/* Programme */}
 
-                            onClick={() => {
+                      {selectedEventFiles.govFiles.programme && (
 
-                              window.open(`${API_BASE_URL}/events/govfile/${selectedEventFiles.govFiles!.programme!.filename}`, '_blank');
+                        <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg border border-green-200">
 
-                            }}
+                          <div className="flex items-center gap-3 min-w-0">
 
-                            className="gap-1"
+                            <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
 
-                          >
+                              <FileText className="w-5 h-5 text-green-600" />
 
-                            <Eye className="w-3 h-3" />
+                            </div>
 
-                            View
+                            <div className="flex-1 min-w-0">
 
-                          </Button>
+                              <p
 
-                          <Button
+                                className="text-sm font-medium text-gray-900 truncate max-w-[190px] sm:max-w-[220px] lg:max-w-[260px]"
 
-                            variant="outline"
+                                title={selectedEventFiles.govFiles.programme.originalName}
 
-                            size="sm"
+                              >
 
-                            onClick={() => {
+                                {selectedEventFiles.govFiles.programme.originalName}
 
-                              window.open(`${API_BASE_URL}/events/govfile/${selectedEventFiles.govFiles!.programme!.filename}?download=true`, '_blank');
+                              </p>
 
-                            }}
+                              <p className="text-xs text-gray-500">
 
-                            className="gap-1"
+                                {formatMimeType(selectedEventFiles.govFiles.programme.mimetype)}  {(selectedEventFiles.govFiles.programme.size / 1024).toFixed(1)} KB
 
-                          >
+                              </p>
 
-                            <Download className="w-3 h-3" />
+                              <p className="text-xs text-green-600 font-medium">Program Flow</p>
 
-                            Download
+                            </div>
 
-                          </Button>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+
+                            <Button
+
+                              variant="outline"
+
+                              size="sm"
+
+                              onClick={() => {
+
+                                window.open(`${API_BASE_URL}/events/govfile/${selectedEventFiles.govFiles!.programme!.filename}`, '_blank');
+
+                              }}
+
+                              className="gap-1"
+
+                            >
+
+                              <Eye className="w-3 h-3" />
+
+                              View
+
+                            </Button>
+
+                            <Button
+
+                              variant="outline"
+
+                              size="sm"
+
+                              onClick={() => {
+
+                                window.open(`${API_BASE_URL}/events/govfile/${selectedEventFiles.govFiles!.programme!.filename}?download=true`, '_blank');
+
+                              }}
+
+                              className="gap-1"
+
+                            >
+
+                              <Download className="w-3 h-3" />
+
+                              Download
+
+                            </Button>
+
+                          </div>
 
                         </div>
 
-                      </div>
+                      )}
 
-                    )}
+                    </div>
 
                   </div>
 
-                </div>
-
-              )}
+                )}
 
 
 
               {/* No Files Message */}
 
-              {(!selectedEventFiles.attachments || selectedEventFiles.attachments.length === 0) && 
+              {(!selectedEventFiles.attachments || selectedEventFiles.attachments.length === 0) &&
 
-               (!selectedEventFiles.govFiles || 
+                (!selectedEventFiles.govFiles ||
 
-                (!selectedEventFiles.govFiles.brieferTemplate && 
+                  (!selectedEventFiles.govFiles.brieferTemplate &&
 
-                 !selectedEventFiles.govFiles.programme)) && (
+                    !selectedEventFiles.govFiles.programme)) && (
 
-                <div className="text-center py-8">
+                  <div className="text-center py-8">
 
-                  <Paperclip className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                    <Paperclip className="w-12 h-12 text-gray-400 mx-auto mb-4" />
 
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">No Files Attached</h3>
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">No Files Attached</h3>
 
-                  <p className="text-gray-500">This event doesn't have any attachments or government files.</p>
+                    <p className="text-gray-500">This event doesn't have any attachments or government files.</p>
 
-                </div>
+                  </div>
 
-              )}
+                )}
 
             </div>
 
           )}
 
-          
+
 
           <div className="flex justify-center pt-4 mt-6">
 
-            <Button 
+            <Button
 
               onClick={() => setShowFilesModal(false)}
 
@@ -7919,67 +7909,67 @@ const MyEventsPage: React.FC = () => {
 
 
 
-              {/* Find Venue Button */}
+                {/* Find Venue Button */}
 
-              <div className="bg-gradient-to-r from-violet-50 to-purple-50 border border-violet-200 rounded-lg p-4">
+                <div className="bg-gradient-to-r from-violet-50 to-purple-50 border border-violet-200 rounded-lg p-4">
 
-                <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between">
 
-                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3">
 
-                    <div className="w-10 h-10 rounded-full bg-violet-100 flex items-center justify-center">
+                      <div className="w-10 h-10 rounded-full bg-violet-100 flex items-center justify-center">
 
-                      <Wand2 className="w-5 h-5 text-violet-600" />
+                        <Wand2 className="w-5 h-5 text-violet-600" />
+
+                      </div>
+
+                      <div>
+
+                        <h3 className="text-sm font-semibold text-gray-900">Need help finding a venue?</h3>
+
+                        <p className="text-xs text-gray-600 mt-0.5">Let us suggest available locations based on your event details</p>
+
+                      </div>
 
                     </div>
 
-                    <div>
+                    <Button
 
-                      <h3 className="text-sm font-semibold text-gray-900">Need help finding a venue?</h3>
+                      type="button"
 
-                      <p className="text-xs text-gray-600 mt-0.5">Let us suggest available locations based on your event details</p>
+                      onClick={() => {
 
-                    </div>
+                        if (selectedEditEvent) {
+
+                          setAutoSuggestParticipants(selectedEditEvent.participants.toString());
+
+                          setAutoSuggestStartDate((() => { const d = new Date(editFormData.startDate || selectedEditEvent.startDate); return new Date(d.getFullYear(), d.getMonth(), d.getDate()); })());
+
+                          setAutoSuggestEndDate((() => { const d = new Date(editFormData.endDate || selectedEditEvent.endDate); return new Date(d.getFullYear(), d.getMonth(), d.getDate()); })());
+
+                          setAutoSuggestStartTime(editFormData.startTime || selectedEditEvent.startTime);
+
+                          setAutoSuggestEndTime(editFormData.endTime || selectedEditEvent.endTime);
+
+                        }
+
+                        setShowAutoSuggestModal(true);
+
+                      }}
+
+                      className="bg-violet-600 hover:bg-violet-700 text-white gap-2 whitespace-nowrap"
+
+                    >
+
+                      <Sparkles className="w-4 h-4" />
+
+                      Find Venue
+
+                    </Button>
 
                   </div>
 
-                  <Button
-
-                    type="button"
-
-                    onClick={() => {
-
-                      if (selectedEditEvent) {
-
-                        setAutoSuggestParticipants(selectedEditEvent.participants.toString());
-
-                        setAutoSuggestStartDate((() => { const d = new Date(editFormData.startDate || selectedEditEvent.startDate); return new Date(d.getFullYear(), d.getMonth(), d.getDate()); })());
-
-                        setAutoSuggestEndDate((() => { const d = new Date(editFormData.endDate || selectedEditEvent.endDate); return new Date(d.getFullYear(), d.getMonth(), d.getDate()); })());
-
-                        setAutoSuggestStartTime(editFormData.startTime || selectedEditEvent.startTime);
-
-                        setAutoSuggestEndTime(editFormData.endTime || selectedEditEvent.endTime);
-
-                      }
-
-                      setShowAutoSuggestModal(true);
-
-                    }}
-
-                    className="bg-violet-600 hover:bg-violet-700 text-white gap-2 whitespace-nowrap"
-
-                  >
-
-                    <Sparkles className="w-4 h-4" />
-
-                    Find Venue
-
-                  </Button>
-
                 </div>
-
-              </div>
 
               </div>
 
@@ -7989,9 +7979,9 @@ const MyEventsPage: React.FC = () => {
 
           <SheetFooter className="border-t bg-gray-50 px-6 py-4">
 
-            <Button 
+            <Button
 
-              variant="outline" 
+              variant="outline"
 
               onClick={() => setShowEditModal(false)}
 
@@ -8001,7 +7991,7 @@ const MyEventsPage: React.FC = () => {
 
             </Button>
 
-            <Button 
+            <Button
 
               onClick={handleSaveEditedEvent}
 
@@ -8137,11 +8127,11 @@ const MyEventsPage: React.FC = () => {
 
                             value={editRequirementData.quantity}
 
-                            onChange={(e) => setEditRequirementData(prev => ({ 
+                            onChange={(e) => setEditRequirementData(prev => ({
 
-                              ...prev, 
+                              ...prev,
 
-                              quantity: parseInt(e.target.value) || 0 
+                              quantity: parseInt(e.target.value) || 0
 
                             }))}
 
@@ -8189,11 +8179,11 @@ const MyEventsPage: React.FC = () => {
 
                       value={editRequirementData.notes}
 
-                      onChange={(e) => setEditRequirementData(prev => ({ 
+                      onChange={(e) => setEditRequirementData(prev => ({
 
-                        ...prev, 
+                        ...prev,
 
-                        notes: e.target.value 
+                        notes: e.target.value
 
                       }))}
 
@@ -8235,11 +8225,11 @@ const MyEventsPage: React.FC = () => {
 
                       value={editRequirementData.notes}
 
-                      onChange={(e) => setEditRequirementData(prev => ({ 
+                      onChange={(e) => setEditRequirementData(prev => ({
 
-                        ...prev, 
+                        ...prev,
 
-                        notes: e.target.value 
+                        notes: e.target.value
 
                       }))}
 
@@ -8273,9 +8263,9 @@ const MyEventsPage: React.FC = () => {
 
           <div className="flex justify-end gap-3 pt-4 border-t">
 
-            <Button 
+            <Button
 
-              variant="outline" 
+              variant="outline"
 
               onClick={() => {
 
@@ -8291,19 +8281,19 @@ const MyEventsPage: React.FC = () => {
 
             </Button>
 
-            <Button 
+            <Button
 
               onClick={handleSaveEditedRequirement}
 
               disabled={
 
-                editingRequirement?.type === 'physical' 
+                editingRequirement?.type === 'physical'
 
-                  ? (!editRequirementData.quantity || 
+                  ? (!editRequirementData.quantity ||
 
-                     editRequirementData.quantity < 1 ||
+                    editRequirementData.quantity < 1 ||
 
-                     editRequirementData.quantity > editingRequirement?.totalQuantity)
+                    editRequirementData.quantity > editingRequirement?.totalQuantity)
 
                   : !editRequirementData.notes.trim()
 
@@ -8375,7 +8365,7 @@ const MyEventsPage: React.FC = () => {
 
                 <Label className="text-sm font-medium">Select Department(s)</Label>
 
-                
+
 
                 {/* Search Input */}
 
@@ -8405,7 +8395,7 @@ const MyEventsPage: React.FC = () => {
 
                   {allDepartments
 
-                    .filter((dept) => 
+                    .filter((dept) =>
 
                       dept.toLowerCase().includes(departmentSearchQuery.toLowerCase())
 
@@ -8465,29 +8455,29 @@ const MyEventsPage: React.FC = () => {
 
                     ))}
 
-                  
+
 
                   {/* No Results Message */}
 
-                  {allDepartments.filter((dept) => 
+                  {allDepartments.filter((dept) =>
 
                     dept.toLowerCase().includes(departmentSearchQuery.toLowerCase())
 
                   ).length === 0 && (
 
-                    <div className="text-center py-8 text-gray-500">
+                      <div className="text-center py-8 text-gray-500">
 
-                      <p className="text-sm">No departments found</p>
+                        <p className="text-sm">No departments found</p>
 
-                      <p className="text-xs mt-1">Try a different search term</p>
+                        <p className="text-xs mt-1">Try a different search term</p>
 
-                    </div>
+                      </div>
 
-                  )}
+                    )}
 
                 </div>
 
-                
+
 
                 <p className="text-xs text-gray-500">
 
@@ -8507,9 +8497,9 @@ const MyEventsPage: React.FC = () => {
 
           <div className="flex justify-end gap-3 pt-4 border-t">
 
-            <Button 
+            <Button
 
-              variant="outline" 
+              variant="outline"
 
               onClick={() => {
 
@@ -8529,7 +8519,7 @@ const MyEventsPage: React.FC = () => {
 
             </Button>
 
-            <Button 
+            <Button
 
               onClick={handleSaveDepartmentChange}
 
@@ -8603,7 +8593,7 @@ const MyEventsPage: React.FC = () => {
 
               <Label className="text-sm font-medium">Select Department</Label>
 
-              
+
 
               {/* Search Input */}
 
@@ -8673,7 +8663,7 @@ const MyEventsPage: React.FC = () => {
 
                   })}
 
-                
+
 
                 {allDepartments
 
@@ -8681,13 +8671,13 @@ const MyEventsPage: React.FC = () => {
 
                   .length === 0 && (
 
-                  <div className="text-center py-8 text-gray-500">
+                    <div className="text-center py-8 text-gray-500">
 
-                    <p className="text-sm">No departments found</p>
+                      <p className="text-sm">No departments found</p>
 
-                  </div>
+                    </div>
 
-                )}
+                  )}
 
               </div>
 
@@ -8699,9 +8689,9 @@ const MyEventsPage: React.FC = () => {
 
           <div className="flex justify-end gap-3 pt-4 border-t">
 
-            <Button 
+            <Button
 
-              variant="outline" 
+              variant="outline"
 
               onClick={() => {
 
@@ -8787,9 +8777,7 @@ const MyEventsPage: React.FC = () => {
 
                       key={req.id}
 
-                      className={`p-3 border rounded-lg transition-all ${
-
-                        !req.isAvailable
+                      className={`p-3 border rounded-lg transition-all ${!req.isAvailable
 
                           ? 'bg-gray-50 border-gray-200 opacity-60 cursor-not-allowed'
 
@@ -8799,7 +8787,7 @@ const MyEventsPage: React.FC = () => {
 
                             : 'bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50 cursor-pointer'
 
-                      }`}
+                        }`}
 
                       onClick={() => req.isAvailable && toggleRequirementSelection(req.id)}
 
@@ -8823,7 +8811,7 @@ const MyEventsPage: React.FC = () => {
 
                             />
 
-                            <h5 className={`font-medium text-sm ${req.isAvailable ? 'text-gray-900' : 'text-gray-500'}`}> 
+                            <h5 className={`font-medium text-sm ${req.isAvailable ? 'text-gray-900' : 'text-gray-500'}`}>
 
                               {req.name}
 
@@ -8993,15 +8981,13 @@ const MyEventsPage: React.FC = () => {
 
                   <div
 
-                    className={`p-3 border-2 border-dashed rounded-lg cursor-pointer transition-all ${
-
-                      showCustomInput
+                    className={`p-3 border-2 border-dashed rounded-lg cursor-pointer transition-all ${showCustomInput
 
                         ? 'bg-blue-50 border-blue-300'
 
                         : 'border-gray-300 hover:border-blue-300 hover:bg-blue-50'
 
-                    }`}
+                      }`}
 
                     onClick={() => setShowCustomInput(true)}
 
@@ -9787,7 +9773,7 @@ const MyEventsPage: React.FC = () => {
 
                     </h4>
 
-                    
+
 
                     <div>
 
@@ -10002,7 +9988,7 @@ const MyEventsPage: React.FC = () => {
       {/* Auto Suggest Modal - Simplified Version */}
       <Dialog open={showAutoSuggestModal} onOpenChange={setShowAutoSuggestModal}>
         <DialogContent className="sm:max-w-xl max-h-[92vh] flex flex-col p-0 gap-0 overflow-hidden rounded-2xl border-0 shadow-2xl">
-          
+
           {/* Header */}
           <div className="flex-shrink-0 px-6 pt-6 pb-5">
             <div className="flex items-center gap-3 mb-1">
@@ -10025,7 +10011,7 @@ const MyEventsPage: React.FC = () => {
 
           {/* Body */}
           <div className="flex-1 overflow-y-auto px-6 pb-6 space-y-4">
-            
+
             {/* Inputs section */}
             <div className="bg-gray-50 rounded-xl p-4 space-y-3">
 
@@ -10114,7 +10100,7 @@ const MyEventsPage: React.FC = () => {
                       {generateTimeOptions()
                         .filter((t) => {
                           if (!autoSuggestStartTime) return false;
-                          const toMin = (x: string) => { const [h,m] = x.split(':').map(Number); return h*60+m; };
+                          const toMin = (x: string) => { const [h, m] = x.split(':').map(Number); return h * 60 + m; };
                           return toMin(t.value) > toMin(autoSuggestStartTime);
                         })
                         .map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
@@ -10176,20 +10162,18 @@ const MyEventsPage: React.FC = () => {
                       type="button"
                       disabled={sug.isBooked}
                       onClick={() => !sug.isBooked && applyAutoSuggestion(sug)}
-                      className={`w-full text-left rounded-xl border transition-all duration-150 group ${
-                        sug.isBooked
+                      className={`w-full text-left rounded-xl border transition-all duration-150 group ${sug.isBooked
                           ? 'border-gray-200 bg-gray-50 opacity-55 cursor-not-allowed'
                           : selectedSuggestion === sug.name
-                          ? 'border-violet-400 bg-violet-50 shadow-sm'
-                          : 'border-gray-200 bg-white hover:border-violet-300 hover:shadow-sm cursor-pointer'
-                      }`}
+                            ? 'border-violet-400 bg-violet-50 shadow-sm'
+                            : 'border-gray-200 bg-white hover:border-violet-300 hover:shadow-sm cursor-pointer'
+                        }`}
                     >
                       <div className="flex items-center gap-3 px-4 py-3">
 
                         {/* Icon */}
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                          sug.isBooked ? 'bg-gray-100' : 'bg-violet-50 group-hover:bg-violet-100'
-                        }`}>
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${sug.isBooked ? 'bg-gray-100' : 'bg-violet-50 group-hover:bg-violet-100'
+                          }`}>
                           <MapPin className={`w-4 h-4 ${sug.isBooked ? 'text-gray-400' : 'text-violet-500'}`} />
                         </div>
 

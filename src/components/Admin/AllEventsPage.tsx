@@ -2377,52 +2377,16 @@ const AllEventsPage: React.FC = () => {
                   Reject Event
                 </Button>
 
-                {/* Cancel Dropdown with Reasons */}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button className="bg-yellow-500 text-white hover:bg-yellow-600">
-                      Cancel Event
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-56">
-                    <DropdownMenuItem onClick={() => {
-                      setPendingCancelReason('Conflict with other event');
-                      setShowCancelConfirm(true);
-                    }}>
-                      Conflict with other event
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => {
-                      setPendingCancelReason('Venue unavailable');
-                      setShowCancelConfirm(true);
-                    }}>
-                      Venue unavailable
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => {
-                      setPendingCancelReason('Requestor cancelled');
-                      setShowCancelConfirm(true);
-                    }}>
-                      Requestor cancelled
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => {
-                      setPendingCancelReason('Insufficient resources');
-                      setShowCancelConfirm(true);
-                    }}>
-                      Insufficient resources
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => {
-                      setPendingCancelReason('Weather/Emergency');
-                      setShowCancelConfirm(true);
-                    }}>
-                      Weather/Emergency
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => {
-                      setPendingCancelReason('Other reason');
-                      setShowCancelConfirm(true);
-                    }}>
-                      Other reason
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                {/* Cancel Event Button */}
+                <Button 
+                  className="bg-yellow-500 text-white hover:bg-yellow-600"
+                  onClick={() => {
+                    setCancelReason('');
+                    setShowCancelConfirm(true);
+                  }}
+                >
+                  Cancel Event
+                </Button>
               </div>
             </div>
           )}
@@ -2443,11 +2407,36 @@ const AllEventsPage: React.FC = () => {
           </DialogHeader>
 
           <div className="space-y-4 py-4">
+            {/* Quick Reason Presets for Rejection */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Quick Reason Presets</label>
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  'Venue unavailable on selected date/time',
+                  'Schedule conflict with higher-priority event',
+                  'Incomplete event requirements/documentation',
+                  'Venue capacity exceeded',
+                  'Unapproved event guidelines'
+                ].map((preset) => (
+                  <Button
+                    key={preset}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className={`text-xs h-7 px-2 ${rejectReason === preset ? 'bg-red-100 border-red-400 text-red-900 font-medium' : 'text-gray-700'}`}
+                    onClick={() => setRejectReason(preset)}
+                  >
+                    {preset}
+                  </Button>
+                ))}
+              </div>
+            </div>
+
             <div className="space-y-2">
               <label className="text-sm font-medium">Rejection Reason *</label>
               <textarea
-                className="w-full min-h-[120px] px-3 py-2 text-sm border rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-red-500"
-                placeholder="Enter the reason for rejection..."
+                className="w-full min-h-[110px] px-3 py-2 text-sm border border-gray-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-red-500"
+                placeholder="Type or customize the reason for rejection..."
                 value={rejectReason}
                 onChange={(e) => setRejectReason(e.target.value)}
               />
@@ -2462,14 +2451,89 @@ const AllEventsPage: React.FC = () => {
                 setRejectReason('');
               }}
             >
-              Cancel
+              Go Back
             </Button>
             <Button
               className="bg-red-600 text-white hover:bg-red-700"
-              onClick={() => handleStatusChange('rejected', rejectReason)}
+              onClick={() => handleStatusChange('rejected', rejectReason.trim())}
               disabled={!rejectReason.trim()}
             >
               Confirm Rejection
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Cancel Event Dialog with Text Reason & Presets */}
+      <Dialog open={showCancelConfirm} onOpenChange={setShowCancelConfirm}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-600">
+              <XCircle className="w-5 h-5" />
+              Cancel Event
+            </DialogTitle>
+            <DialogDescription>
+              Please provide a reason for cancelling <strong>"{selectedEvent?.eventTitle}"</strong>. This will notify the event creator and tagged departments.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-3">
+            {/* Quick Presets for Cancellation */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Quick Reason Presets</label>
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  'Conflict with other event',
+                  'Venue unavailable',
+                  'Requestor cancelled',
+                  'Insufficient resources',
+                  'Weather/Emergency'
+                ].map((preset) => (
+                  <Button
+                    key={preset}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className={`text-xs h-7 px-2 ${cancelReason === preset ? 'bg-amber-100 border-amber-400 text-amber-900 font-medium' : 'text-gray-700'}`}
+                    onClick={() => setCancelReason(preset)}
+                  >
+                    {preset}
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-gray-900">Cancellation Reason *</label>
+              <textarea
+                className="w-full min-h-[110px] px-3 py-2 text-sm border border-gray-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-amber-500"
+                placeholder="Type or customize the reason for cancellation..."
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowCancelConfirm(false);
+                setCancelReason('');
+              }}
+            >
+              Go Back
+            </Button>
+            <Button
+              className="bg-amber-600 text-white hover:bg-amber-700"
+              onClick={() => {
+                handleStatusChange('cancelled', cancelReason.trim());
+                setShowCancelConfirm(false);
+                setCancelReason('');
+              }}
+              disabled={!cancelReason.trim()}
+            >
+              Confirm Cancellation
             </Button>
           </div>
         </DialogContent>
@@ -2495,35 +2559,6 @@ const AllEventsPage: React.FC = () => {
               }}
             >
               Yes, Approve Event
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Cancel Confirmation Alert Dialog */}
-      <AlertDialog open={showCancelConfirm} onOpenChange={setShowCancelConfirm}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Cancel Event?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to cancel the event <strong>"{selectedEvent?.eventTitle}"</strong>?
-              <br /><br />
-              <strong>Reason:</strong> {pendingCancelReason}
-              <br /><br />
-              This will reset all department requirements to pending and notify the event creator.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Go Back</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-yellow-500 hover:bg-yellow-600"
-              onClick={() => {
-                setCancelReason(pendingCancelReason);
-                handleStatusChange('cancelled', pendingCancelReason);
-                setShowCancelConfirm(false);
-              }}
-            >
-              Yes, Cancel Event
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
