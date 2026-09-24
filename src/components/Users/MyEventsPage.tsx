@@ -7,7 +7,7 @@ import axios from 'axios';
 import { toast } from 'sonner';
 
 import { format } from 'date-fns';
-
+import { getPavilionSoundSystemMaxQuantity } from '@/lib/pavilionHelpers';
 import { getGlobalSocket, useSocket } from '@/hooks/useSocket';
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -1166,7 +1166,14 @@ const MyEventsPage: React.FC = () => {
 
 
 
-        return Array.from(merged.entries()).map(([name, quantity]) => ({ name, quantity }));
+        const mergedReqs = Array.from(merged.entries()).map(([name, quantity]) => ({ name, quantity }));
+        return mergedReqs.map((r) => {
+          if (/sound system/i.test(r.name)) {
+            const maxSoundQty = getPavilionSoundSystemMaxQuantity(event?.location, event?.locations, r.quantity);
+            return { ...r, quantity: maxSoundQty };
+          }
+          return r;
+        });
 
       }
 
@@ -1174,7 +1181,14 @@ const MyEventsPage: React.FC = () => {
 
       // Single location: keep original behavior (most specific doc)
 
-      return getRequirementsForSingleLocation(selectedLocationsNorm[0]);
+      const singleReqs = getRequirementsForSingleLocation(selectedLocationsNorm[0]);
+      return singleReqs.map((r: any) => {
+        if (/sound system/i.test(r.name)) {
+          const maxSoundQty = getPavilionSoundSystemMaxQuantity(event?.location, event?.locations, r.quantity);
+          return { ...r, quantity: maxSoundQty };
+        }
+        return r;
+      });
 
     } catch (error) {
 
@@ -4181,8 +4195,11 @@ const MyEventsPage: React.FC = () => {
                     : 0;
 
                 if (typeof name === 'string' && name.trim().length > 0) {
-
-                  basePoolByName.set(name, Number.isFinite(qty) ? qty : 0);
+                  let finalQty = Number.isFinite(qty) ? qty : 0;
+                  if (/sound system/i.test(name)) {
+                    finalQty = getPavilionSoundSystemMaxQuantity(addingToEvent?.location, addingToEvent?.locations, finalQty);
+                  }
+                  basePoolByName.set(name, finalQty);
 
                 }
 

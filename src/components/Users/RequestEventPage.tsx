@@ -38,6 +38,7 @@ import {
 } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { format } from 'date-fns';
+import { getPavilionSoundSystemMaxQuantity } from '@/lib/pavilionHelpers';
 import {
   FileText,
   Paperclip,
@@ -762,6 +763,40 @@ const RequestEventPage: React.FC = () => {
     return locationsConflict(loc1, loc2);
   };
 
+  // Sync PGSO Sound System max quantity if locations/sections change
+  useEffect(() => {
+    if (!formData.departmentRequirements || !formData.departmentRequirements['PGSO']) return;
+    const pgsoReqs = formData.departmentRequirements['PGSO'];
+    if (!Array.isArray(pgsoReqs) || pgsoReqs.length === 0) return;
+
+    const targetLoc = selectedLocation || formData.location;
+    const maxSoundQty = getPavilionSoundSystemMaxQuantity(targetLoc, formData.locations);
+
+    let updated = false;
+    const newPgsoReqs = pgsoReqs.map((req) => {
+      if (/sound system/i.test(req.name) && req.availabilityNotes?.startsWith('PAVILION_DEFAULT:')) {
+        if (req.totalQuantity !== maxSoundQty) {
+          updated = true;
+          const currentSelectedQty = req.quantity;
+          return {
+            ...req,
+            totalQuantity: maxSoundQty,
+            quantity: currentSelectedQty ? Math.min(currentSelectedQty, maxSoundQty) : currentSelectedQty,
+            availabilityNotes: `PAVILION_DEFAULT:${maxSoundQty}:${targetLoc || 'selected location'}`
+          };
+        }
+      }
+      return req;
+    });
+
+    if (updated) {
+      handleInputChange('departmentRequirements', {
+        ...formData.departmentRequirements,
+        PGSO: newPgsoReqs
+      });
+    }
+  }, [formData.location, formData.locations, selectedLocation]);
+
   // Auto-check for venue conflicts when schedule changes in modal
   useEffect(() => {
 
@@ -997,7 +1032,12 @@ const RequestEventPage: React.FC = () => {
           }
 
           if (aggregatedMap.size > 0) {
-            const finalReqs = Array.from(aggregatedMap.entries()).map(([name, quantity]) => ({ name, quantity }));
+            const finalReqs = Array.from(aggregatedMap.entries()).map(([name, quantity]) => {
+              if (/sound system/i.test(name)) {
+                return { name, quantity: getPavilionSoundSystemMaxQuantity(locationName, selectedLocs, quantity) };
+              }
+              return { name, quantity };
+            });
             return {
               requirements: finalReqs,
               roomTypes: Array.from(roomTypesSet)
@@ -1073,8 +1113,16 @@ const RequestEventPage: React.FC = () => {
             ? roomTypesSource.roomTypes
             : [];
 
+        const adjustedRequirements = requirements.map((req: any) => {
+          if (/sound system/i.test(req.name)) {
+            const maxSoundQty = getPavilionSoundSystemMaxQuantity(locationName, selectedLocs, req.quantity);
+            return { ...req, quantity: maxSoundQty };
+          }
+          return req;
+        });
+
         return {
-          requirements,
+          requirements: adjustedRequirements,
           roomTypes
         };
       }
@@ -1697,26 +1745,29 @@ const RequestEventPage: React.FC = () => {
         // list directly as the PGSO defaults, bypassing the global PGSO master
         // list / availability API.
         if (isPgso && locationRequirements.length > 0) {
-          // Pavilion-specific overrides: hide microphones, cap Sound System at 1
+          // Pavilion-specific overrides: hide microphones, cap Sound System based on section count
           const pavilionFiltered = isPavilionLocation
             ? locationRequirements.filter((r) => !/microphone/i.test(r.name))
             : locationRequirements;
-          const mappedRequirements: DepartmentRequirement[] = pavilionFiltered.map((locReq, idx) => ({
-            id: `pgso-location-${idx}-${locReq.name}`,
-            name: locReq.name,
-            selected: false,
-            notes: '',
-            type: 'physical',
-            quantity: undefined,
-            totalQuantity: locReq.quantity,
-            isAvailable: true,
-            // Encode the location default quantity in the same marker format
-            // used elsewhere (PAVILION_DEFAULT:<qty>:<location>) so that
-            // MyEvents and other pages can consistently display and validate
-            // using the per-location pool instead of the global PGSO total.
-            availabilityNotes: `PAVILION_DEFAULT:${locReq.quantity}:${selectedLocation || formData.location || 'selected location'}`,
-            isCustom: false
-          }));
+          const mappedRequirements: DepartmentRequirement[] = pavilionFiltered.map((locReq, idx) => {
+            const isSoundSystem = /sound system/i.test(locReq.name);
+            const effectiveQty = isSoundSystem
+              ? getPavilionSoundSystemMaxQuantity(selectedLocation || formData.location, formData.locations, locReq.quantity)
+              : locReq.quantity;
+
+            return {
+              id: `pgso-location-${idx}-${locReq.name}`,
+              name: locReq.name,
+              selected: false,
+              notes: '',
+              type: 'physical',
+              quantity: undefined,
+              totalQuantity: effectiveQty,
+              isAvailable: true,
+              availabilityNotes: `PAVILION_DEFAULT:${effectiveQty}:${selectedLocation || formData.location || 'selected location'}`,
+              isCustom: false
+            };
+          });
 
           const newRequirements = { ...formData.departmentRequirements };
           newRequirements[departmentName] = mappedRequirements;
@@ -1801,8 +1852,13 @@ const RequestEventPage: React.FC = () => {
               if (isPgso && locationRequirements.length > 0) {
                 const matchingLocationReq = locationRequirements.find((locReq) => locReq.name === req.text);
                 if (matchingLocationReq) {
-                  baseRequirement.totalQuantity = matchingLocationReq.quantity;
-                  baseRequirement.availabilityNotes = `PAVILION_DEFAULT:${matchingLocationReq.quantity}:${selectedLocation || formData.location || 'selected location'}`;
+                  const isSoundSystem = /sound system/i.test(matchingLocationReq.name);
+                  const effectiveQty = isSoundSystem
+                    ? getPavilionSoundSystemMaxQuantity(selectedLocation || formData.location, formData.locations, matchingLocationReq.quantity)
+                    : matchingLocationReq.quantity;
+
+                  baseRequirement.totalQuantity = effectiveQty;
+                  baseRequirement.availabilityNotes = `PAVILION_DEFAULT:${effectiveQty}:${selectedLocation || formData.location || 'selected location'}`;
                 }
               }
 
