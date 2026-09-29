@@ -2556,8 +2556,8 @@ const MyEventsPage: React.FC = () => {
               : extracted.breakdown;
         }
 
-        if (chairs <= 0) return;
-        if (chairs < count) return;
+        if (!isPavilionLoc && chairs <= 0) return;
+        if (!isPavilionLoc && chairs < count) return;
         const bookedOnDates = getBookedDatesForLocation(
           loc, dateRange, allEvents, autoSuggestStartTime, autoSuggestEndTime
         );
@@ -2612,7 +2612,7 @@ const MyEventsPage: React.FC = () => {
           'Pavilion - Kagitingan Hall - Section C',
         ];
 
-        if (pavilionRemainingChairs >= count) {
+        {
           for (let mask = 1; mask < (1 << KAGITINGAN_SECTIONS.length); mask++) {
             const combo: string[] = [];
             KAGITINGAN_SECTIONS.forEach((s, i) => { if (mask & (1 << i)) combo.push(s); });

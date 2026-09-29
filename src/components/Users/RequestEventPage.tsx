@@ -120,6 +120,7 @@ interface EventFormData {
   contactEmail: string;
   eventType: 'simple' | 'complex' | 'simple-meeting';
   dateTimeSlots: DateTimeSlot[]; // Additional date slots for multi-day events
+  proceedWithoutPgsoChairs?: boolean;
 }
 
 interface Department {
@@ -260,7 +261,8 @@ const RequestEventPage: React.FC = () => {
     contactNumber: '',
     contactEmail: '',
     eventType: '' as any,
-    dateTimeSlots: [] // Initialize empty array for additional date slots
+    dateTimeSlots: [], // Initialize empty array for additional date slots
+    proceedWithoutPgsoChairs: false
   });
 
   const steps = [
@@ -3776,8 +3778,8 @@ const RequestEventPage: React.FC = () => {
               : extracted.breakdown;
         }
 
-        if (chairs <= 0) return;
-        if (chairs < count) return;
+        if (!isPavilionLoc && chairs <= 0) return;
+        if (!isPavilionLoc && chairs < count) return;
         const bookedOnDates = getBookedDatesForLocation(
           loc.name, dateRange, allEvents, autoSuggestStartTime, autoSuggestEndTime
         );
@@ -3837,8 +3839,8 @@ const RequestEventPage: React.FC = () => {
           'Pavilion - Kagitingan Hall - Section C',
         ];
 
-        // Only show Kagitingan sections if the shared remaining pool meets the count
-        if (pavilionRemainingChairs >= count) {
+        // Always show Kagitingan sections so users can book even if chairs are full / 0
+        {
           for (let mask = 1; mask < (1 << KAGITINGAN_SECTIONS.length); mask++) {
             const combo: string[] = [];
             KAGITINGAN_SECTIONS.forEach((s, i) => { if (mask & (1 << i)) combo.push(s); });
@@ -4751,6 +4753,48 @@ const RequestEventPage: React.FC = () => {
                           Since you selected a custom location (Outside PGB), please contact PGSO directly for any requirements needed at this venue.
                         </p>
                       </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* PGSO Chairs Availability & Bypass Banner */}
+                {formData.taggedDepartments.some((d) => d.toLowerCase().includes('pgso')) && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 space-y-3">
+                    <div className="flex items-start gap-3">
+                      <Building2 className="w-5 h-5 text-amber-600 mt-0.5" />
+                      <div className="flex-1">
+                        <Label className="text-sm font-semibold text-amber-900">
+                          PGSO Chairs & Equipment Support
+                        </Label>
+                        <p className="text-xs text-amber-800 mt-1">
+                          If PGSO chairs or equipment are already full for your selected date/venue, you can proceed without PGSO chairs. PMO will follow up directly on this event.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 pt-1">
+                      <Button
+                        type="button"
+                        variant={formData.proceedWithoutPgsoChairs ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => {
+                          const nextVal = !formData.proceedWithoutPgsoChairs;
+                          handleInputChange('proceedWithoutPgsoChairs', nextVal);
+                          if (nextVal) {
+                            toast.success('Set to proceed without PGSO chairs. PMO will follow up on this event directly.');
+                          }
+                        }}
+                        className={formData.proceedWithoutPgsoChairs
+                          ? "bg-amber-600 hover:bg-amber-700 text-white gap-1.5 font-medium"
+                          : "border-amber-400 text-amber-900 hover:bg-amber-100 gap-1.5 font-medium"
+                        }
+                      >
+                        {formData.proceedWithoutPgsoChairs ? "✓ Proceeding Without PGSO Chairs" : "Proceed Without PGSO Chairs"}
+                      </Button>
+                      {formData.proceedWithoutPgsoChairs && (
+                        <span className="text-xs font-medium text-amber-800 flex items-center gap-1">
+                          (PMO will follow up directly)
+                        </span>
+                      )}
                     </div>
                   </div>
                 )}
