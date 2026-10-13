@@ -1673,7 +1673,7 @@ const RequestEventPage: React.FC = () => {
           },
           {
             id: `pito-projector-${Date.now()}`,
-            name: 'Projector with HDMI',
+            name: 'Projector with VGA',
             selected: false,
             notes: '',
             type: 'service',
