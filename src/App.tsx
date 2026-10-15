@@ -28,6 +28,7 @@ import UsersLogsPage from './components/Admin/UsersLogsPage'
 import DepartmentsManagement from './components/Admin/DepartmentsManagement'
 import EventReportsManagement from './components/Admin/EventReportsManagement'
 import AdminSettingsPage from './components/Admin/AdminSettingsPage'
+import AccountPage from './components/AccountPage'
 import './App.css'
 
 const API_BASE_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api`;
@@ -157,6 +158,7 @@ function App() {
                   <Route path="event-reports" element={<EventReportsPage />} />
                   <Route path="request-event-guide" element={<RequestEventGuidePage />} />
                   <Route path="bac-requests" element={<BacRequestsPage />} />
+                  <Route path="account" element={<AccountPage />} />
                   <Route path="" element={<Navigate to="dashboard" replace />} />
                 </Routes>
               </MainLayout>
@@ -177,6 +179,7 @@ function App() {
                   <Route path="departments" element={<DepartmentsManagement />} />
                   <Route path="event-reports" element={<EventReportsManagement />} />
                   <Route path="settings" element={<AdminSettingsPage />} />
+                  <Route path="account" element={<AccountPage />} />
                   <Route path="reports" element={<div className="p-6"><h1 className="text-2xl font-bold">Reports</h1><p>Coming soon...</p></div>} />
                   <Route path="" element={
                     <Navigate 
