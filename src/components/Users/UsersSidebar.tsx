@@ -2336,16 +2336,7 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
 
       <div className="border-t border-gray-100 p-4 space-y-3">
 
-        <div
-          className="flex items-center gap-3 cursor-pointer hover:bg-gray-50 rounded-lg p-1 transition-colors duration-150"
-          onClick={() => {
-            const role = (currentUser.role || '').toLowerCase();
-            const isAdmin = role === 'admin' || role === 'superadmin';
-            navigate(isAdmin ? '/admin/account' : '/users/account');
-            setIsMobileMenuOpen(false);
-          }}
-          title="My Account"
-        >
+        <div className="flex items-center gap-3">
 
           <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
 
@@ -2370,7 +2361,6 @@ const UsersSidebar: React.FC<UsersSidebarProps> = ({ user }) => {
           </div>
 
         </div>
-
 
         
 
