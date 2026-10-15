@@ -604,15 +604,11 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ user }) => {
 
       <div className="border-t border-gray-100 p-4 space-y-3">
 
-        <div
-          className={`flex items-center rounded-lg bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors duration-150 ${
+        <div className={`flex items-center rounded-lg bg-gray-50 ${
 
           isCollapsed ? 'justify-center p-2' : 'gap-3 p-3'
 
-        }`}
-          onClick={() => navigate('/admin/account')}
-          title="My Account"
-        >
+        }`}>
 
           <div className="w-10 h-10 bg-red-600 rounded-full flex items-center justify-center">
 
