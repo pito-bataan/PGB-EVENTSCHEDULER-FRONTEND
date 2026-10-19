@@ -5131,6 +5131,46 @@ const MyEventsPage: React.FC = () => {
 
         });
 
+      // Auto-generate slots for every day in [startDate+1 .. endDate] that has no slot yet.
+      // Fixes the case where a 1-day event is extended to multi-day via edit schedule:
+      // editFormData.dateTimeSlots is empty so convertedSlots is empty, but we still
+      // need a slot entry for Day 2, Day 3, etc. so the View Details shows them all.
+      const toLocalDateStr = (d: Date) =>
+        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+      const parseLocalDate = (dateStr: string) => {
+        const [y, m, d] = String(dateStr).split('T')[0].split('-').map(Number);
+        return new Date(y, m - 1, d);
+      };
+
+      const finalSlots = [...convertedSlots];
+
+      if (editFormData.startDate && editFormData.endDate && editFormData.startTime && editFormData.endTime) {
+        const startDay = parseLocalDate(editFormData.startDate);
+        const endDay = parseLocalDate(editFormData.endDate);
+        const cursor = new Date(startDay);
+        cursor.setDate(cursor.getDate() + 1); // begin from Day 2
+
+        while (cursor <= endDay) {
+          const localDateStr = toLocalDateStr(cursor);
+          // Only add if this day isn't already covered
+          if (!finalSlots.some(s => s.startDate === localDateStr)) {
+            finalSlots.push({
+              startDate: localDateStr,
+              startTime: editFormData.startTime,
+              endDate: localDateStr,
+              endTime: editFormData.endTime,
+            });
+          }
+          cursor.setDate(cursor.getDate() + 1);
+        }
+      }
+
+      // Sort by date ascending
+      finalSlots.sort((a, b) => a.startDate.localeCompare(b.startDate));
+
+      console.log('[handleSaveEditedEvent] finalSlots:', finalSlots);
+
       console.log('[handleSaveEditedEvent] editFormData.location:', editFormData.location, '| editFormData.locations:', editFormData.locations);
 
       const updateData = {
@@ -5149,7 +5189,7 @@ const MyEventsPage: React.FC = () => {
 
         endTime: editFormData.endTime,
 
-        dateTimeSlots: convertedSlots, // Include multi-day slots
+        dateTimeSlots: finalSlots, // Auto-filled multi-day slots
 
         previousLocation: selectedEditEvent.location, // Store previous location for reschedule log
 
