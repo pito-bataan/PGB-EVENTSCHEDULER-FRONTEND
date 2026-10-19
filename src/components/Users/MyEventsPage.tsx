@@ -3498,17 +3498,20 @@ const MyEventsPage: React.FC = () => {
 
       })
 
-      .map((slot, index) => ({
+      .map((slot, index) => {
 
-        id: `slot-${index}`,
+        // Parse YYYY-MM-DD as local date (not UTC) to avoid timezone day shift
+        const [yyyy, mm, dd] = String(slot.startDate).split('T')[0].split('-').map(Number);
+        const localDate = new Date(yyyy, mm - 1, dd);
 
-        date: new Date(slot.startDate),
+        return {
+          id: `slot-${index}`,
+          date: localDate,
+          startTime: slot.startTime,
+          endTime: slot.endTime
+        };
 
-        startTime: slot.startTime,
-
-        endTime: slot.endTime
-
-      }));
+      });
 
 
 
@@ -4880,17 +4883,20 @@ const MyEventsPage: React.FC = () => {
 
       })
 
-      .map(slot => ({
+      .map(slot => {
 
-        startDate: slot.date.toISOString().split('T')[0],
+        // Use local date parts to avoid UTC timezone shift
+        const d = slot.date;
+        const localDateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-        startTime: slot.startTime,
+        return {
+          startDate: localDateStr,
+          startTime: slot.startTime,
+          endDate: localDateStr,
+          endTime: slot.endTime
+        };
 
-        endDate: slot.date.toISOString().split('T')[0],
-
-        endTime: slot.endTime
-
-      }));
+      });
 
 
 
@@ -5110,17 +5116,20 @@ const MyEventsPage: React.FC = () => {
 
         })
 
-        .map(slot => ({
+        .map(slot => {
 
-          startDate: slot.date.toISOString().split('T')[0],
+          // Use local date parts to avoid UTC timezone shift (e.g. Nov 17 UTC+8 -> Nov 16 UTC)
+          const d = slot.date;
+          const localDateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-          startTime: slot.startTime,
+          return {
+            startDate: localDateStr,
+            startTime: slot.startTime,
+            endDate: localDateStr,
+            endTime: slot.endTime
+          };
 
-          endDate: slot.date.toISOString().split('T')[0],
-
-          endTime: slot.endTime
-
-        }));
+        });
 
       console.log('[handleSaveEditedEvent] editFormData.location:', editFormData.location, '| editFormData.locations:', editFormData.locations);
 
